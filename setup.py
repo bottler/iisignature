@@ -9,7 +9,7 @@ def readme():
         return f.read()
 
 setup(name='iisignature',
-      version='0.11',
+      version='0.12',
       ext_modules=[xtn],
       description='Iterated integral signature calculations',
       long_description=readme(),
