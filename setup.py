@@ -9,7 +9,7 @@ def readme():
         return f.read()
 
 setup(name='iisignature',
-      version='0.1',
+      version='0.11',
       ext_modules=[xtn],
       description='Iterated integral signature calculations',
       long_description=readme(),
@@ -35,7 +35,7 @@ setup(name='iisignature',
           'Programming Language :: Python :: 2',
           'Programming Language :: Python :: 3',
           ],
-      url='http://www2.warwick.ac.uk/fac/cross_fac/complexity/people/students/dtc/students2013/reizenstein/',
+      url='https://github.com/bottler/iisignature',
       author='Jeremy Reizenstein',
       author_email='j.f.reizenstein@warwick.ac.uk',
       keywords = ["signature", "logsignature"],

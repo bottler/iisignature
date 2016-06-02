@@ -1,4 +1,3 @@
-=======================
 The iisignature package
 =======================
 
@@ -10,7 +9,13 @@ Python
 ------
 
 Install with::
-  pip install iisignature
+    pip install iisignature
 
 For the moment, don't install this package if you don't have numpy > 1.7 installed, or if you can't compile C++ extensions. Log signature calculation will probably crash if not running on an x86-64 Linux box.
+
+Authors
+-------
+
+* Dr Benjamin Graham
+* Jeremy Reizenstein
 
