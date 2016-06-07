@@ -1,7 +1,7 @@
 from setuptools import setup, Extension
 import numpy
 
-xtn = Extension('iisignature', ['src/baresig.cpp'], extra_compile_args=['-std=c++11'], include_dirs=[numpy.get_include()])
+xtn = Extension('iisignature', ['src/pythonsigs.cpp'], extra_compile_args=['-std=c++11'], include_dirs=[numpy.get_include()])
 
 
 def readme():
@@ -9,7 +9,7 @@ def readme():
         return f.read()
 
 setup(name='iisignature',
-      version='0.12',
+      version='0.13',
       ext_modules=[xtn],
       description='Iterated integral signature calculations',
       long_description=readme(),
@@ -41,6 +41,8 @@ setup(name='iisignature',
       keywords = ["signature", "logsignature"],
       license='MIT',
       packages=[],
+      #data_files=[(".",["src/bchLyndon20.dat"])],
+      #package_data={"": ["src/bchLyndon20.dat"]},
       zip_safe=False,           
       install_requires=['numpy>1.7'], #For now, this is redundant as we've died above here on an import statement
 )

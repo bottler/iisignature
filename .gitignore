@@ -1,5 +1,6 @@
 *.pyc
 *~
+callgrind.out.*
 
 # Setuptools distribution folder.
 /dist/

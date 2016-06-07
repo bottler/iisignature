@@ -8,16 +8,18 @@
 #include<utility>
 #include<vector>
 
-#include "readBCHCoeffs.h"
+#include "readBCHCoeffs.hpp"
 
 //amalgamate_adjacent(v.begin(),v.end(),tojoin,amalgamater)
-//iterates over v and replaces [i..j) with the single element amalgamater(i,j).first if tojoin(*i,*n) for all n in (i,j) and second
-//and just removes them all if !second
+//iterates over v and when finding a range [i..j) for which tojoin(*i,*n) for all n in (i,j), replaces it with 
+//  (the single element *i if amalgamater(i,j) and nothing otherwise)
 //returns one past the last - removes everything made unnecessary
 
 //I.e.: If you have a sequence where you want to merge any sequence of adjacent elements which have something in common so that they become
-//either a single element or nothing, use this function where tojoin identifies elements with the "something in common" and amalgamater specifies
-//what they become and also whether they become anything at all.
+//either a single element or nothing, use this function where tojoin identifies elements with the "something in common" and amalgamater makes
+//what they become and returns whether they become anything at all.
+
+//Could use swaps instead of assignment and potentially save.
 
 template<typename I, typename F1, typename F2>
   I amalgamate_adjacent(I a, I b, F1&& tojoin, F2&& amalgamater){
@@ -29,22 +31,20 @@ template<typename I, typename F1, typename F2>
       ++rangelength;
     }
     if(rangelength){
-      auto p = amalgamater(a,temp);
-      if(p.second)
-	*dest++ = p.first;
+      if(amalgamater(a,temp))
+	*dest++ = *a;
     }
     else if(dest!=a)
       *dest++ = *a;
     else
-      dest++;
+      ++dest;
     a=temp;
   }
   return dest;
 }
 
 //amalgamate_adjacent_pairs(v.begin(),v.end(),tojoin,amalgamater)
-//iterates over v and replaces *i and *(i+1) with the single element amalgamater(*i,*(i+1)).first if tojoin(*i,*(i+1)) and second
-//and just removes them both if !second
+//iterates over v and  if tojoin(*i,*(i+1)), replaces *i and *(i+1) with the single element *i if amalgamater(*i,*(i+1)) and nothing otherwise
 //returns one past the last - removes everything made unnecessary
 
 //This is the same as the previous function for the case where we know already that there won't be sequences longer 
@@ -61,15 +61,14 @@ I amalgamate_adjacent_pairs(I a, I b, F1&& tojoin, F2&& amalgamater){
       ++rangelength;
     }
     if(rangelength){
-      auto p = amalgamater(*a,*temp);
+      if(amalgamater(*a,*temp))
+	*dest++ = *a;
       ++temp;
-      if(p.second)
-	*dest++ = p.first;
     }
     else if(dest!=a)
       *dest++ = *a;
     else
-      dest++;
+      ++dest;
     a=temp;
   }
   return dest;
@@ -189,7 +188,7 @@ void printLyndonWordBracketsDigits(const LyndonWord& w, std::ostream& o){
 }
 
 //basically a pool for Lyndon words
-class State{
+class WordPool{
   void* getSpace(){
     if(m_used + objectSize>=eachLength){
       m_used=0;
@@ -221,7 +220,7 @@ class State{
   }
 };
 
-std::vector<LyndonWord*> makeListOfLyndonWords(State& s, int d,int m){
+std::vector<LyndonWord*> makeListOfLyndonWords(WordPool& s, int d,int m){
   std::vector<std::vector<LyndonWord*>> words(m);
   words[0].resize(d);
   for(Letter i=0; i<d; ++i){
@@ -278,7 +277,8 @@ Coefficient productCoefficients (const Coefficient& a, const Coefficient& b){
 				    [](I a, I b){
 				      double total = 0;
 				      std::for_each(a,b,[&](const A& a){total += a.second;});
-				      return std::make_pair(A(std::move(a->first),total),std::fabs(total)>0.00000001);})
+				      a->second = total;
+				      return std::fabs(total)>0.00000001;})
 	  ,out.end());
   //Todo: we could have a member Coefficient::m_size which was the important bit of m_details, and not erase vectors whose memory 
   //we might want to reuse later. Same with Polynomial
@@ -296,10 +296,10 @@ void sumCoefficients(Coefficient& lhs, Coefficient& rhs){//make the lhs be lhs+r
 
   using A = std::pair<std::vector<Input>,double>;
   a.erase(amalgamate_adjacent_pairs(a.begin(), a.end(),[](const A& a, const A& b){return a.first==b.first;},
-				    [](const A& a, const A& b){
+				    [](A& a, const A& b){
 				      double total = a.second + b.second;
-				      auto out = std::make_pair(A(std::move(a.first),total),std::fabs(total)>0.00000001);
-				      return out;
+				      a.second = total;
+				      return std::fabs(total)>0.00000001;
 				    })
 	  ,a.end());
 }
@@ -309,7 +309,7 @@ public:
   std::vector<std::pair<const LyndonWord*,Coefficient>> m_data; //kept lexicographic
 };
 
-void printPolynomial(Polynomial& poly, std::ostream& o){
+std::ostream& printPolynomial(Polynomial& poly, std::ostream& o){
   for(auto &m : poly.m_data){
     printLyndonWordDigits(*m.first,o);
     o<<" ";
@@ -320,6 +320,7 @@ void printPolynomial(Polynomial& poly, std::ostream& o){
       o<<c.second<<"\n";
     }
   }
+  return o;
 }
 
 std::unique_ptr<Polynomial> polynomialOfWord(const LyndonWord* w){
@@ -334,13 +335,13 @@ std::unique_ptr<Polynomial> polynomialOfWord(const LyndonWord* w){
 using Term = std::pair<const LyndonWord*,Coefficient>;
 
 struct TermLess{
-  State& m_s;
-  TermLess(State& s):m_s(s){}
+  WordPool& m_s;
+  TermLess(WordPool& s):m_s(s){}
   bool operator() (const Term& a, const Term& b) const {
     return m_s.lexicographicLess(a.first, b.first);
   }
 };
-void sumPolynomials(State& s, Polynomial& lhs, Polynomial& rhs){//make the lhs be lhs+rhs, rhs is preserved
+void sumPolynomials(WordPool& s, Polynomial& lhs, Polynomial& rhs){//make the lhs be lhs+rhs, rhs is preserved
   auto& a = lhs.m_data;
   auto& b = rhs.m_data;
 
@@ -353,15 +354,15 @@ void sumPolynomials(State& s, Polynomial& lhs, Polynomial& rhs){//make the lhs b
   a.erase(amalgamate_adjacent_pairs(a.begin(), a.end(),[](const Term& a, const Term& b){return a.first->isEqual(*b.first);},
 				    [](Term& a, Term& b){ 
 				      sumCoefficients(a.second,b.second); 
-				      return std::make_pair(std::move(a),!a.second.m_details.empty());})
+				      return !a.second.m_details.empty();})
 	  ,a.end());
 }
 
-std::unique_ptr<Polynomial> productLyndonWords(State& s, const LyndonWord& a, const LyndonWord& b, int maxLength, bool check=true);
+std::unique_ptr<Polynomial> productLyndonWords(WordPool& s, const LyndonWord& a, const LyndonWord& b, int maxLength, bool check=true);
 
 //returns 0 or a new Polynomial, taking ownership
-//std::unique_ptr<Polynomial> productPolynomials(State& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Polynomial> y, int maxLength){
-std::unique_ptr<Polynomial> productPolynomials(State& s, const Polynomial* x, const Polynomial* y, int maxLength){
+//std::unique_ptr<Polynomial> productPolynomials(WordPool& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Polynomial> y, int maxLength){
+std::unique_ptr<Polynomial> productPolynomials(WordPool& s, const Polynomial* x, const Polynomial* y, int maxLength){
   if(!x || !y){
     return nullptr;
   }
@@ -381,7 +382,7 @@ std::unique_ptr<Polynomial> productPolynomials(State& s, const Polynomial* x, co
   return out;
 }
 //returns 0 or a new Polynomial
-std::unique_ptr<Polynomial> productLyndonWords(State& s, const LyndonWord& a, const LyndonWord& b, int maxLength, bool check){
+std::unique_ptr<Polynomial> productLyndonWords(WordPool& s, const LyndonWord& a, const LyndonWord& b, int maxLength, bool check){
   if(check){
     int alen = a.length(), blen=b.length();
     if (alen+blen>maxLength)
@@ -412,7 +413,7 @@ std::unique_ptr<Polynomial> productLyndonWords(State& s, const LyndonWord& a, co
 }
 
 void printListOfLyndonWords(int d, int m){
-  State s;
+  WordPool s;
   auto list = makeListOfLyndonWords(s,d,m);
   for (const LyndonWord* l : list){
     printLyndonWordBracketsDigits(*l, std::cout);
@@ -430,13 +431,20 @@ Coefficient basicCoeff(int i){
   return out;  
 }
 
-Polynomial bch(State& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Polynomial> y, int m){
+Polynomial bch(WordPool& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Polynomial> y, int m){
   if(m>20)
     throw std::runtime_error("Coefficients only available up to level 20");
+  /*
+  std::cout<<"x:";
+  printPolynomial(*x,std::cout);
+  std::cout<<"y:";
+  printPolynomial(*y,std::cout);
+  */
   auto bchTable = ReadBCH::read();
   std::vector<std::unique_ptr<Polynomial>> arr;
   Polynomial out = *x; //deep except the LWs
-  sumPolynomials(s,out,*y);
+  Polynomial yCopy = *y;
+  sumPolynomials(s,out,yCopy);
   arr.reserve(bchTable.m_totalLengths[m-1]);
   arr.push_back(std::move(x));
   arr.push_back(std::move(y));
@@ -445,15 +453,15 @@ Polynomial bch(State& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Polynomi
     arr.push_back(productPolynomials(s,arr[row.m_left-1].get(),arr[row.m_right-1].get(),m));
   }
   
-  printPolynomial(out,std::cout);
+  //printPolynomial(out,std::cout);
   /*
   int fpp = 0;
   for(auto& i : arr){
     std::cout<<fpp++<<": ";
     printPolynomial(*i, std::cout);
     std::cout<<"\n";
-    } */
-  
+    } 
+  */
 		    
   for(int i=2; i<bchTable.m_totalLengths[m-1];++i){
     const auto& row = bchTable.m_rows[i];
@@ -467,13 +475,13 @@ Polynomial bch(State& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Polynomi
 }
 
 void calcFla(int d, int m){
-  State s;
+  WordPool s;
   auto wordList = makeListOfLyndonWords(s,d,m);
   std::sort(wordList.begin(),wordList.end(),[&s](LyndonWord* a, LyndonWord* b){
       return s.lexicographicLess(a,b);});
   std::unique_ptr<Polynomial> lhs(new Polynomial);
   std::unique_ptr<Polynomial> rhs(new Polynomial);
-  for(int i=0; i<wordList.size(); ++i){
+  for(int i=0; i<(int)wordList.size(); ++i){
     lhs->m_data.push_back(std::make_pair(wordList[i],basicCoeff( i+1)));
     rhs->m_data.push_back(std::make_pair(wordList[i],basicCoeff(-i-1)));
   }

@@ -1,3 +1,5 @@
+#ifndef MAKECOMPILEDFUNCTION_H
+#define MAKECOMPILEDFUNCTION_H
 #include<vector>
 #include<iostream>
 #include <stdexcept>
@@ -27,7 +29,7 @@ public:
 #else
     m_p = m_buf =(unsigned char*) mmap(0,s,PROT_READ|PROT_EXEC|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
 #endif
-    std::cout<<"Align "<<((size_t)m_p)%1024<<"\n"; //Looks like this is always 0, yay!
+    //    std::cout<<"Align "<<((size_t)m_p)%1024<<"\n"; //Looks like this is always 0, yay!
 //on windows, use 
   }
   ~Mem(){
@@ -86,7 +88,7 @@ struct FunctionData{
 };
 
 //The following function is the function which Maker creates (except this function takes d as a parameter, and that function takes t as a parameter).
-void test(double* a, const double* b, const FunctionData& d){
+void slowExplicitFunction(double* a, const double* b, const FunctionData& d){
   std::vector<double> t(d.m_formingT.size());
   for(size_t i=0; i<d.m_formingT.size(); ++i){
     double lhs, rhs;
@@ -115,7 +117,7 @@ void test(double* a, const double* b, const FunctionData& d){
   for(auto l : d.m_lines){
     a[l.m_lhs_offset] += (l.m_negative ? -1 : 1) * t[l.m_rhs_offset] * d.m_constants[l.m_const_offset];
   }
-  for(int i=0; i<d.m_length_of_b; ++i)
+  for(size_t i=0; i<d.m_length_of_b; ++i)
     a[i]+=b[i];
 }
 
@@ -173,6 +175,7 @@ struct Maker{
   //We are making void form_t(const double* a, const double* b, double* t) with no ret
   //pushes at most m_formingT.size() * 24 bytes
   void make_form_t(Mem& m, const FunctionData& d){
+    using std::make_pair;
     for(size_t i=0; i<d.m_formingT.size(); ++i){
       //First movsd the left
       m.push(0xf2, 0x0f, 0x10);
@@ -299,13 +302,15 @@ struct Maker{
     m.push(0x58 + getRegNumber(InputArr::C));
 #endif
     m.push(0xc3);//retq
-
-    std::cout<<d.m_length_of_b<<"\n";
-    std::cout<<d.m_constants.size()<<"\n";
-    std::cout<<m_singles<<","<<m_bads<<","<<m_nearlies<<"\n";
-    for(auto i : m_bads_by_register)
-      std::cout<<":"<<i.first<<":"<<i.second;
-    std::cout<<"\n"<<m.used() <<" out of "<<m.capacity()<<std::endl;
+    
+    if(0){
+      std::cout<<d.m_length_of_b<<"\n";
+      std::cout<<d.m_constants.size()<<"\n";
+      std::cout<<m_singles<<","<<m_bads<<","<<m_nearlies<<"\n";
+      for(auto i : m_bads_by_register)
+	std::cout<<":"<<i.first<<":"<<i.second;
+      std::cout<<"\n"<<m.used() <<" out of "<<m.capacity()<<std::endl;
+    }
   }
 
   int m_singles=0;
@@ -321,8 +326,8 @@ struct FunctionRunner{
   ///vector<double,boost::alignment::aligned_allocator<double,64>> m_t; //makes no difference?
   Mem m_m;
   FunctionRunner(FunctionData& d)
-    : m_m(d.m_lines.size()*36+d.m_formingT.size()*24+d.m_length_of_b*8+10),
-      m_d(d)
+  : m_d(d),
+    m_m(d.m_lines.size()*36+d.m_formingT.size()*24+d.m_length_of_b*8+10)
   {
     //d.m_lines.size()//126
     //This sorting by rhs_offset helps a lot, even if  rhs_offset is never touched
@@ -358,14 +363,14 @@ struct FunctionRunner{
       */
     }
     if(false)
-    for(int i=0; i<d.m_lines.size(); ++i){
+    for(size_t i=0; i<d.m_lines.size(); ++i){
       d.m_lines[i].m_lhs_offset = i%14;
       d.m_lines[i].m_rhs_offset = 4;
       d.m_lines[i].m_const_offset = 3;
     }
     m_t.resize(d.m_formingT.size());
-    std::cout<<"Align t "<<((size_t)m_t.data())%1024<<"\n";
-    std::cout<<"Align c "<<((size_t)m_d.m_constants.data())%1024<<"\n";
+    //std::cout<<"Align t "<<((size_t)m_t.data())%1024<<"\n";
+    //std::cout<<"Align c "<<((size_t)m_d.m_constants.data())%1024<<"\n";
     //d.m_formingT.clear();
     Maker maker;
     maker.make(m_m,m_d);
@@ -376,3 +381,5 @@ struct FunctionRunner{
     f(a,b,m_t.data());
   }
 };
+
+#endif
