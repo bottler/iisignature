@@ -1,7 +1,7 @@
 #ifndef LOGSIG_HPP
 #define LOGSIG_HPP
-#include "bch.h"
-#include "makeCompiledFunction.h"
+#include "bch.hpp"
+#include "makeCompiledFunction.hpp"
 
 struct LogSigFunction{
   int m_dim, m_level;

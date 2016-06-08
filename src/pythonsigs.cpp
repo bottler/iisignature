@@ -10,14 +10,16 @@
 #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
 #include<numpy/arrayobject.h>
 
-#include "calcSignature.h"
-#include "logSigLength.h"
+#include "calcSignature.hpp"
+#include "logSigLength.hpp"
 #include "logsig.hpp"
 
 #if PY_MAJOR_VERSION <3 && PY_MINOR_VERSION<7
   #define NO_CAPSULES
 #endif
 
+//consider  PyErr_CheckSignals()
+// for python 3.5+, we can load the new way https://www.python.org/dev/peps/pep-0489/
 //This is a python addin to calculate signatures which doesn't use boost python - to be as widely buildable as possible.
 //It should be buildable on tinis.
 
