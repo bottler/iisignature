@@ -47,18 +47,48 @@ def multiplyTensor(a,b):
 
 #input is a value in the tensor algebra given as lists of levels (from 1 to level), assumed 0 in level 0.
 #returns its exp - assumed 1 in level 0
+#exp(x)-1 = x+x^2/2 +x^3/6 +x^4/24 + ...
 def exponentiateTensor(a):
     out = [i.copy() for i in a]
     level = len(a)
     products = [out]
-    for i in range(2,level+1):
-        m=multiplyTensor(a,products[-1])
-        for j in m:
-            j *= (1.0/i)
-        products.append(m)
-        
+    for m in range(2,level+1):
+        t=multiplyTensor(a,products[-1])
+        for j in t:
+            j *= (1.0/m)
+        products.append(t)
     return [numpy.sum([p[i] for p in products],0) for i in range(level)]
 
+#input is a value in the tensor algebra given as lists of levels (from 1 to level), assumed 1 in level 0.
+#returns its exp - assumed 0 in level 0
+#log(1+x) = x -x^2/2 +x^3/3 -x^4/4 + ...
+def logTensor(a):
+    out = [i.copy() for i in a]
+    level = len(a)
+    products = [out]
+    for m in range(2,level+1):
+        t=multiplyTensor(a,products[-1])
+        products.append(t)
+    neg=True
+    for m in range(2,level+1):
+        for j in products[m-1]:
+            if neg:
+                j *= (-1.0/m)
+            else:
+                j *= (1.0/m)
+        neg = not neg
+    return [numpy.sum([p[i] for p in products],0) for i in range(level)]
+
+#given a tensor as a concatenated 1D array, return it as a list of levels
+def splitConcatenatedTensor(a, dim, level):
+    start=0
+    out=[]
+    for m in range(1,level+1):
+        levelLength = dim**m
+        out.append(a[start:(start+levelLength)])
+        start=start + levelLength
+    assert(start==a.shape[0])
+    return out
 
 #This test checks that basis, logsig and sig are compatible with each other by calculating a signature both using sig
 #and using logsig and checking they are equal 
@@ -72,10 +102,32 @@ class A(unittest.TestCase):
         basis = iisignature.basis(s)
         logsig = iisignature.logsig(path,s)
         sig = iisignature.sig(path,level)
+
+        #check lengths
+        self.assertEqual(len(basis),iisignature.logsiglength(dim,level))
+        self.assertEqual((len(basis),),logsig.shape)
+        self.assertEqual(sig.shape,(iisignature.siglength(dim,level),))
+
+        #calculate a signature from logsig
         expanded_logsig = [numpy.zeros(dim**m) for m in range(1,level+1)]
         for coeff, expression in zip(logsig,basis):
             values, depth  = valueOfBracket(expression,dim)
             expanded_logsig[depth-1]+=values*coeff
-        mysig = numpy.concatenate(exponentiateTensor(expanded_logsig))
-        diff = numpy.max(numpy.abs(sig-mysig))
-        self.assertTrue(diff<0.001)
+        calculated_sig = numpy.concatenate(exponentiateTensor(expanded_logsig))
+        diff = numpy.max(numpy.abs(sig-calculated_sig))
+        self.assertLess(diff,0.00001)
+
+        #calculate a log signature from sig
+        fullLogSig = numpy.concatenate(logTensor(splitConcatenatedTensor(sig,dim,level)))
+        basisMatrix=[]
+        zeros = [numpy.zeros(dim**m) for m in range(1,level+1)]
+        for expression in basis:
+            values, depth = valueOfBracket(expression, dim)
+            temp = zeros[depth-1]
+            zeros[depth-1]=values
+            basisMatrix.append(numpy.concatenate(zeros))
+            zeros[depth-1]=temp
+        calculatedLogSig=numpy.linalg.lstsq(numpy.transpose(basisMatrix),fullLogSig)[0]
+        diff2 = numpy.max(numpy.abs(logsig-calculatedLogSig))
+        self.assertLess(diff2,0.00001)
+
