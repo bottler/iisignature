@@ -2,6 +2,7 @@
 #define READ_BCH_COEFFS_H
 
 #include<fstream>
+#include<sstream>
 #include<iostream>
 #include<numeric>
 #include<stdexcept>

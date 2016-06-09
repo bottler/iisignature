@@ -19,10 +19,8 @@
 //either a single element or nothing, use this function where tojoin identifies elements with the "something in common" and amalgamater makes
 //what they become and returns whether they become anything at all.
 
-//Could use swaps instead of assignment and potentially save.
-
 template<typename I, typename F1, typename F2>
-  I amalgamate_adjacent(I a, I b, F1&& tojoin, F2&& amalgamater){
+I amalgamate_adjacent(I a, I b, F1&& tojoin, F2&& amalgamater){
   I dest = a;
   while(a!=b){
     I temp = a;
@@ -31,11 +29,14 @@ template<typename I, typename F1, typename F2>
       ++rangelength;
     }
     if(rangelength){
-      if(amalgamater(a,temp))
-	*dest++ = *a;
+      if(amalgamater(a,temp)){
+	if(dest!=a)
+	  std::iter_swap(dest,a);
+	++dest;
+      }
     }
     else if(dest!=a)
-      *dest++ = *a;
+      std::iter_swap(dest++,a);
     else
       ++dest;
     a=temp;
@@ -61,12 +62,15 @@ I amalgamate_adjacent_pairs(I a, I b, F1&& tojoin, F2&& amalgamater){
       ++rangelength;
     }
     if(rangelength){
-      if(amalgamater(*a,*temp))
-	*dest++ = *a;
+      if(amalgamater(*a,*temp)){
+	if(dest!=a)
+	  std::iter_swap(dest,a);
+	++dest;
+      }
       ++temp;
     }
     else if(dest!=a)
-      *dest++ = *a;
+      std::iter_swap(dest++,a);
     else
       ++dest;
     a=temp;
@@ -99,11 +103,13 @@ class LyndonWord{
     }    
   }
   int length() const {
-    int o = 0;
-    iterateOverLetters([&](Letter){++o;});
-    return o;
+    if(isLetter())
+      return 1;
+    return getLeft()->length() + getRight()->length();
   }
   bool isEqual(const LyndonWord& o) const {
+    if(this==&o)
+      return true;
     if(isLetter() != o.isLetter())
       return false;
     if(isLetter())
@@ -341,16 +347,17 @@ struct TermLess{
     return m_s.lexicographicLess(a.first, b.first);
   }
 };
+
 void sumPolynomials(WordPool& s, Polynomial& lhs, Polynomial& rhs){//make the lhs be lhs+rhs, rhs is preserved
   auto& a = lhs.m_data;
   auto& b = rhs.m_data;
 
   size_t ss = a.size();
   //if b has enough capacity, maybe we should detect and swap them here. similar in sumCoefficients.
+  //or reserve double?
   a.reserve(a.size()+b.size());
   std::move(b.begin(),b.end(),std::back_inserter(a));
   std::inplace_merge(a.begin(),a.begin()+ss,a.end(),TermLess(s));
-
   a.erase(amalgamate_adjacent_pairs(a.begin(), a.end(),[](const Term& a, const Term& b){return a.first->isEqual(*b.first);},
 				    [](Term& a, Term& b){ 
 				      sumCoefficients(a.second,b.second); 
