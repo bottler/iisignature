@@ -1,6 +1,7 @@
 *.pyc
 *~
 callgrind.out.*
+cachegrind.out.*
 
 # Setuptools distribution folder.
 /dist/

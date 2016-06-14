@@ -258,7 +258,7 @@ struct Maker{
     }
   }
 
-  //pushes 8*d.m_length_of_b bytes
+  //pushes at most 24*d.m_length_of_b bytes
   void make_final_adds(Mem& m, const FunctionData& d){
     using std::make_pair;
     const auto len = d.m_length_of_b;
@@ -272,7 +272,7 @@ struct Maker{
     }
   }
 
-  //pushes at most  d.m_lines.size() * 36 + m_formingT.size() * 24 + 3 bytes, 7 more on windows
+  //pushes at most  d.m_lines.size() * 36 + m_formingT.size() * 24 + m_length_of_b * 24 + 3 bytes, 7 more on windows
   void make(Mem& m, const FunctionData& d)
   {
 
@@ -327,7 +327,7 @@ struct FunctionRunner{
   Mem m_m;
   FunctionRunner(FunctionData& d)
   : m_d(d),
-    m_m(d.m_lines.size()*36+d.m_formingT.size()*24+d.m_length_of_b*8+10)
+    m_m(d.m_lines.size()*36+d.m_formingT.size()*24+d.m_length_of_b*24+10)
   {
     //d.m_lines.size()//126
     //This sorting by rhs_offset helps a lot, even if  rhs_offset is never touched
