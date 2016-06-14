@@ -119,6 +119,11 @@ class A(unittest.TestCase):
 
         #calculate a log signature from sig
         fullLogSig = numpy.concatenate(logTensor(splitConcatenatedTensor(sig,dim,level)))
+        fullLogSigLib = iisignature.logsig(path,s,"x")
+        diff1 = numpy.max(numpy.abs(fullLogSigLib-fullLogSig))
+        #print (numpy.vstack([fullLogSig,fullLogSigLib,numpy.abs(fullLogSigLib-fullLogSig)]).transpose())
+        self.assertLess(diff1,0.00001)
+
         basisMatrix=[]
         zeros = [numpy.zeros(dim**m) for m in range(1,level+1)]
         for expression in basis:
@@ -130,4 +135,14 @@ class A(unittest.TestCase):
         calculatedLogSig=numpy.linalg.lstsq(numpy.transpose(basisMatrix),fullLogSig)[0]
         diff2 = numpy.max(numpy.abs(logsig-calculatedLogSig))
         self.assertLess(diff2,0.00001)
+
+        #check consistency of methods
+        slowLogSig = iisignature.logsig(path,s,"o")
+        diffs = numpy.max(numpy.abs(slowLogSig-calculatedLogSig))
+        self.assertLess(diffs,0.00001)
+
+        sigLogSig = iisignature.logsig(path,s,"s")
+        diffs = numpy.max(numpy.abs(sigLogSig-calculatedLogSig))
+        self.assertLess(diffs,0.00001)
+            
 

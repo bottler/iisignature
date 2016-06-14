@@ -2,6 +2,8 @@
 #define LOGSIG_HPP
 #include "bch.hpp"
 #include "makeCompiledFunction.hpp"
+#include "logSigLength.hpp"
+#include<map>
 
 struct LogSigFunction{
   int m_dim, m_level;
@@ -9,6 +11,7 @@ struct LogSigFunction{
   std::vector<LyndonWord*> m_basisWords;
   FunctionData m_fd;
   std::unique_ptr<FunctionRunner> m_f;
+  std::vector<float> m_expandedBasis; //a 2D array, m_basisWords * sigLength
 };
 
 InputPos inputPosFromSingle(Input i){
@@ -45,7 +48,7 @@ void uniquifyDoubles(const std::vector<double>& in, std::vector<size_t>& out_ind
     });
 }
 
-void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, std::vector<LyndonWord*>& basisWords){
+void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, std::vector<LyndonWord*>& basisWords, bool justWords){
   using std::vector;
   using std::make_pair;
   if(level>20)
@@ -64,6 +67,8 @@ void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, s
     lhs->m_data.push_back(std::make_pair(wordList[i],basicCoeff( i+1)));
   }
   wordList.swap(basisWords);
+  if(justWords)
+    return;
   std::sort(lhs->m_data.begin(),lhs->m_data.end(),TermLess(s));
   //std::cout<<"bchbefore"<<std::endl;
   //For bch, poly must be lexicographic. For our purposes in this function, we want lexicographic within levels
@@ -153,14 +158,90 @@ void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, s
   }
 }
 
-void makeLogSigFunction(int dim, int level, LogSigFunction& lsf, bool slow_only){
+struct WantedMethods{
+  bool m_compiled_bch = true;
+  bool m_simple_bch = true;
+  bool m_log_of_signature = true;
+  bool m_expanded = false;
+};
+
+void makeLogSigFunction(int dim, int level, LogSigFunction& lsf, const WantedMethods& wm){
+  using std::vector;
   lsf.m_dim = dim;
   lsf.m_level = level;
-  makeFunctionDataForBCH(dim,level,lsf.m_s,lsf.m_fd, lsf.m_basisWords);
-  if(slow_only)
-    lsf.m_f.reset(nullptr);
-  else
+  const bool needBCH = wm.m_compiled_bch || wm.m_simple_bch;
+  makeFunctionDataForBCH(dim,level,lsf.m_s,lsf.m_fd, lsf.m_basisWords,!needBCH);
+  if(wm.m_compiled_bch)
     lsf.m_f.reset(new FunctionRunner(lsf.m_fd));
+  else
+    lsf.m_f.reset(nullptr);
+  if(wm.m_log_of_signature || wm.m_expanded){
+    auto lessLW = [&](const LyndonWord* a, const LyndonWord* b)
+      {return lsf.m_s.lexicographicLess(a,b);};
+    //can split by length?
+    std::vector<std::map<const LyndonWord*,std::vector<float>,decltype(lessLW)> > m;
+    m.reserve(level);
+    for(int i=0; i<level; ++i)
+      m.emplace_back(lessLW);
+    for(LyndonWord* w : lsf.m_basisWords){
+      if(w->isLetter()){
+	vector<float> v(dim,0.0);
+	v[w->getLetter()]=1;
+	m[0][w]=std::move(v);
+      }else{
+	auto len1 = w->getLeft()->length();
+	auto len2 = w->getRight()->length();
+	auto& left = m[len1-1][w->getLeft()];
+	auto& right = m[len2-1][w->getRight()];
+	vector<float> v (left.size()*right.size());
+	for(size_t i=0, k=0; i<left.size(); ++i)
+	  for(size_t j=0; j<right.size(); ++j, ++k)
+	    v[k]+=left[i]*right[j];
+	for(size_t i=0, k=0; i<right.size(); ++i)
+	  for(size_t j=0; j<left.size(); ++j, ++k)
+	    v[k]-=right[i]*left[j];
+	m[len1+len2-1][w]=std::move(v);
+      }
+    }
+    auto siglength = LogSigLength::sigLength(dim,level);
+    lsf.m_expandedBasis.assign(siglength*lsf.m_basisWords.size(),0);
+    int outputBasisEltOffset = 0;
+    for(int lev = 1; lev<=level; ++lev){
+      size_t offset = (lev == 1 ? 0 : LogSigLength::sigLength(dim,lev-1));
+      for(const auto& p : m[lev-1]){
+	const auto& v = p.second;
+	for(size_t i=0; i<v.size(); ++i){
+	  //std::cout<<","<<v[i];
+	  lsf.m_expandedBasis[siglength*outputBasisEltOffset + offset+i] = v[i];
+	}
+	++outputBasisEltOffset;
+	//std::cout<<std::endl;
+      }
+    }
+    /*
+    for(size_t i=0, j=0; i<lsf.m_basisWords.size(); ++i){
+      for(int k=0; k<siglength;++k, ++j)
+	std::cout<<lsf.m_expandedBasis[j];
+      std::cout<<std::endl;
+    }
+    */
+  }
 }
+
+//interpret a string as a list of wanted methods, return true on error
+bool setWantedMethods(WantedMethods& w, const std::string& input){
+  const auto npos = std::string::npos;
+  if(npos == input.find_first_not_of(" ")) //nothing to do.
+    return false;
+  w.m_compiled_bch=(input.empty() || npos!=input.find_first_of("dD"));
+  w.m_simple_bch=(npos!=input.find_first_of("oO"));
+  w.m_log_of_signature=(npos!=input.find_first_of("sS"));
+  w.m_expanded=(npos!=input.find_first_of("xX"));
+  return npos!=input.find_first_not_of("dDoOsSxX ");
+}
+
+const char* const methodError = "Invalid method string. Should be 'd' (default, compiled), 'o' (simple BCH object, not compiled), 's' (by taking the log of the signature), or 'x' (to report the expanded log signature), or some combination - order ignored, or None.";
+
+//rename LogSigFunction to LogSigData
 
 #endif

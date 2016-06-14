@@ -1,15 +1,18 @@
 from setuptools import setup, Extension
 import numpy
 
-xtn = Extension('iisignature', ['src/pythonsigs.cpp'], extra_compile_args=['-std=c++11'], include_dirs=[numpy.get_include()])
+version = "0.14"
 
+xtn = Extension('iisignature', ['src/pythonsigs.cpp'], 
+                extra_compile_args=['-std=c++11', '-DVERSION="'+version+'"'], 
+                include_dirs=[numpy.get_include()])
 
 def readme():
     with open('README.rst') as f:
         return f.read()
 
 setup(name='iisignature',
-      version='0.13',
+      version=version,
       ext_modules=[xtn],
       description='Iterated integral signature calculations',
       long_description=readme(),

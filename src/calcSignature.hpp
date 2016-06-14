@@ -53,6 +53,9 @@ public:
     }
   }
   
+  //if a is the signature of path A, b of B, then
+  //a.concatenateWith(d,m,b) makes a be the signature of the concatenated path AB
+  //This is also the (concatenation) product of the elements a and b in the tensor algebra.
   void concatenateWith(int d, int m, const CalculatedSignature& other){
     for(int level=m; level>0; --level){
       for(int mylevel=level-1; mylevel>0; --mylevel){
@@ -78,7 +81,15 @@ public:
     m_data.swap(other.m_data);
   }
 
-  void writeOut(CalcSigNumeric* dest) const{
+  void multiplyByConstant(CalcSigNumeric c){
+    for(auto& a: m_data)
+      for(auto& b:a)
+	b*=c;
+    
+  }
+
+  template<typename Numeric>
+  void writeOut(Numeric* dest) const{
     for(auto& a: m_data)
       for(auto& b:a)
 	*(dest++)=b;
@@ -90,6 +101,50 @@ public:
   }
 
 };
+
+  //This also calculates the concatenation product in the tensor algebra, 
+  //but in the case where we assume 0 instead of 1 in the zeroth level.
+  //It is not in-place
+CalculatedSignature concatenateWith_zeroFirstLevel(int d, int m,
+						   const CalculatedSignature& a, const CalculatedSignature& b){
+  CalculatedSignature out;
+  out.sigOfNothing(d,m);
+  for(int level=m; level>0; --level){
+    for(int alevel=level-1; alevel>0; --alevel){
+      int blevel=level-alevel;
+      auto& aa = a.m_data[alevel-1];
+      auto& bb = b.m_data[blevel-1];
+      auto dest=out.m_data[level-1].begin();
+      for(const CalcSigNumeric& c : aa){
+	for(const CalcSigNumeric& d : bb){
+	  *(dest++) += d * c;
+	}
+      }
+    }
+  }
+  return out;
+}
+
+void logTensor(CalculatedSignature& s){
+  const int m = s.m_data.size();
+  const int d = s.m_data[0].size();
+  vector<CalculatedSignature> powers;
+  powers.reserve(m);
+  powers.push_back(s);
+  for(int power = 2; power<=m; ++power){
+    powers.push_back(concatenateWith_zeroFirstLevel(d,m,powers.back(),s));
+  }
+  bool neg = true;
+  for(int power = 2; power<=m; ++power){
+    powers[power-1].multiplyByConstant(neg ? (-1.0/power) : (1.0/power));
+    neg = !neg;
+  }
+  for(int power = 2; power<=m; ++power){
+    for(int level=0; level<m; ++level)
+      for(size_t i=0; i<s.m_data[level].size(); ++i)
+	s.m_data[level][i] += powers[power-1].m_data[level][i];
+  }  
+}
 
 
 #endif
