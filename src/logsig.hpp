@@ -57,15 +57,17 @@ void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, s
   auto wordList = makeListOfLyndonWords(s,dim,level);
   std::unique_ptr<Polynomial> lhs(new Polynomial);
   std::unique_ptr<Polynomial> rhs(new Polynomial);
-  for(int i=0; i<dim; ++i)
-    rhs->m_data.push_back(std::make_pair(wordList[i],basicCoeff(-i-1))); //just the letters in order
+  if(!justWords)
+    for(int i=0; i<dim; ++i)
+      rhs->m_data.push_back(std::make_pair(wordList[i],basicCoeff(-i-1))); //just the letters in order
   std::sort(wordList.begin(),wordList.end(),[&s](LyndonWord* a, LyndonWord* b){
       return s.lexicographicLess(a,b);});
   std::stable_sort(wordList.begin(),wordList.end(),[](LyndonWord* a, LyndonWord* b){return a->length()<b->length();});
-  
-  for(int i=0; i<(int)wordList.size(); ++i){
-    lhs->m_data.push_back(std::make_pair(wordList[i],basicCoeff( i+1)));
-  }
+
+  if(!justWords)
+    for(int i=0; i<(int)wordList.size(); ++i){
+      lhs->m_data.push_back(std::make_pair(wordList[i],basicCoeff( i+1)));
+    }
   wordList.swap(basisWords);
   if(justWords)
     return;
@@ -178,41 +180,50 @@ void makeLogSigFunction(int dim, int level, LogSigFunction& lsf, const WantedMet
   if(wm.m_log_of_signature || wm.m_expanded){
     auto lessLW = [&](const LyndonWord* a, const LyndonWord* b)
       {return lsf.m_s.lexicographicLess(a,b);};
-    //can split by length?
-    std::vector<std::map<const LyndonWord*,std::vector<float>,decltype(lessLW)> > m;
+    using P = std::pair<size_t,float>;
+    std::vector<std::map<const LyndonWord*,std::vector<P>,decltype(lessLW)> > m;
     m.reserve(level);
     for(int i=0; i<level; ++i)
       m.emplace_back(lessLW);
+    vector<size_t> levelSizes{(size_t)dim};
+    for(int m=2; m<=level; ++m)
+      levelSizes.push_back(dim*levelSizes.back());
     for(LyndonWord* w : lsf.m_basisWords){
       if(w->isLetter()){
-	vector<float> v(dim,0.0);
-	v[w->getLetter()]=1;
-	m[0][w]=std::move(v);
+	m[0][w]={std::make_pair(w->getLetter(),1)};
       }else{
 	auto len1 = w->getLeft()->length();
 	auto len2 = w->getRight()->length();
 	auto& left = m[len1-1][w->getLeft()];
 	auto& right = m[len2-1][w->getRight()];
-	vector<float> v (left.size()*right.size());
-	for(size_t i=0, k=0; i<left.size(); ++i)
-	  for(size_t j=0; j<right.size(); ++j, ++k)
-	    v[k]+=left[i]*right[j];
-	for(size_t i=0, k=0; i<right.size(); ++i)
-	  for(size_t j=0; j<left.size(); ++j, ++k)
-	    v[k]-=right[i]*left[j];
+	vector<P> v;
+	for (const auto& l : left){
+	  for (const auto& r: right){
+	    v.push_back(std::make_pair(levelSizes[len2-1]*l.first+r.first,l.second*r.second));
+	    v.push_back(std::make_pair(levelSizes[len1-1]*r.first+l.first,-l.second*r.second));
+	  }
+	}
+	std::sort(v.begin(),v.end());
+	v.erase(amalgamate_adjacent_pairs(v.begin(),v.end(),
+					  [](const P& a, const P& b){return a.first==b.first;},
+					  [](P& a, P& b){a.second+=b.second; return a.second!=0;}),
+		v.end());
 	m[len1+len2-1][w]=std::move(v);
       }
     }
     auto siglength = LogSigLength::sigLength(dim,level);
+
+    //this is a bottleneck for, e.g. prepare(4,9)   
     lsf.m_expandedBasis.assign(siglength*lsf.m_basisWords.size(),0);
     int outputBasisEltOffset = 0;
     for(int lev = 1; lev<=level; ++lev){
       size_t offset = (lev == 1 ? 0 : LogSigLength::sigLength(dim,lev-1));
       for(const auto& p : m[lev-1]){
 	const auto& v = p.second;
-	for(size_t i=0; i<v.size(); ++i){
-	  //std::cout<<","<<v[i];
-	  lsf.m_expandedBasis[siglength*outputBasisEltOffset + offset+i] = v[i];
+	for(const auto& q:v){
+	  //split this by level?
+	  //pinv this in advance?
+	  lsf.m_expandedBasis[siglength*outputBasisEltOffset + offset+q.first] = q.second;
 	}
 	++outputBasisEltOffset;
 	//std::cout<<std::endl;
@@ -224,7 +235,7 @@ void makeLogSigFunction(int dim, int level, LogSigFunction& lsf, const WantedMet
 	std::cout<<lsf.m_expandedBasis[j];
       std::cout<<std::endl;
     }
-    */
+    */    
   }
 }
 
