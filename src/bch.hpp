@@ -10,6 +10,9 @@
 
 #include "readBCHCoeffs.hpp"
 
+//using Interrupt = const std::function<void()>&;
+typedef void (*Interrupt)();
+
 //amalgamate_adjacent(v.begin(),v.end(),tojoin,amalgamater)
 //iterates over v and when finding a range [i..j) for which tojoin(*i,*n) for all n in (i,j), replaces it with 
 //  (the single element *i if amalgamater(i,j) and nothing otherwise)
@@ -438,7 +441,7 @@ Coefficient basicCoeff(int i){
   return out;  
 }
 
-Polynomial bch(WordPool& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Polynomial> y, int m){
+Polynomial bch(WordPool& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Polynomial> y, int m, Interrupt interrupt){
   if(m>20)
     throw std::runtime_error("Coefficients only available up to level 20");
   /*
@@ -452,12 +455,14 @@ Polynomial bch(WordPool& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Polyn
   Polynomial out = *x; //deep except the LWs
   Polynomial yCopy = *y;
   sumPolynomials(s,out,yCopy);
+  interrupt();
   arr.reserve(bchTable.m_totalLengths[m-1]);
   arr.push_back(std::move(x));
   arr.push_back(std::move(y));
   for(int i=2; i<bchTable.m_totalLengths[m-1];++i){
     const auto& row = bchTable.m_rows[i];
     arr.push_back(productPolynomials(s,arr[row.m_left-1].get(),arr[row.m_right-1].get(),m));
+    interrupt();
   }
   
   //printPolynomial(out,std::cout);
@@ -475,13 +480,14 @@ Polynomial bch(WordPool& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Polyn
     auto& p = arr[i];
     for(auto& m : p->m_data)
       for(auto& c : m.second.m_details)
-	c.second *= row.m_coeff;
+	c.second *= row.m_coeff; //when m_coeff is zero, we're keeping this in
     sumPolynomials(s,out,*p);
+    interrupt();
   }
   return out;
 }
 
-void calcFla(int d, int m){
+void calcFla(int d, int m, Interrupt interrupt){
   WordPool s;
   auto wordList = makeListOfLyndonWords(s,d,m);
   std::sort(wordList.begin(),wordList.end(),[&s](LyndonWord* a, LyndonWord* b){
@@ -493,7 +499,7 @@ void calcFla(int d, int m){
     rhs->m_data.push_back(std::make_pair(wordList[i],basicCoeff(-i-1)));
   }
   std::cout<<"bchbefore"<<std::endl;
-  auto poly = bch(s,std::move(lhs),std::move(rhs),m);
+  auto poly = bch(s,std::move(lhs),std::move(rhs),m, interrupt);
   std::cout<<"bchdone"<<std::endl;
   printPolynomial(poly,std::cout);
 }

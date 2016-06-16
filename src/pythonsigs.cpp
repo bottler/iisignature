@@ -18,10 +18,43 @@
   #define NO_CAPSULES
 #endif
 
-//consider  PyErr_CheckSignals()
 // for python 3.5+, we can load the new way https://www.python.org/dev/peps/pep-0489/
-//This is a python addin to calculate signatures which doesn't use boost python - to be as widely buildable as possible.
-//It should be buildable on tinis.
+
+/* 
+template<typename T> int numpyTypenum;
+template<> int numpyTypenum<float>  = NPY_FLOAT32;
+template<> int numpyTypenum<double>  = NPY_FLOAT64;
+
+template<int> class numpyTypeImpl;
+template<> class numpyTypeImpl<NPY_FLOAT32>{public: typedef float Type;};
+template<> class numpyTypeImpl<NPY_FLOAT64>{public: typedef double Type;};
+template<int i> using numpyNumToType = typename numpyTypeImpl<i>::Type;
+*/
+
+#ifndef WIN32
+#include <signal.h>
+volatile bool g_signals_setup=false; 
+volatile bool g_signal_given=false; 
+void catcher(int){
+  g_signal_given = true;
+  PyErr_SetInterrupt();
+}
+
+void setup_signals(){
+  g_signal_given = false;
+  if(g_signals_setup)
+    return;
+  signal(SIGINT,&catcher);
+  g_signals_setup = true;
+}
+bool interrupt_wanted(){return g_signal_given;}
+void interrupt(){if(g_signal_given) throw std::runtime_error("INTERRUPTION");}
+#else
+//I suspect there's no Ctrl-C problem on windows, so we don't need to do anything. Test sometime
+void setup_signals(){}
+bool interrupt_wanted(){return false;}
+void interrupt(){}
+#endif
 
 #define ERR(X) {PyErr_SetString(PyExc_RuntimeError,X); return nullptr;}
 #define ERRb(X) {PyErr_SetString(PyExc_RuntimeError,X); return false;}
@@ -172,13 +205,16 @@ prepare(PyObject *self, PyObject *args){
   if(level<1) ERR("level must be positive");
   std::unique_ptr<LogSigFunction> lsf(new LogSigFunction);
   std::string exceptionMessage;
+  setup_signals();
   Py_BEGIN_ALLOW_THREADS
   try{
-    makeLogSigFunction(dim,level,*lsf, wantedmethods);
+    makeLogSigFunction(dim,level,*lsf, wantedmethods, interrupt);
   }catch(std::exception& e){
     exceptionMessage = e.what();
   }
   Py_END_ALLOW_THREADS
+  if(PyErr_CheckSignals()!=0) //I think if(interrupt_wanted()) would do just as well
+    return NULL;
   if(!exceptionMessage.empty())
     ERR(exceptionMessage.c_str());
 #ifdef NO_CAPSULES
@@ -207,35 +243,45 @@ static PyObject* basis(PyObject *self, PyObject *args){
   return o;
 }
 
-//this function is basically just numpy.linalg.lstsq
-static PyObject* lstsq(PyObject *a1, PyObject *a2){
-  PyObject* numpy = PyImport_AddModule("numpy");
-  if(!numpy)
-    return NULL;
-  PyObject* linalg = PyObject_GetAttrString(numpy,"linalg");
-  if(!linalg)
-    return NULL;
-  Deleter linalg_(linalg);
-  PyObject* transpose = PyObject_GetAttrString(numpy,"transpose");
-  if(!transpose)
-    return NULL;
-  Deleter transpose_(transpose);
-  PyObject* lstsq = PyObject_GetAttrString(linalg,"lstsq");
-  if(!lstsq)
-    return NULL;
-  Deleter lstsq_(lstsq);
-  PyObject* a1t = PyObject_CallFunctionObjArgs(transpose,a1,NULL);
-  if(!a1t)
-    return NULL;
-  Deleter a1t_(a1t);
-  PyObject* o = PyObject_CallFunctionObjArgs(lstsq,a1t,a2,NULL); 
-  //return o;
-  //return PyTuple_Pack(2,o,a1);
-  Deleter o_(o);
-  PyObject* answer = PyTuple_GetItem(o,0);
-  Py_INCREF(answer);
-  return answer;
-}
+//this class just provides access to the function numpy.linalg.lstsq
+class LeastSquares{
+  PyObject* m_transpose;
+  PyObject* m_lstsq;
+  std::unique_ptr<Deleter> m_t_, m_l_; //we can do better than this
+public:
+  bool m_ok = false;
+  LeastSquares(){
+    PyObject* numpy = PyImport_AddModule("numpy");
+    if(!numpy)
+      return;
+    PyObject* linalg = PyObject_GetAttrString(numpy,"linalg");
+    if(!linalg)
+      return;
+    Deleter linalg_(linalg);
+    m_transpose = PyObject_GetAttrString(numpy,"transpose");
+    if(!m_transpose)
+      return;
+    m_t_.reset(new Deleter(m_transpose));
+    m_lstsq = PyObject_GetAttrString(linalg,"lstsq");
+    if(!m_lstsq)
+      return;
+    m_l_.reset(new Deleter(m_lstsq));
+    m_ok = true;
+  }
+  PyObject* lstsq(PyObject *a1, PyObject *a2) const {
+    PyObject* a1t = PyObject_CallFunctionObjArgs(m_transpose,a1,NULL);
+    if(!a1t)
+      return NULL;
+    Deleter a1t_(a1t);
+    PyObject* o = PyObject_CallFunctionObjArgs(m_lstsq,a1t,a2,NULL); 
+    //return o;
+    //return PyTuple_Pack(2,o,a1);
+    Deleter o_(o);
+    PyObject* answer = PyTuple_GetItem(o,0);
+    Py_INCREF(answer);
+    return answer;
+  }
+};
 
 static PyObject *
 logsig(PyObject *self, PyObject *args){
@@ -305,28 +351,56 @@ logsig(PyObject *self, PyObject *args){
       *dest++ = (float) d;
     return o;
   }
-  if((wantedmethods.m_log_of_signature || wantedmethods.m_expanded) && !lsf->m_expandedBasis.empty() ){
+  if((wantedmethods.m_log_of_signature || wantedmethods.m_expanded) && !lsf->m_splitExpandedBasis.empty() ){
     CalculatedSignature sig;
     calcSignature(sig,a1,lsf->m_level);
     logTensor(sig);
-    long siglength = (long) calcSigTotalLength(lsf->m_dim,lsf->m_level);
-    long dims[] = {siglength};
-    PyObject* flattenedFullLogSigAsNumpyArray = PyArray_SimpleNew(1,dims,NPY_FLOAT64);
-    //PyObject* flattenedFullLogSigAsNumpyArray = PyArray_SimpleNew(1,dims,NPY_FLOAT32);
-    sig.writeOut(static_cast<double*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(flattenedFullLogSigAsNumpyArray))));
-    //sig.writeOut(static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(flattenedFullLogSigAsNumpyArray))));
-    if(wantedmethods.m_expanded)
+    if(wantedmethods.m_expanded){
+      long siglength = (long) calcSigTotalLength(lsf->m_dim,lsf->m_level);
+      long dims[] = {siglength};
+      PyObject* flattenedFullLogSigAsNumpyArray = PyArray_SimpleNew(1,dims,NPY_FLOAT32);
+      sig.writeOut(static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(flattenedFullLogSigAsNumpyArray))));
       return flattenedFullLogSigAsNumpyArray;
-    Deleter f_(flattenedFullLogSigAsNumpyArray);
+    }
+    
+    size_t writeOffset = 0;
+    LeastSquares ls;
+    if(!ls.m_ok)
+      return nullptr;
+    for(float f : sig.m_data[0])
+      out[writeOffset++]=f;
+    for(int l=2; l<=lsf->m_level; ++l){
+      std::vector<float>& matrix = lsf->m_splitExpandedBasis[l-1];
+      const long siglevelLength = lsf->m_sigLevelSizes[l-1];
+      long dims[] = {siglevelLength};
+      PyObject* sigLevel = PyArray_SimpleNewFromData(1,dims,NPY_FLOAT32,sig.m_data[l-1].data());
+      Deleter s_(sigLevel);
+      
+      long dims2[] = {(long)(matrix.size()/siglevelLength), siglevelLength};
+      PyObject* mat = PyArray_SimpleNewFromData(2,dims2,NPY_FLOAT32,matrix.data());
+      Deleter m_(mat);
+      PyObject* loglevel = ls.lstsq(mat,sigLevel);
+      if(!loglevel)
+	return nullptr;
+      Deleter l_(loglevel);
+      auto loglevela = reinterpret_cast<PyArrayObject*>(loglevel);
+      if(!PyArray_Check(loglevel) || 1!=PyArray_NDIM(loglevela) || PyArray_TYPE(loglevela)!=NPY_FLOAT32)
+	ERR("internal error?");
+      PyArrayObject* loglevelc = PyArray_GETCONTIGUOUS(loglevela);
+      Deleter l2_(reinterpret_cast<PyObject*>(loglevelc));
+      float* logleveld = static_cast<float*>(PyArray_DATA(loglevelc));
+      int j=0;
+      for(int i=PyArray_DIM(loglevelc,0); i>0; --i, ++j){
+	out[writeOffset++]=logleveld[j];
+      }
+    }
 
-    long dims2[] = {(long)logsiglength,siglength};
-    PyObject* mat = PyArray_SimpleNewFromData(2,dims2,NPY_FLOAT32,lsf->m_expandedBasis.data());
-    Deleter m_(mat);
-
-    PyObject* ans = lstsq(mat,flattenedFullLogSigAsNumpyArray);
-    return ans;
-    //Deleter ans_(ans); 
-    //return PyTuple_Pack(3,ans,mat,flattenedFullLogSigAsNumpyArray);
+    long dims[] = {(long)out.size()};
+    PyObject* o = PyArray_SimpleNew(1,dims,NPY_FLOAT32);
+    float* dest = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
+    for(double d : out)
+      *dest++ = (float) d;
+    return o;
   }
   ERR("We had not prepare()d for this request type");
 }

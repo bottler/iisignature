@@ -11,7 +11,8 @@ struct LogSigFunction{
   std::vector<LyndonWord*> m_basisWords;
   FunctionData m_fd;
   std::unique_ptr<FunctionRunner> m_f;
-  std::vector<float> m_expandedBasis; //a 2D array, m_basisWords * sigLength
+  std::vector<std::vector<float>> m_splitExpandedBasis; //a 2D array, (logsiglevellength * siglevellength), for each level
+  std::vector<size_t> m_sigLevelSizes;
 };
 
 InputPos inputPosFromSingle(Input i){
@@ -48,7 +49,8 @@ void uniquifyDoubles(const std::vector<double>& in, std::vector<size_t>& out_ind
     });
 }
 
-void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, std::vector<LyndonWord*>& basisWords, bool justWords){
+void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, std::vector<LyndonWord*>& basisWords,
+			    bool justWords, Interrupt interrupt){
   using std::vector;
   using std::make_pair;
   if(level>20)
@@ -74,7 +76,7 @@ void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, s
   std::sort(lhs->m_data.begin(),lhs->m_data.end(),TermLess(s));
   //std::cout<<"bchbefore"<<std::endl;
   //For bch, poly must be lexicographic. For our purposes in this function, we want lexicographic within levels
-  auto poly = bch(s,std::move(lhs),std::move(rhs),level);
+  auto poly = bch(s,std::move(lhs),std::move(rhs),level, interrupt);
   //std::cout<<"bchdone"<<std::endl;
 
   fd.m_length_of_b = dim;
@@ -129,7 +131,9 @@ void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, s
     }
   }
 
-  std::stable_sort(poly.m_data.begin(), poly.m_data.end(), [](const Term& a, const Term& b){return a.first->length()<b.first->length();});
+  interrupt();
+  std::stable_sort(poly.m_data.begin(), poly.m_data.end(), 
+		   [](const Term& a, const Term& b){return a.first->length()<b.first->length();});
   vector<double> wantedConstants;//sorted
   size_t lhs_index=0;
   for(Term& t : poly.m_data){
@@ -139,6 +143,8 @@ void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, s
       FunctionData::LineData l;
       l.m_const_offset = wantedConstants.size();
       double constant = i.second;
+      if(constant == 0)
+	continue;
       wantedConstants.push_back(std::fabs(constant));
       l.m_negative = constant<0;
       l.m_lhs_offset = lhs_index;
@@ -160,6 +166,65 @@ void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, s
   }
 }
 
+void makeSparseLogSigMatrices(int dim, int level, LogSigFunction& lsf, Interrupt interrupt){
+  auto lessLW = [&](const LyndonWord* a, const LyndonWord* b)
+    {return lsf.m_s.lexicographicLess(a,b);};
+  using P = std::pair<size_t,float>;
+  std::vector<std::map<const LyndonWord*,std::vector<P>,decltype(lessLW)> > m;
+  m.reserve(level);
+  for(int i=0; i<level; ++i)
+    m.emplace_back(lessLW);
+  lsf.m_sigLevelSizes.assign(1,(size_t)dim);
+  for(int m=2; m<=level; ++m)
+    lsf.m_sigLevelSizes.push_back(dim*lsf.m_sigLevelSizes.back());
+  for(LyndonWord* w : lsf.m_basisWords){
+    if(w->isLetter()){
+      m[0][w]={std::make_pair(w->getLetter(),1)};
+    }else{
+      auto len1 = w->getLeft()->length();
+      auto len2 = w->getRight()->length();
+      auto& left = m[len1-1][w->getLeft()];
+      auto& right = m[len2-1][w->getRight()];
+      vector<P> v;
+      for (const auto& l : left){
+	for (const auto& r: right){
+	  v.push_back(std::make_pair(lsf.m_sigLevelSizes[len2-1]*l.first+r.first,l.second*r.second));
+	  v.push_back(std::make_pair(lsf.m_sigLevelSizes[len1-1]*r.first+l.first,-l.second*r.second));
+	}
+      }
+      std::sort(v.begin(),v.end());
+      v.erase(amalgamate_adjacent_pairs(v.begin(),v.end(),
+					[](const P& a, const P& b){return a.first==b.first;},
+					[](P& a, P& b){a.second+=b.second; return a.second!=0;}),
+	      v.end());
+      m[len1+len2-1][w]=std::move(v);
+    }
+  }
+  
+  lsf.m_splitExpandedBasis.resize(level);
+  for(int lev = 1; lev<=level; ++lev){
+    int withinSplitBasisEltOffset=0;
+    lsf.m_splitExpandedBasis[lev-1].assign(m[lev-1].size() * lsf.m_sigLevelSizes[lev-1],0);
+    for(const auto& p : m[lev-1]){
+      for(const auto& q : p.second){
+	//pinv this in advance?
+	lsf.m_splitExpandedBasis[lev-1][lsf.m_sigLevelSizes[lev-1]*withinSplitBasisEltOffset+q.first]=q.second;
+      }
+      ++withinSplitBasisEltOffset;
+    }
+  }
+    /* code to print matrices as binary zero/one - looks good in terminal
+    for(int lev=1; lev<=level; ++lev){
+      for(size_t i=0, j=0; i<m[lev-1].size(); ++i){
+	for(size_t k=0; k<lsf.m_sigLevelSizes[lev-1];++k, ++j)
+	  std::cout<<(std::fabs(lsf.m_splitExpandedBasis[lev-1][j])==0 ? 0 : 1);
+	std::cout<<std::endl;
+      }
+      std::cout<<std::endl;
+    }
+    */
+}
+
 struct WantedMethods{
   bool m_compiled_bch = true;
   bool m_simple_bch = true;
@@ -167,76 +232,21 @@ struct WantedMethods{
   bool m_expanded = false;
 };
 
-void makeLogSigFunction(int dim, int level, LogSigFunction& lsf, const WantedMethods& wm){
+//This function sets up the members of lsf. It occasionally calls interrupt
+void makeLogSigFunction(int dim, int level, LogSigFunction& lsf, const WantedMethods& wm, Interrupt interrupt){
   using std::vector;
   lsf.m_dim = dim;
   lsf.m_level = level;
   const bool needBCH = wm.m_compiled_bch || wm.m_simple_bch;
-  makeFunctionDataForBCH(dim,level,lsf.m_s,lsf.m_fd, lsf.m_basisWords,!needBCH);
+  makeFunctionDataForBCH(dim,level,lsf.m_s,lsf.m_fd, lsf.m_basisWords,!needBCH, interrupt);
+  interrupt();
   if(wm.m_compiled_bch)
     lsf.m_f.reset(new FunctionRunner(lsf.m_fd));
   else
     lsf.m_f.reset(nullptr);
-  if(wm.m_log_of_signature || wm.m_expanded){
-    auto lessLW = [&](const LyndonWord* a, const LyndonWord* b)
-      {return lsf.m_s.lexicographicLess(a,b);};
-    using P = std::pair<size_t,float>;
-    std::vector<std::map<const LyndonWord*,std::vector<P>,decltype(lessLW)> > m;
-    m.reserve(level);
-    for(int i=0; i<level; ++i)
-      m.emplace_back(lessLW);
-    vector<size_t> levelSizes{(size_t)dim};
-    for(int m=2; m<=level; ++m)
-      levelSizes.push_back(dim*levelSizes.back());
-    for(LyndonWord* w : lsf.m_basisWords){
-      if(w->isLetter()){
-	m[0][w]={std::make_pair(w->getLetter(),1)};
-      }else{
-	auto len1 = w->getLeft()->length();
-	auto len2 = w->getRight()->length();
-	auto& left = m[len1-1][w->getLeft()];
-	auto& right = m[len2-1][w->getRight()];
-	vector<P> v;
-	for (const auto& l : left){
-	  for (const auto& r: right){
-	    v.push_back(std::make_pair(levelSizes[len2-1]*l.first+r.first,l.second*r.second));
-	    v.push_back(std::make_pair(levelSizes[len1-1]*r.first+l.first,-l.second*r.second));
-	  }
-	}
-	std::sort(v.begin(),v.end());
-	v.erase(amalgamate_adjacent_pairs(v.begin(),v.end(),
-					  [](const P& a, const P& b){return a.first==b.first;},
-					  [](P& a, P& b){a.second+=b.second; return a.second!=0;}),
-		v.end());
-	m[len1+len2-1][w]=std::move(v);
-      }
-    }
-    auto siglength = LogSigLength::sigLength(dim,level);
-
-    //this is a bottleneck for, e.g. prepare(4,9)   
-    lsf.m_expandedBasis.assign(siglength*lsf.m_basisWords.size(),0);
-    int outputBasisEltOffset = 0;
-    for(int lev = 1; lev<=level; ++lev){
-      size_t offset = (lev == 1 ? 0 : LogSigLength::sigLength(dim,lev-1));
-      for(const auto& p : m[lev-1]){
-	const auto& v = p.second;
-	for(const auto& q:v){
-	  //split this by level?
-	  //pinv this in advance?
-	  lsf.m_expandedBasis[siglength*outputBasisEltOffset + offset+q.first] = q.second;
-	}
-	++outputBasisEltOffset;
-	//std::cout<<std::endl;
-      }
-    }
-    /*
-    for(size_t i=0, j=0; i<lsf.m_basisWords.size(); ++i){
-      for(int k=0; k<siglength;++k, ++j)
-	std::cout<<lsf.m_expandedBasis[j];
-      std::cout<<std::endl;
-    }
-    */    
-  }
+  interrupt();
+  if(wm.m_log_of_signature || wm.m_expanded)
+    makeSparseLogSigMatrices(dim,level,lsf,interrupt);
 }
 
 //interpret a string as a list of wanted methods, return true on error
