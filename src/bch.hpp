@@ -33,9 +33,9 @@ I amalgamate_adjacent(I a, I b, F1&& tojoin, F2&& amalgamater){
     }
     if(rangelength){
       if(amalgamater(a,temp)){
-	if(dest!=a)
-	  std::iter_swap(dest,a);
-	++dest;
+        if(dest!=a)
+          std::iter_swap(dest,a);
+        ++dest;
       }
     }
     else if(dest!=a)
@@ -66,9 +66,9 @@ I amalgamate_adjacent_pairs(I a, I b, F1&& tojoin, F2&& amalgamater){
     }
     if(rangelength){
       if(amalgamater(*a,*temp)){
-	if(dest!=a)
-	  std::iter_swap(dest,a);
-	++dest;
+        if(dest!=a)
+          std::iter_swap(dest,a);
+        ++dest;
       }
       ++temp;
     }
@@ -157,8 +157,8 @@ class LyndonWordIterator : public std::iterator<std::forward_iterator_tag, Lette
     else{
       m_thisLetter= m_vec->back()->m_right;
       while(!m_thisLetter->isLetter()){
-	m_vec->push_back(m_thisLetter);
-	m_thisLetter=m_thisLetter->m_left;
+        m_vec->push_back(m_thisLetter);
+        m_thisLetter=m_thisLetter->m_left;
       }
     }
   }
@@ -239,10 +239,10 @@ std::vector<LyndonWord*> makeListOfLyndonWords(WordPool& s, int d,int m){
     for(int leftlength = 1; leftlength<level; ++leftlength){
       const int rightlength = level-leftlength;
       for(LyndonWord* left : words[leftlength-1])
-	for(LyndonWord* right : words[rightlength-1])
-	  if(s.lexicographicLess(left,right) && (left->isLetter() || left->getRight()==right || 
-					       !s.lexicographicLess(left->getRight(),right)))
-	    words[level-1].push_back(s.newLyndonWord(*left,*right));
+        for(LyndonWord* right : words[rightlength-1])
+          if(s.lexicographicLess(left,right) && (left->isLetter() || left->getRight()==right || 
+                                               !s.lexicographicLess(left->getRight(),right)))
+            words[level-1].push_back(s.newLyndonWord(*left,*right));
     }
   }
   //return words;
@@ -264,8 +264,9 @@ public:
 
 class Coefficient{
 public:
+  //This represents a sum of a product of a load of inputs and a constant.
   //the vector<Input> is sorted
-  std::vector<std::pair<std::vector<Input>,double>> m_details; //This represents a sum of a product of a load of inputs and a constant. 
+  std::vector<std::pair<std::vector<Input>,double>> m_details;
 };
 
 //we could have an in-place version too
@@ -276,19 +277,22 @@ Coefficient productCoefficients (const Coefficient& a, const Coefficient& b){
   for(const auto& x : a.m_details)
     for(const auto& y : b.m_details){
       out.push_back({});
-      std::merge(x.first.begin(),x.first.end(),y.first.begin(),y.first.end(),std::back_inserter(out.back().first));
+      std::merge(x.first.begin(),x.first.end(),
+                 y.first.begin(),y.first.end(),
+                 std::back_inserter(out.back().first));
       out.back().second = x.second * y.second;
     }
   std::sort(out.begin(), out.end());
   using A = std::pair<std::vector<Input>,double>;
   using I = std::vector<A>::iterator;
-  out.erase(amalgamate_adjacent(out.begin(),out.end(),[](const A& a, const A& b){return a.first==b.first;},
-				    [](I a, I b){
-				      double total = 0;
-				      std::for_each(a,b,[&](const A& a){total += a.second;});
-				      a->second = total;
-				      return std::fabs(total)>0.00000001;})
-	  ,out.end());
+  out.erase(amalgamate_adjacent(out.begin(),out.end(),
+                                [](const A& a, const A& b){return a.first==b.first;},
+                                [](I a, I b){
+                                  double total = 0;
+                                  std::for_each(a,b,[&](const A& a){total += a.second;});
+                                  a->second = total;
+                                  return std::fabs(total)>0.00000001;})
+            ,out.end());
   //Todo: we could have a member Coefficient::m_size which was the important bit of m_details, and not erase vectors whose memory 
   //we might want to reuse later. Same with Polynomial
   return o;
@@ -304,13 +308,14 @@ void sumCoefficients(Coefficient& lhs, Coefficient& rhs){//make the lhs be lhs+r
   std::inplace_merge(a.begin(),a.begin()+ss,a.end());
 
   using A = std::pair<std::vector<Input>,double>;
-  a.erase(amalgamate_adjacent_pairs(a.begin(), a.end(),[](const A& a, const A& b){return a.first==b.first;},
-				    [](A& a, const A& b){
-				      double total = a.second + b.second;
-				      a.second = total;
-				      return std::fabs(total)>0.00000001;
-				    })
-	  ,a.end());
+  a.erase(amalgamate_adjacent_pairs(a.begin(), a.end(),
+                                    [](const A& a, const A& b){return a.first==b.first;},
+                                    [](A& a, const A& b){
+                                      double total = a.second + b.second;
+                                      a.second = total;
+                                      return std::fabs(total)>0.00000001;
+                                    })
+          ,a.end());
 }
 
 class Polynomial{
@@ -324,7 +329,7 @@ std::ostream& printPolynomial(Polynomial& poly, std::ostream& o){
     o<<" ";
     for(const auto& c : m.second.m_details){
       for(const auto& i : c.first){
-	o<<"["<<i.m_index<<"]";
+        o<<"["<<i.m_index<<"]";
       }
       o<<c.second<<"\n";
     }
@@ -361,18 +366,23 @@ void sumPolynomials(WordPool& s, Polynomial& lhs, Polynomial& rhs){//make the lh
   a.reserve(a.size()+b.size());
   std::move(b.begin(),b.end(),std::back_inserter(a));
   std::inplace_merge(a.begin(),a.begin()+ss,a.end(),TermLess(s));
-  a.erase(amalgamate_adjacent_pairs(a.begin(), a.end(),[](const Term& a, const Term& b){return a.first->isEqual(*b.first);},
-				    [](Term& a, Term& b){ 
-				      sumCoefficients(a.second,b.second); 
-				      return !a.second.m_details.empty();})
-	  ,a.end());
+  a.erase(amalgamate_adjacent_pairs(a.begin(), a.end(),
+                                    [](const Term& a, const Term& b){
+                                      return a.first->isEqual(*b.first);},
+                                    [](Term& a, Term& b){ 
+                                      sumCoefficients(a.second,b.second); 
+                                      return !a.second.m_details.empty();})
+          ,a.end());
 }
 
-std::unique_ptr<Polynomial> productLyndonWords(WordPool& s, const LyndonWord& a, const LyndonWord& b, int maxLength, bool check=true);
+std::unique_ptr<Polynomial> 
+productLyndonWords(WordPool& s, const LyndonWord& a, const LyndonWord& b, 
+                   int maxLength, bool check=true);
 
 //returns 0 or a new Polynomial, taking ownership
 //std::unique_ptr<Polynomial> productPolynomials(WordPool& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Polynomial> y, int maxLength){
-std::unique_ptr<Polynomial> productPolynomials(WordPool& s, const Polynomial* x, const Polynomial* y, int maxLength){
+std::unique_ptr<Polynomial> 
+productPolynomials(WordPool& s, const Polynomial* x, const Polynomial* y, int maxLength){
   if(!x || !y){
     return nullptr;
   }
@@ -380,19 +390,20 @@ std::unique_ptr<Polynomial> productPolynomials(WordPool& s, const Polynomial* x,
   for (auto& keyx : x->m_data)
     if(keyx.first->length()<maxLength)
       for(auto& keyy : y->m_data)
-	if(keyy.first->length()<maxLength){
-	  auto t = productLyndonWords(s,*keyx.first,*keyy.first,maxLength);
-	  if(t){
-	    auto scalar = productCoefficients(keyx.second, keyy.second);
-	    for(auto& key : t->m_data)
-	      key.second = productCoefficients(key.second, scalar);
-	    sumPolynomials(s,*out,*t);
-	  }
-	}
+        if(keyy.first->length()<maxLength){
+          auto t = productLyndonWords(s,*keyx.first,*keyy.first,maxLength);
+          if(t){
+            auto scalar = productCoefficients(keyx.second, keyy.second);
+            for(auto& key : t->m_data)
+              key.second = productCoefficients(key.second, scalar);
+            sumPolynomials(s,*out,*t);
+          }
+        }
   return out;
 }
 //returns 0 or a new Polynomial
-std::unique_ptr<Polynomial> productLyndonWords(WordPool& s, const LyndonWord& a, const LyndonWord& b, int maxLength, bool check){
+std::unique_ptr<Polynomial> 
+productLyndonWords(WordPool& s, const LyndonWord& a, const LyndonWord& b, int maxLength, bool check){
   if(check){
     int alen = a.length(), blen=b.length();
     if (alen+blen>maxLength)
@@ -402,9 +413,9 @@ std::unique_ptr<Polynomial> productLyndonWords(WordPool& s, const LyndonWord& a,
     if(s.lexicographicLess(&b,&a)){
       auto x = productLyndonWords(s,b,a,maxLength,false);
       if(x){
-	for(auto& i : x->m_data)
-	  for(auto& j : i.second.m_details)
-	    j.second *= -1;
+        for(auto& i : x->m_data)
+          for(auto& j : i.second.m_details)
+            j.second *= -1;
       }
       return x;
     }
@@ -413,8 +424,10 @@ std::unique_ptr<Polynomial> productLyndonWords(WordPool& s, const LyndonWord& a,
   if(s.lexicographicLess(candidate,&b) && (a.isLetter() || !s.lexicographicLess(a.getRight(),&b))){
     return polynomialOfWord(candidate);
   }
-  auto a1 = productPolynomials(s,polynomialOfWord(a.getRight()).get(), productLyndonWords(s,b,*a.getLeft(),maxLength ).get(),maxLength);
-  auto a2 = productPolynomials(s,polynomialOfWord(a.getLeft()).get() , productLyndonWords(s,*a.getRight(),b,maxLength).get(),maxLength);
+  auto a1 = productPolynomials(s,polynomialOfWord(a.getRight()).get(), 
+                               productLyndonWords(s,b,*a.getLeft(),maxLength ).get(),maxLength);
+  auto a2 = productPolynomials(s,polynomialOfWord(a.getLeft()).get() ,
+                               productLyndonWords(s,*a.getRight(),b,maxLength).get(),maxLength);
   if(!a1)
     return a2;
   if(a2)
@@ -441,7 +454,8 @@ Coefficient basicCoeff(int i){
   return out;  
 }
 
-Polynomial bch(WordPool& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Polynomial> y, int m, Interrupt interrupt){
+Polynomial bch(WordPool& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Polynomial> y, 
+               int m, Interrupt interrupt){
   if(m>20)
     throw std::runtime_error("Coefficients only available up to level 20");
   /*
@@ -474,13 +488,13 @@ Polynomial bch(WordPool& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Polyn
     std::cout<<"\n";
     } 
   */
-		    
+                    
   for(int i=2; i<bchTable.m_totalLengths[m-1];++i){
     const auto& row = bchTable.m_rows[i];
     auto& p = arr[i];
     for(auto& m : p->m_data)
       for(auto& c : m.second.m_details)
-	c.second *= row.m_coeff; //when m_coeff is zero, we're keeping this in
+        c.second *= row.m_coeff; //when m_coeff is zero, we're keeping this in
     sumPolynomials(s,out,*p);
     interrupt();
   }

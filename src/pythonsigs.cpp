@@ -271,9 +271,11 @@ public:
   PyObject* lstsq(PyObject *a1, PyObject *a2) const {
     PyObject* a1t = PyObject_CallFunctionObjArgs(m_transpose,a1,NULL);
     if(!a1t)
-      return NULL;
+      return nullptr;
     Deleter a1t_(a1t);
     PyObject* o = PyObject_CallFunctionObjArgs(m_lstsq,a1t,a2,NULL); 
+    if(!o)
+      return nullptr;
     //return o;
     //return PyTuple_Pack(2,o,a1);
     Deleter o_(o);

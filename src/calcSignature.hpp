@@ -13,14 +13,14 @@ typedef float CalcSigNumeric;
 //- perhaps slower to run but easier to use than the template version 
 
 int calcSigLevelLength(int d, int m){
-  //	return static_cast<int> (std::round(std::pow(d,m)));
+  //    return static_cast<int> (std::round(std::pow(d,m)));
   return static_cast<int> (0.4+std::pow(d,m));
 }
 
 int calcSigTotalLength(int d, int m){
   if(d==1)
     return m;
-  //	int p = static_cast<int> (std::round(std::pow(d,m)));
+  //    int p = static_cast<int> (std::round(std::pow(d,m)));
   int p = static_cast<int> (0.4 + std::pow(d,m));
   return d*(p-1)/(d-1);
 }
@@ -39,8 +39,8 @@ public:
       s.assign(calcSigLevelLength(d,level),0);
       int i=0;
       for(auto l: last)
-	for(auto p=segment; p<segment+d; ++p)
-	  s[i++]=*p * l * (1.0/level);
+        for(auto p=segment; p<segment+d; ++p)
+          s[i++]=*p * l * (1.0/level);
     }
   }
 
@@ -59,22 +59,22 @@ public:
   void concatenateWith(int d, int m, const CalculatedSignature& other){
     for(int level=m; level>0; --level){
       for(int mylevel=level-1; mylevel>0; --mylevel){
-	int otherlevel=level-mylevel;
-	auto& oth = other.m_data[otherlevel-1];
-	for(auto dest=m_data[level-1].begin(), 
-	         my =m_data[mylevel-1].begin(),
-	      myE=m_data[mylevel-1].end(); my!=myE; ++my){
-	  for(const CalcSigNumeric& d : oth){
-	    *(dest++) += d * *my;
-	  }
-	}
+        int otherlevel=level-mylevel;
+        auto& oth = other.m_data[otherlevel-1];
+        for(auto dest=m_data[level-1].begin(), 
+                 my =m_data[mylevel-1].begin(),
+              myE=m_data[mylevel-1].end(); my!=myE; ++my){
+          for(const CalcSigNumeric& d : oth){
+            *(dest++) += d * *my;
+          }
+        }
       }
       auto source =other.m_data[level-1].begin();
       for(auto dest=m_data[level-1].begin(),
-	    e=m_data[level-1].end();
-	    dest!=e;)
-	*(dest++) += *(source++);
-	    
+            e=m_data[level-1].end();
+            dest!=e;)
+        *(dest++) += *(source++);
+            
     }
   }
   void swap(CalculatedSignature& other){
@@ -84,7 +84,7 @@ public:
   void multiplyByConstant(CalcSigNumeric c){
     for(auto& a: m_data)
       for(auto& b:a)
-	b*=c;
+        b*=c;
     
   }
 
@@ -92,12 +92,12 @@ public:
   void writeOut(Numeric* dest) const{
     for(auto& a: m_data)
       for(auto& b:a)
-	*(dest++)=b;
+        *(dest++)=b;
   }
   void writeOutExceptLasts(CalcSigNumeric* dest) const{
     for(auto& a: m_data)
       for(auto i = a.begin(), e=a.end()-1; i!=e; ++i)
-	*(dest++)=*i;
+        *(dest++)=*i;
   }
 
 };
@@ -106,7 +106,8 @@ public:
   //but in the case where we assume 0 instead of 1 in the zeroth level.
   //It is not in-place
 CalculatedSignature concatenateWith_zeroFirstLevel(int d, int m,
-						   const CalculatedSignature& a, const CalculatedSignature& b){
+                                                   const CalculatedSignature& a,
+                                                   const CalculatedSignature& b){
   CalculatedSignature out;
   out.sigOfNothing(d,m);
   for(int level=m; level>0; --level){
@@ -116,9 +117,9 @@ CalculatedSignature concatenateWith_zeroFirstLevel(int d, int m,
       auto& bb = b.m_data[blevel-1];
       auto dest=out.m_data[level-1].begin();
       for(const CalcSigNumeric& c : aa){
-	for(const CalcSigNumeric& d : bb){
-	  *(dest++) += d * c;
-	}
+        for(const CalcSigNumeric& d : bb){
+          *(dest++) += d * c;
+        }
       }
     }
   }
@@ -142,7 +143,7 @@ void logTensor(CalculatedSignature& s){
   for(int power = 2; power<=m; ++power){
     for(int level=0; level<m; ++level)
       for(size_t i=0; i<s.m_data[level].size(); ++i)
-	s.m_data[level][i] += powers[power-1].m_data[level][i];
+        s.m_data[level][i] += powers[power-1].m_data[level][i];
   }  
 }
 

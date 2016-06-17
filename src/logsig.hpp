@@ -34,23 +34,23 @@ void uniquifyDoubles(const std::vector<double>& in, std::vector<size_t>& out_ind
   }
   std::sort(initial.begin(), initial.end());
   auto end = amalgamate_adjacent(initial.begin(), initial.end(), [tol](P& a, P& b){return std::fabs(a.first-b.first)<tol;},
-				      [](I a, I b){
-					I a2 = a; 
-					std::for_each(++a2,b,[a](P& i){a->second.push_back(i.second[0]);});
-					return true;
-				      });
+                                      [](I a, I b){
+                                        I a2 = a; 
+                                        std::for_each(++a2,b,[a](P& i){a->second.push_back(i.second[0]);});
+                                        return true;
+                                      });
   //out_vals.reserve(in.size());
   out_vals.clear();
   out_indices.resize(in.size());
   std::for_each(initial.begin(),end,[&](P& p){
       for(size_t i : p.second)
-	out_indices[i]=out_vals.size();
+        out_indices[i]=out_vals.size();
       out_vals.push_back(p.first);
     });
 }
 
 void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, std::vector<LyndonWord*>& basisWords,
-			    bool justWords, Interrupt interrupt){
+                            bool justWords, Interrupt interrupt){
   using std::vector;
   using std::make_pair;
   if(level>20)
@@ -112,19 +112,19 @@ void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, s
         bool found=false;
         for(size_t k=0; k<j->size(); ++k){
           temp = *j;
-	  temp.erase(temp.begin()+k);
-	  auto it = std::lower_bound(prev.begin(),prev.end(),temp,[](const InProduct* a, const InProduct& b){return *a<b;});
-	  if(it!=prev.end() && **it == temp){
+          temp.erase(temp.begin()+k);
+          auto it = std::lower_bound(prev.begin(),prev.end(),temp,[](const InProduct* a, const InProduct& b){return *a<b;});
+          if(it!=prev.end() && **it == temp){
             found=true;
-	    fd.m_formingT.push_back(std::make_pair(inputPosFromSingle((*j)[k]),
+            fd.m_formingT.push_back(std::make_pair(inputPosFromSingle((*j)[k]),
                                             std::make_pair(InputArr::T,m_neededProduct_indices[i-1][it-prev.begin()])));
-	    break;
+            break;
           }
         }
-	if(!found){
+        if(!found){
          //more exhaustive search not implemented
            std::cout<<"help, not found, level="<<i+1<<std::endl; 
-	   throw std::runtime_error("I couldn't find a product to make");
+           throw std::runtime_error("I couldn't find a product to make");
         }
       }
       outputIdx.push_back(fd.m_formingT.size()-1);
@@ -133,7 +133,7 @@ void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, s
 
   interrupt();
   std::stable_sort(poly.m_data.begin(), poly.m_data.end(), 
-		   [](const Term& a, const Term& b){return a.first->length()<b.first->length();});
+                   [](const Term& a, const Term& b){return a.first->length()<b.first->length();});
   vector<double> wantedConstants;//sorted
   size_t lhs_index=0;
   for(Term& t : poly.m_data){
@@ -144,13 +144,13 @@ void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, s
       l.m_const_offset = wantedConstants.size();
       double constant = i.second;
       if(constant == 0)
-	continue;
+        continue;
       wantedConstants.push_back(std::fabs(constant));
       l.m_negative = constant<0;
       l.m_lhs_offset = lhs_index;
       size_t length = i.first.size();
       if(length<2)
-	continue;
+        continue;
       const auto& v = m_neededProducts[length-1];
       auto it = std::lower_bound(v.begin(),v.end(),i.first,[](const InProduct* a, const InProduct& b){return *a<b;});
       l.m_rhs_offset = m_neededProduct_indices[length-1][it-v.begin()];
@@ -187,16 +187,16 @@ void makeSparseLogSigMatrices(int dim, int level, LogSigFunction& lsf, Interrupt
       auto& right = m[len2-1][w->getRight()];
       vector<P> v;
       for (const auto& l : left){
-	for (const auto& r: right){
-	  v.push_back(std::make_pair(lsf.m_sigLevelSizes[len2-1]*l.first+r.first,l.second*r.second));
-	  v.push_back(std::make_pair(lsf.m_sigLevelSizes[len1-1]*r.first+l.first,-l.second*r.second));
-	}
+        for (const auto& r: right){
+          v.push_back(std::make_pair(lsf.m_sigLevelSizes[len2-1]*l.first+r.first,l.second*r.second));
+          v.push_back(std::make_pair(lsf.m_sigLevelSizes[len1-1]*r.first+l.first,-l.second*r.second));
+        }
       }
       std::sort(v.begin(),v.end());
       v.erase(amalgamate_adjacent_pairs(v.begin(),v.end(),
-					[](const P& a, const P& b){return a.first==b.first;},
-					[](P& a, P& b){a.second+=b.second; return a.second!=0;}),
-	      v.end());
+                                        [](const P& a, const P& b){return a.first==b.first;},
+                                        [](P& a, P& b){a.second+=b.second; return a.second!=0;}),
+              v.end());
       m[len1+len2-1][w]=std::move(v);
     }
   }
@@ -207,8 +207,8 @@ void makeSparseLogSigMatrices(int dim, int level, LogSigFunction& lsf, Interrupt
     lsf.m_splitExpandedBasis[lev-1].assign(m[lev-1].size() * lsf.m_sigLevelSizes[lev-1],0);
     for(const auto& p : m[lev-1]){
       for(const auto& q : p.second){
-	//pinv this in advance?
-	lsf.m_splitExpandedBasis[lev-1][lsf.m_sigLevelSizes[lev-1]*withinSplitBasisEltOffset+q.first]=q.second;
+        //pinv this in advance?
+        lsf.m_splitExpandedBasis[lev-1][lsf.m_sigLevelSizes[lev-1]*withinSplitBasisEltOffset+q.first]=q.second;
       }
       ++withinSplitBasisEltOffset;
     }
@@ -216,9 +216,9 @@ void makeSparseLogSigMatrices(int dim, int level, LogSigFunction& lsf, Interrupt
     /* code to print matrices as binary zero/one - looks good in terminal
     for(int lev=1; lev<=level; ++lev){
       for(size_t i=0, j=0; i<m[lev-1].size(); ++i){
-	for(size_t k=0; k<lsf.m_sigLevelSizes[lev-1];++k, ++j)
-	  std::cout<<(std::fabs(lsf.m_splitExpandedBasis[lev-1][j])==0 ? 0 : 1);
-	std::cout<<std::endl;
+        for(size_t k=0; k<lsf.m_sigLevelSizes[lev-1];++k, ++j)
+          std::cout<<(std::fabs(lsf.m_splitExpandedBasis[lev-1][j])==0 ? 0 : 1);
+        std::cout<<std::endl;
       }
       std::cout<<std::endl;
     }

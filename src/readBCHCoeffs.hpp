@@ -49,12 +49,13 @@ namespace ReadBCH{
       r.m_coeff = ((double)numerator)/denominator;
       out.push_back(r);
       if(nrow>2){
-	int order = orders[left-1]+orders[right-1];
-	orders.push_back(order);
-	++n_ofEachOrder[order-1];
+        int order = orders[left-1]+orders[right-1];
+        orders.push_back(order);
+        ++n_ofEachOrder[order-1];
       }
     }
-    std::partial_sum(n_ofEachOrder.begin(),n_ofEachOrder.end(),std::back_inserter(o.m_totalLengths));
+    std::partial_sum(n_ofEachOrder.begin(),n_ofEachOrder.end(),
+                     std::back_inserter(o.m_totalLengths));
     //std::cout<<nrow<<"\n";
     return o;
   }

@@ -136,13 +136,13 @@ struct Maker{
 #ifdef _WIN32
     unsigned char start = array == InputArr::A ? 1 : //RCX
                           array == InputArr::B ? 2 : //RDX
-	    	          array == InputArr::T ? 7 : //let's use RDI
-			  6;                         //RSI
+                          array == InputArr::T ? 7 : //let's use RDI
+                          6;                         //RSI
 #else
     unsigned char start = array == InputArr::A ? 7 : //RDI
                           array == InputArr::B ? 6 : //RSI
-			  array == InputArr::T ? 2 : //RDX
-			  1;                         //RCX
+                          array == InputArr::T ? 2 : //RDX
+                          1;                         //RCX
 #endif
     return start;
   }
@@ -187,7 +187,7 @@ struct Maker{
         m.push(0xc0);
       }
       else
-	xmmkWithRegOffset(m,d.m_formingT[i].second);
+        xmmkWithRegOffset(m,d.m_formingT[i].second);
       //Now movsd back
       m.push(0xf2, 0x0f, 0x11);
       xmmkWithRegOffset(m,make_pair(InputArr::T, i));
@@ -212,48 +212,48 @@ struct Maker{
       xmmkWithRegOffset(m,make_pair(InputArr::T, l.m_rhs_offset),base_xmm);
       //xmmkWithRegOffset(m,make_pair(InputArr::T, 3),base_xmm);//FAKE
       if(true) //try to amalgamate with subsequent lines before writing to memory.
-	while(l.m_lhs_offset==d.m_lines[idx+1].m_lhs_offset){
+        while(l.m_lhs_offset==d.m_lines[idx+1].m_lhs_offset){
           ++idx;
-	  const auto& l2 = d.m_lines[idx];
-	  //Load next into xmm1
-	  m.push(0xf2, 0x0f, 0x10);
-	  xmmkWithRegOffset(m,make_pair(InputArr::C, l2.m_const_offset),1+base_xmm);
-	  //mulsd the t offset
-	  m.push(0xf2, 0x0f, 0x59);
-	  xmmkWithRegOffset(m,make_pair(InputArr::T, l2.m_rhs_offset),1+base_xmm);
-	  //add it back
-	  if(l.m_negative == l2.m_negative)
-	    //add xmm(1+base_xmm) to xmm(base_xmm)
-	    m.push(0xf2, 0x0f, 0x58, 0xc1+9*base_xmm);
-	  else
-	    //sub xmm(1+base_xmm) from xmm(base_xmm)
-	    m.push(0xf2, 0x0f, 0x5c, 0xc1+9*base_xmm);	
+          const auto& l2 = d.m_lines[idx];
+          //Load next into xmm1
+          m.push(0xf2, 0x0f, 0x10);
+          xmmkWithRegOffset(m,make_pair(InputArr::C, l2.m_const_offset),1+base_xmm);
+          //mulsd the t offset
+          m.push(0xf2, 0x0f, 0x59);
+          xmmkWithRegOffset(m,make_pair(InputArr::T, l2.m_rhs_offset),1+base_xmm);
+          //add it back
+          if(l.m_negative == l2.m_negative)
+            //add xmm(1+base_xmm) to xmm(base_xmm)
+            m.push(0xf2, 0x0f, 0x58, 0xc1+9*base_xmm);
+          else
+            //sub xmm(1+base_xmm) from xmm(base_xmm)
+            m.push(0xf2, 0x0f, 0x5c, 0xc1+9*base_xmm);  
         }
       if(!l.m_negative){
         //addsd
         m.push(0xf2, 0x0f, 0x58);
-	xmmkWithRegOffset(m,make_pair(InputArr::A, l.m_lhs_offset),base_xmm);
-	//Now movsd back
-	m.push(0xf2, 0x0f, 0x11);
-	xmmkWithRegOffset(m,make_pair(InputArr::A, l.m_lhs_offset),base_xmm);
+        xmmkWithRegOffset(m,make_pair(InputArr::A, l.m_lhs_offset),base_xmm);
+        //Now movsd back
+        m.push(0xf2, 0x0f, 0x11);
+        xmmkWithRegOffset(m,make_pair(InputArr::A, l.m_lhs_offset),base_xmm);
       }else{
         //Load the LHS into xmm1
         m.push(0xf2, 0x0f, 0x10);
-	xmmkWithRegOffset(m,make_pair(InputArr::A, l.m_lhs_offset),1+base_xmm);
-	//subsd xmm(base_xmm) from xmm(1+base_xmm)
-	m.push(0xf2, 0x0f, 0x5c, 0xc8+9*base_xmm);
-	//Now movsd back
-	m.push(0xf2, 0x0f, 0x11);
-	xmmkWithRegOffset(m,make_pair(InputArr::A, l.m_lhs_offset),1+base_xmm);
+        xmmkWithRegOffset(m,make_pair(InputArr::A, l.m_lhs_offset),1+base_xmm);
+        //subsd xmm(base_xmm) from xmm(1+base_xmm)
+        m.push(0xf2, 0x0f, 0x5c, 0xc8+9*base_xmm);
+        //Now movsd back
+        m.push(0xf2, 0x0f, 0x11);
+        xmmkWithRegOffset(m,make_pair(InputArr::A, l.m_lhs_offset),1+base_xmm);
       }
       //does it make any difference whether we always use the same pair of registers?
       base_xmm = base_xmm+2;
 #ifdef _WIN32
       if(base_xmm==6) //xmm6 and greater are nonvolatile on windows. For the moment, we just don't touch them.
-	base_xmm = 0;
+        base_xmm = 0;
 #else
       if(base_xmm==8)
-	base_xmm = 0;
+        base_xmm = 0;
 #endif
     }
   }
@@ -308,7 +308,7 @@ struct Maker{
       std::cout<<d.m_constants.size()<<"\n";
       std::cout<<m_singles<<","<<m_bads<<","<<m_nearlies<<"\n";
       for(auto i : m_bads_by_register)
-	std::cout<<":"<<i.first<<":"<<i.second;
+        std::cout<<":"<<i.first<<":"<<i.second;
       std::cout<<"\n"<<m.used() <<" out of "<<m.capacity()<<std::endl;
     }
   }
@@ -333,14 +333,14 @@ struct FunctionRunner{
     //This sorting by rhs_offset helps a lot, even if  rhs_offset is never touched
     if(true)
       std::sort(d.m_lines.begin(), d.m_lines.end(),[](
-						    const FunctionData::LineData& a,
-						    const FunctionData::LineData& b){
-		return a.m_rhs_offset<b.m_rhs_offset
-				      //||(a.m_rhs_offset==b.m_rhs_offset && a.m_lhs_offset>b.m_lhs_offset)
-				      //||(a.m_rhs_offset==b.m_rhs_offset && a.m_const_offset>b.m_const_offset)
-		  ;
-		      
-	      });
+                                                    const FunctionData::LineData& a,
+                                                    const FunctionData::LineData& b){
+                return a.m_rhs_offset<b.m_rhs_offset
+                                      //||(a.m_rhs_offset==b.m_rhs_offset && a.m_lhs_offset>b.m_lhs_offset)
+                                      //||(a.m_rhs_offset==b.m_rhs_offset && a.m_const_offset>b.m_const_offset)
+                  ;
+                      
+              });
     
     //*/
     //perhaps we want to separate the lhs offset as much as possible
@@ -349,17 +349,17 @@ struct FunctionRunner{
     if(true)
     {
       std::stable_sort(d.m_lines.begin(), d.m_lines.end(),[](
-						    const FunctionData::LineData& a,
-						    const FunctionData::LineData& b){
-		return a.m_lhs_offset<b.m_lhs_offset;		      
-	      });
+                                                    const FunctionData::LineData& a,
+                                                    const FunctionData::LineData& b){
+                return a.m_lhs_offset<b.m_lhs_offset;                 
+              });
       /*
       const int gap = 3;
       std::stable_sort(d.m_lines.begin(), d.m_lines.end(),[](
-						    const FunctionData::LineData& a,
-						    const FunctionData::LineData& b){
-		return a.m_lhs_offset%gap < b.m_lhs_offset%gap;		      
-	      });
+                                                    const FunctionData::LineData& a,
+                                                    const FunctionData::LineData& b){
+                return a.m_lhs_offset%gap < b.m_lhs_offset%gap;               
+              });
       */
     }
     if(false)
