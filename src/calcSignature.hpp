@@ -32,7 +32,10 @@ public:
   template<typename Number>
   void sigOfSegment(int d, int m, const Number* segment){
     m_data.resize(m);
-    m_data[0].assign(segment,segment+d);
+    auto& first = m_data[0];
+    first.resize(d);
+    for(int i=0; i<d; ++i)
+      first[i]=(CalcSigNumeric)segment[i];
     for(int level=2; level<=m; ++level){
       const auto& last = m_data[level-2];
       auto& s = m_data[level-1];
@@ -40,7 +43,7 @@ public:
       int i=0;
       for(auto l: last)
         for(auto p=segment; p<segment+d; ++p)
-          s[i++]=*p * l * (1.0/level);
+          s[i++]=(CalcSigNumeric)(*p * l * (1.0/level));
     }
   }
 
@@ -127,8 +130,8 @@ CalculatedSignature concatenateWith_zeroFirstLevel(int d, int m,
 }
 
 void logTensor(CalculatedSignature& s){
-  const int m = s.m_data.size();
-  const int d = s.m_data[0].size();
+  const int m = (int)s.m_data.size();
+  const int d = (int)s.m_data[0].size();
   vector<CalculatedSignature> powers;
   powers.reserve(m);
   powers.push_back(s);
@@ -137,7 +140,7 @@ void logTensor(CalculatedSignature& s){
   }
   bool neg = true;
   for(int power = 2; power<=m; ++power){
-    powers[power-1].multiplyByConstant(neg ? (-1.0/power) : (1.0/power));
+    powers[power-1].multiplyByConstant((CalcSigNumeric)(neg ? (-1.0/power) : (1.0/power)));
     neg = !neg;
   }
   for(int power = 2; power<=m; ++power){

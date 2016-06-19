@@ -4,7 +4,8 @@ import numpy
 version = "0.14"
 
 xtn = Extension('iisignature', ['src/pythonsigs.cpp'], 
-                extra_compile_args=['-std=c++11', '-DVERSION="'+version+'"'], 
+                extra_compile_args=['-std=c++11'],# '-DVERSION="'+version+'"'], 
+				define_macros=[("VERSION",version)],
                 include_dirs=[numpy.get_include()])
 
 def readme():
@@ -43,10 +44,10 @@ setup(name='iisignature',
       author_email='j.f.reizenstein@warwick.ac.uk',
       keywords = ["signature", "logsignature"],
       license='MIT',
-      packages=[],
+      packages=["iisignature_data"],
       test_suite="tests.my_module_suite",
-      #data_files=[(".",["src/bchLyndon20.dat"])],
-      #package_data={"": ["src/bchLyndon20.dat"]},
+      #data_files=[("iisignature_data",["src/bchLyndon20.dat"])],
+      package_data={"iisignature_data": ["bchLyndon20.dat"]},
       zip_safe=False,           
       install_requires=['numpy>1.7'], #For now, this is redundant as we've died above here on an import statement
 )

@@ -10,6 +10,8 @@
 #ifdef _WIN32
 # define WIN32_LEAN_AND_MEAN
 # include <windows.h>
+# undef min
+# undef max
 #else
 # include <sys/mman.h>
 #endif
@@ -25,7 +27,8 @@ public:
   Mem(size_t s):m_size(s){
     //we may want to use space at the beginning for double constants
 #ifdef _WIN32
-    m_p = m_buf = VirtualAllocEx( GetCurrentProcess(), 0, s, MEM_COMMIT, PAGE_EXECUTE_READWRITE );
+    m_p = m_buf =(unsigned char*) VirtualAllocEx( GetCurrentProcess(), 
+                                   0, s, MEM_COMMIT, PAGE_EXECUTE_READWRITE );
 #else
     m_p = m_buf =(unsigned char*) mmap(0,s,PROT_READ|PROT_EXEC|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
 #endif
@@ -190,7 +193,7 @@ struct Maker{
         xmmkWithRegOffset(m,d.m_formingT[i].second);
       //Now movsd back
       m.push(0xf2, 0x0f, 0x11);
-      xmmkWithRegOffset(m,make_pair(InputArr::T, i));
+      xmmkWithRegOffset(m,make_pair(InputArr::T, (int)i));
     }  
   }
 
@@ -205,11 +208,11 @@ struct Maker{
       //first calculate RHS
       //movsd the constant
       m.push(0xf2, 0x0f, 0x10);
-      xmmkWithRegOffset(m,make_pair(InputArr::C, l.m_const_offset),base_xmm);
+      xmmkWithRegOffset(m,make_pair(InputArr::C, (int)l.m_const_offset),base_xmm);
       //xmmkWithRegOffset(m,make_pair(InputArr::T, l.m_rhs_offset),base_xmm);//FAKE
       //mulsd the t offset
       m.push(0xf2, 0x0f, 0x59);
-      xmmkWithRegOffset(m,make_pair(InputArr::T, l.m_rhs_offset),base_xmm);
+      xmmkWithRegOffset(m,make_pair(InputArr::T, (int)l.m_rhs_offset),base_xmm);
       //xmmkWithRegOffset(m,make_pair(InputArr::T, 3),base_xmm);//FAKE
       if(true) //try to amalgamate with subsequent lines before writing to memory.
         while(l.m_lhs_offset==d.m_lines[idx+1].m_lhs_offset){
@@ -217,10 +220,10 @@ struct Maker{
           const auto& l2 = d.m_lines[idx];
           //Load next into xmm1
           m.push(0xf2, 0x0f, 0x10);
-          xmmkWithRegOffset(m,make_pair(InputArr::C, l2.m_const_offset),1+base_xmm);
+          xmmkWithRegOffset(m,make_pair(InputArr::C, (int)l2.m_const_offset),1+base_xmm);
           //mulsd the t offset
           m.push(0xf2, 0x0f, 0x59);
-          xmmkWithRegOffset(m,make_pair(InputArr::T, l2.m_rhs_offset),1+base_xmm);
+          xmmkWithRegOffset(m,make_pair(InputArr::T, (int)l2.m_rhs_offset),1+base_xmm);
           //add it back
           if(l.m_negative == l2.m_negative)
             //add xmm(1+base_xmm) to xmm(base_xmm)
@@ -232,19 +235,19 @@ struct Maker{
       if(!l.m_negative){
         //addsd
         m.push(0xf2, 0x0f, 0x58);
-        xmmkWithRegOffset(m,make_pair(InputArr::A, l.m_lhs_offset),base_xmm);
+        xmmkWithRegOffset(m,make_pair(InputArr::A, (int)l.m_lhs_offset),base_xmm);
         //Now movsd back
         m.push(0xf2, 0x0f, 0x11);
-        xmmkWithRegOffset(m,make_pair(InputArr::A, l.m_lhs_offset),base_xmm);
+        xmmkWithRegOffset(m,make_pair(InputArr::A, (int)l.m_lhs_offset),base_xmm);
       }else{
         //Load the LHS into xmm1
         m.push(0xf2, 0x0f, 0x10);
-        xmmkWithRegOffset(m,make_pair(InputArr::A, l.m_lhs_offset),1+base_xmm);
+        xmmkWithRegOffset(m,make_pair(InputArr::A, (int)l.m_lhs_offset),1+base_xmm);
         //subsd xmm(base_xmm) from xmm(1+base_xmm)
         m.push(0xf2, 0x0f, 0x5c, 0xc8+9*base_xmm);
         //Now movsd back
         m.push(0xf2, 0x0f, 0x11);
-        xmmkWithRegOffset(m,make_pair(InputArr::A, l.m_lhs_offset),1+base_xmm);
+        xmmkWithRegOffset(m,make_pair(InputArr::A, (int)l.m_lhs_offset),1+base_xmm);
       }
       //does it make any difference whether we always use the same pair of registers?
       base_xmm = base_xmm+2;
@@ -264,11 +267,11 @@ struct Maker{
     const auto len = d.m_length_of_b;
     for(size_t i=0; i<len; ++i){
       m.push(0xf2, 0x0f, 0x10);//movsd from b[len-i] to xmm0
-      xmmkWithRegOffset(m,make_pair(InputArr::B, len-1-i));
+      xmmkWithRegOffset(m,make_pair(InputArr::B, (int)(len-1-i)));
       m.push(0xf2, 0x0f, 0x58);//addsd from A[len-i] to xmm0
-      xmmkWithRegOffset(m,make_pair(InputArr::A, len-1-i));
+      xmmkWithRegOffset(m,make_pair(InputArr::A, (int)(len-1-i)));
       m.push(0xf2, 0x0f, 0x11);//movsd to A[len-i]
-      xmmkWithRegOffset(m,make_pair(InputArr::A, len-1-i));
+      xmmkWithRegOffset(m,make_pair(InputArr::A, (int)(len-1-i)));
     }
   }
 

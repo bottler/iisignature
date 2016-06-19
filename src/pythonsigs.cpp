@@ -68,10 +68,12 @@ public:
   ~Deleter(){Py_DECREF(m_p);}
 };
 
+#define STRINGIFY(x) #x
+#define TOSTRING(x) STRINGIFY(x)
 static PyObject *
 version(PyObject *self, PyObject *args){
   //consider returning build time?
-  return PyUnicode_FromString(VERSION);
+  return PyUnicode_FromString(TOSTRING(VERSION));
 }
 
 static PyObject *
@@ -117,8 +119,8 @@ static bool calcSignature(CalculatedSignature& s2, PyObject* data, int level){
   Deleter a_(reinterpret_cast<PyObject*>(a));
   if(PyArray_NDIM(a)!=2) ERRb("data must be 2d");
   if(PyArray_TYPE(a)!=NPY_FLOAT32 && PyArray_TYPE(a)!=NPY_FLOAT64) ERRb("data must be float32 or float64");
-  const int lengthOfPath = PyArray_DIM(a,0);
-  const int d = PyArray_DIM(a,1);
+  const int lengthOfPath = (int)PyArray_DIM(a,0);
+  const int d = (int)PyArray_DIM(a,1);
   if(lengthOfPath<1) ERRb("Path has no length");
   if(d<1) ERRb("Path must have positive dimension");
   CalculatedSignature s1;
@@ -167,8 +169,8 @@ sig(PyObject *self, PyObject *args){
   if(!calcSignature(s,a1,level))
     return NULL;
   
-  long d = s.m_data[0].size();
-  long dims[] = {(long) calcSigTotalLength(d,level)};
+  long d = (long)s.m_data[0].size();
+  npy_intp dims[] = {(npy_intp) calcSigTotalLength(d,level)};
   PyObject* o = PyArray_SimpleNew(1,dims,NPY_FLOAT32);
   s.writeOut(static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o))));
   return o;
@@ -190,12 +192,54 @@ LogSigFunction* getLogSigFunction(PyObject* p){
 static void killLogSigFunction(PyObject* p){
   delete getLogSigFunction(p);
 }
+//returns true on success
+bool getData(){
+  if(g_bchLyndon20_dat) //already set
+    return true;
+  PyObject* get_data = nullptr;
+  //PyObject* pkgutil = PyImport_AddModule("pkgutil"); //flaky, returns borrowed
+  PyObject* pkgutil = PyImport_ImportModule("pkgutil");
+  if(pkgutil){
+    Deleter p_(pkgutil);
+    get_data = PyObject_GetAttrString(pkgutil,"get_data");
+  }
+  if(!get_data){
+    PyObject* pkgutil = PyImport_ImportModule("pkg_resources");
+    if(pkgutil){
+      Deleter p_(pkgutil);
+      get_data = PyObject_GetAttrString(pkgutil,"resource_string");
+    }
+  }
+  if(!get_data)
+    ERRb("neither pkgutil nor pkg_resources is working");
+  Deleter get_data_(get_data);
+  PyObject* ii = PyUnicode_FromString("iisignature_data");
+  Deleter ii_(ii);
+  PyObject* name = PyUnicode_FromString("bchLyndon20.dat");
+  Deleter name_(name);
+  PyObject* o = PyObject_CallFunctionObjArgs(get_data,ii,name,NULL);
+  if(!o)
+    return false;
+#if PY_MAJOR_VERSION <3
+  if(!PyString_CheckExact(o))
+    ERRb("unexpected type from pkgutil.get_data");
+  g_bchLyndon20_dat = PyString_AsString(o);
+#else
+  if(!PyBytes_CheckExact(o))
+    ERRb("unexpected type from pkgutil.get_data");
+  g_bchLyndon20_dat = PyBytes_AsString(o);
+#endif
+  //deliberately leak a reference to o - we'll keep it forever.
+  return true;
+}
 
 static PyObject *
 prepare(PyObject *self, PyObject *args){
   int level=0, dim=0;
   const char* methods = nullptr;
   if (!PyArg_ParseTuple(args, "ii|z", &dim, &level, &methods))
+    return NULL;
+  if(!getData())
     return NULL;
   WantedMethods wantedmethods;
   if(methods)
@@ -301,11 +345,11 @@ logsig(PyObject *self, PyObject *args){
   Deleter a_(reinterpret_cast<PyObject*>(a));
   if(PyArray_NDIM(a)!=2) ERR("data must be 2d");
   if(PyArray_TYPE(a)!=NPY_FLOAT32 && PyArray_TYPE(a)!=NPY_FLOAT64) ERR("data must be float32 or float64");
-  const int lengthOfPath = PyArray_DIM(a,0);
+  const int lengthOfPath = (int)PyArray_DIM(a,0);
   LogSigFunction* lsf = getLogSigFunction(a2);
   if(!lsf)
     return NULL;
-  const int d = PyArray_DIM(a,1);
+  const int d = (int)PyArray_DIM(a,1);
   if(lengthOfPath<1) ERR("Path has no length");
   if(d!=lsf->m_dim) 
     ERR(("Path has dimension "+std::to_string(d)+" but we prepared for dimension "+std::to_string(lsf->m_dim)).c_str());
@@ -346,7 +390,7 @@ logsig(PyObject *self, PyObject *args){
 	  slowExplicitFunction(out.data(), displacement.data(), lsf->m_fd);
       }
     }
-    long dims[] = {(long)out.size()};
+    npy_intp dims[] = {(npy_intp)out.size()};
     PyObject* o = PyArray_SimpleNew(1,dims,NPY_FLOAT32);
     float* dest = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
     for(double d : out)
@@ -358,8 +402,8 @@ logsig(PyObject *self, PyObject *args){
     calcSignature(sig,a1,lsf->m_level);
     logTensor(sig);
     if(wantedmethods.m_expanded){
-      long siglength = (long) calcSigTotalLength(lsf->m_dim,lsf->m_level);
-      long dims[] = {siglength};
+      npy_intp siglength = (npy_intp) calcSigTotalLength(lsf->m_dim,lsf->m_level);
+      npy_intp dims[] = {siglength};
       PyObject* flattenedFullLogSigAsNumpyArray = PyArray_SimpleNew(1,dims,NPY_FLOAT32);
       sig.writeOut(static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(flattenedFullLogSigAsNumpyArray))));
       return flattenedFullLogSigAsNumpyArray;
@@ -373,12 +417,12 @@ logsig(PyObject *self, PyObject *args){
       out[writeOffset++]=f;
     for(int l=2; l<=lsf->m_level; ++l){
       std::vector<float>& matrix = lsf->m_splitExpandedBasis[l-1];
-      const long siglevelLength = lsf->m_sigLevelSizes[l-1];
-      long dims[] = {siglevelLength};
+      const npy_intp siglevelLength = lsf->m_sigLevelSizes[l-1];
+      npy_intp dims[] = {siglevelLength};
       PyObject* sigLevel = PyArray_SimpleNewFromData(1,dims,NPY_FLOAT32,sig.m_data[l-1].data());
       Deleter s_(sigLevel);
       
-      long dims2[] = {(long)(matrix.size()/siglevelLength), siglevelLength};
+      npy_intp dims2[] = {(npy_intp)(matrix.size()/siglevelLength), siglevelLength};
       PyObject* mat = PyArray_SimpleNewFromData(2,dims2,NPY_FLOAT32,matrix.data());
       Deleter m_(mat);
       PyObject* loglevel = ls.lstsq(mat,sigLevel);
@@ -392,12 +436,12 @@ logsig(PyObject *self, PyObject *args){
       Deleter l2_(reinterpret_cast<PyObject*>(loglevelc));
       float* logleveld = static_cast<float*>(PyArray_DATA(loglevelc));
       int j=0;
-      for(int i=PyArray_DIM(loglevelc,0); i>0; --i, ++j){
+      for(int i=(int)PyArray_DIM(loglevelc,0); i>0; --i, ++j){
 	out[writeOffset++]=logleveld[j];
       }
     }
 
-    long dims[] = {(long)out.size()};
+    npy_intp dims[] = {(npy_intp)out.size()};
     PyObject* o = PyArray_SimpleNew(1,dims,NPY_FLOAT32);
     float* dest = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
     for(double d : out)

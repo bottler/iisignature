@@ -127,7 +127,7 @@ void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, s
            throw std::runtime_error("I couldn't find a product to make");
         }
       }
-      outputIdx.push_back(fd.m_formingT.size()-1);
+      outputIdx.push_back((int)fd.m_formingT.size()-1);
     }
   }
 
@@ -141,13 +141,13 @@ void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, s
     Coefficient& c = t.second;
     for(auto& i : c.m_details){
       FunctionData::LineData l;
-      l.m_const_offset = wantedConstants.size();
+      l.m_const_offset = (int)wantedConstants.size();
       double constant = i.second;
       if(constant == 0)
         continue;
       wantedConstants.push_back(std::fabs(constant));
       l.m_negative = constant<0;
-      l.m_lhs_offset = lhs_index;
+      l.m_lhs_offset = (int)lhs_index;
       size_t length = i.first.size();
       if(length<2)
         continue;
@@ -162,30 +162,40 @@ void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, s
   vector<size_t> mapping;
   uniquifyDoubles(wantedConstants,mapping,fd.m_constants,0.00000001);
   for(auto& l : fd.m_lines){
-    l.m_const_offset = mapping[l.m_const_offset];
+    l.m_const_offset = (int) mapping[l.m_const_offset];
   }
 }
 
+class LessLW{
+public:
+  LessLW(LogSigFunction& lsf):m_lsf(&lsf){}
+  bool operator()(const LyndonWord* a, const LyndonWord* b) const{
+    return m_lsf->m_s.lexicographicLess(a,b);
+  }
+  LogSigFunction* m_lsf;
+};
+
 void makeSparseLogSigMatrices(int dim, int level, LogSigFunction& lsf, Interrupt interrupt){
-  auto lessLW = [&](const LyndonWord* a, const LyndonWord* b)
-    {return lsf.m_s.lexicographicLess(a,b);};
   using P = std::pair<size_t,float>;
-  std::vector<std::map<const LyndonWord*,std::vector<P>,decltype(lessLW)> > m;
+  //it would be nice to use a lambda and decltype here, but visual studio
+  //doesn't allow swapping two lambdas of the same type, 
+  //so the vector operations fail.
+  std::vector<std::map<const LyndonWord*,std::vector<P>,LessLW> > m;
   m.reserve(level);
   for(int i=0; i<level; ++i)
-    m.emplace_back(lessLW);
+    m.emplace_back(LessLW(lsf));
   lsf.m_sigLevelSizes.assign(1,(size_t)dim);
   for(int m=2; m<=level; ++m)
     lsf.m_sigLevelSizes.push_back(dim*lsf.m_sigLevelSizes.back());
   for(LyndonWord* w : lsf.m_basisWords){
     if(w->isLetter()){
-      m[0][w]={std::make_pair(w->getLetter(),1)};
+      m[0][w]={std::make_pair(w->getLetter(),1.0f)};
     }else{
       auto len1 = w->getLeft()->length();
       auto len2 = w->getRight()->length();
       auto& left = m[len1-1][w->getLeft()];
       auto& right = m[len2-1][w->getRight()];
-      vector<P> v;
+      std::vector<P> v;
       for (const auto& l : left){
         for (const auto& r: right){
           v.push_back(std::make_pair(lsf.m_sigLevelSizes[len2-1]*l.first+r.first,l.second*r.second));

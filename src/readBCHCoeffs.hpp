@@ -8,10 +8,9 @@
 #include<stdexcept>
 #include<vector>
 
-//#define BCHFILE "bchLyndon20.dat" //set this in setup.py, Manifest.in
-//#define BCHFILE "bchHall20.dat" //set this in setup.py, Manifest.in
+//#include "bchLyndon20.dat.h"
 
-#include "bchLyndon20.dat.h"
+const char* g_bchLyndon20_dat = nullptr;
 
 namespace ReadBCH{
 
@@ -31,7 +30,8 @@ namespace ReadBCH{
     if(!is.is_open())
       throw std::runtime_error("Can't open file " BCHFILE);
     */
-    std::istringstream is(bchLyndon20_dat);
+    //std::istringstream is(bchLyndon20_dat);
+    std::istringstream is(g_bchLyndon20_dat);
     FileData o;
     std::vector<Row>& out = o.m_rows;
     std::vector<int> n_ofEachOrder(20,0);
