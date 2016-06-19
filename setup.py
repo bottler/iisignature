@@ -5,7 +5,7 @@ version = "0.14"
 
 xtn = Extension('iisignature', ['src/pythonsigs.cpp'], 
                 extra_compile_args=['-std=c++11'],# '-DVERSION="'+version+'"'], 
-				define_macros=[("VERSION",version)],
+                define_macros=[("VERSION",version)],
                 include_dirs=[numpy.get_include()])
 
 def readme():

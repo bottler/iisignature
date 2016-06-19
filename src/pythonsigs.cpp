@@ -137,9 +137,9 @@ static bool calcSignature(CalculatedSignature& s2, PyObject* data, int level){
         displacement[j]=data[i*d+j]-data[(i-1)*d+j];
       s1.sigOfSegment(d,level,&displacement[0]);
       if(i==1)
-	s2.swap(s1);
+        s2.swap(s1);
       else
-	s2.concatenateWith(d,level,s1);
+        s2.concatenateWith(d,level,s1);
     }
   }else{
     vector<double> displacement(d);
@@ -149,9 +149,9 @@ static bool calcSignature(CalculatedSignature& s2, PyObject* data, int level){
         displacement[j]=data[i*d+j]-data[(i-1)*d+j];
       s1.sigOfSegment(d,level,&displacement[0]);
       if(i==1)
-	s2.swap(s1);
+        s2.swap(s1);
       else
-	s2.concatenateWith(d,level,s1);
+        s2.concatenateWith(d,level,s1);
     }
   }
   return true;
@@ -364,30 +364,30 @@ logsig(PyObject *self, PyObject *args){
     if(PyArray_TYPE(a)==NPY_FLOAT32){
       float* data = static_cast<float*>(PyArray_DATA(a));
       if(lengthOfPath>0){
-	for(int j=0; j<d; ++j)
-	  out[j]=data[1*d+j]-data[0*d+j];
+        for(int j=0; j<d; ++j)
+          out[j]=data[1*d+j]-data[0*d+j];
       }
       for(int i=2; i<lengthOfPath; ++i){
-	for(int j=0;j<d; ++j)
-	  displacement[j]=data[i*d+j]-data[(i-1)*d+j];
-	if(useCompiled)
-	  f->go(out.data(),displacement.data());
-	else
-	  slowExplicitFunction(out.data(), displacement.data(), lsf->m_fd);
+        for(int j=0;j<d; ++j)
+          displacement[j]=data[i*d+j]-data[(i-1)*d+j];
+        if(useCompiled)
+          f->go(out.data(),displacement.data());
+        else
+          slowExplicitFunction(out.data(), displacement.data(), lsf->m_fd);
       }
     }else{
       double* data = static_cast<double*>(PyArray_DATA(a));
       if(lengthOfPath>0){
-	for(int j=0; j<d; ++j)
-	  out[j]=data[1*d+j]-data[0*d+j];
+        for(int j=0; j<d; ++j)
+          out[j]=data[1*d+j]-data[0*d+j];
       }
       for(int i=2; i<lengthOfPath; ++i){
-	for(int j=0;j<d; ++j)
-	  displacement[j]=data[i*d+j]-data[(i-1)*d+j];
-	if(useCompiled)
-	  f->go(out.data(),displacement.data());
-	else
-	  slowExplicitFunction(out.data(), displacement.data(), lsf->m_fd);
+        for(int j=0;j<d; ++j)
+          displacement[j]=data[i*d+j]-data[(i-1)*d+j];
+        if(useCompiled)
+          f->go(out.data(),displacement.data());
+        else
+          slowExplicitFunction(out.data(), displacement.data(), lsf->m_fd);
       }
     }
     npy_intp dims[] = {(npy_intp)out.size()};
@@ -427,17 +427,17 @@ logsig(PyObject *self, PyObject *args){
       Deleter m_(mat);
       PyObject* loglevel = ls.lstsq(mat,sigLevel);
       if(!loglevel)
-	return nullptr;
+        return nullptr;
       Deleter l_(loglevel);
       auto loglevela = reinterpret_cast<PyArrayObject*>(loglevel);
       if(!PyArray_Check(loglevel) || 1!=PyArray_NDIM(loglevela) || PyArray_TYPE(loglevela)!=NPY_FLOAT32)
-	ERR("internal error?");
+        ERR("internal error?");
       PyArrayObject* loglevelc = PyArray_GETCONTIGUOUS(loglevela);
       Deleter l2_(reinterpret_cast<PyObject*>(loglevelc));
       float* logleveld = static_cast<float*>(PyArray_DATA(loglevelc));
       int j=0;
       for(int i=(int)PyArray_DIM(loglevelc,0); i>0; --i, ++j){
-	out[writeOffset++]=logleveld[j];
+        out[writeOffset++]=logleveld[j];
       }
     }
 
