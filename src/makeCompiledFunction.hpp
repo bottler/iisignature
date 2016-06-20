@@ -137,10 +137,10 @@ struct Maker{
 
   static unsigned char getRegNumber(InputArr array){
 #ifdef _WIN32
-    unsigned char start = array == InputArr::A ? 1 : //RCX
-                          array == InputArr::B ? 2 : //RDX
-                          array == InputArr::T ? 7 : //let's use RDI
-                          6;                         //RSI
+    unsigned char start = array == InputArr::A ? 1 : //RCX/ECX
+                          array == InputArr::B ? 2 : //RDX/EDX
+                          array == InputArr::T ? 7 : //let's use RDI/EDI
+                          6;                         //RSI/ESI
 #else
     unsigned char start = array == InputArr::A ? 7 : //RDI
                           array == InputArr::B ? 6 : //RSI
@@ -275,7 +275,10 @@ struct Maker{
     }
   }
 
-  //pushes at most  d.m_lines.size() * 36 + m_formingT.size() * 24 + m_length_of_b * 24 + 3 bytes, 7 more on windows
+  //pushes at most  d.m_lines.size() * 36 + m_formingT.size() * 24 + m_length_of_b * 24 + 
+  //11 on linux64
+  //18 on Win64
+  //17 on Win32
   void make(Mem& m, const FunctionData& d)
   {
 
@@ -283,18 +286,31 @@ struct Maker{
     //PUSH the value of the nonvolatile register we wanna use for constants to the stack
     m.push(0x50 + getRegNumber(InputArr::C));
     m.push(0x50 + getRegNumber(InputArr::T));
-    //MOV the third argument, T, from R8 where windows sticks it, to our preferred register
+    //MOV the third argument, T, from where windows sticks it, to our preferred register
+#ifdef _M_IX86
+	//0x44 means from SIB + 1byte displacement
+	//SIB of 0x24 means using ESP (not scaled?)
+	//mov the arg which was 4 bytes down when we were called on the stack into said register 
+	//it's now 0xC bytes down.
+	m.push(0x8B,8*getRegNumber(InputArr::T) + 0x44,0x24,0xC);
+#else
     //this saves using a REX byte every time we access it!
     //this REX - 4c - has a bit for 64bit and one to add to the 0 for R8
     m.push(0x4c, 0x89, 0xc0 + getRegNumber(InputArr::T));
 #endif
+#endif
 
     make_form_t(m,d);
     
+#ifdef _M_IX86
+	m.push(0xb8 + getRegNumber(InputArr::C));
+	m.pushLittleEndian((uint32_t)d.m_constants.data());
+#else
     //Load the constants pointer into a register
     //0x48 is a REX to say it's a 64 bit operand
     m.push(0x48, 0xb8 + getRegNumber(InputArr::C));
     m.pushLittleEndian((uint64_t)d.m_constants.data());
+#endif
     
     make_main_multiplies(m,d);
     make_final_adds(m,d);
@@ -304,7 +320,11 @@ struct Maker{
     m.push(0x58 + getRegNumber(InputArr::T));
     m.push(0x58 + getRegNumber(InputArr::C));
 #endif
+#ifdef _M_IX86
+	m.push(0xc2, 0x04, 0x00); //ret while also popping a pointer.
+#else
     m.push(0xc3);//retq
+#endif
     
     if(0){
       std::cout<<d.m_length_of_b<<"\n";
@@ -330,7 +350,7 @@ struct FunctionRunner{
   Mem m_m;
   FunctionRunner(FunctionData& d)
   : m_d(d),
-    m_m(d.m_lines.size()*36+d.m_formingT.size()*24+d.m_length_of_b*24+10)
+    m_m(d.m_lines.size()*36+d.m_formingT.size()*24+d.m_length_of_b*24+18)
   {
     //d.m_lines.size()//126
     //This sorting by rhs_offset helps a lot, even if  rhs_offset is never touched
@@ -379,7 +399,11 @@ struct FunctionRunner{
     maker.make(m_m,m_d);
   }
   void go(double* a, const double* b){
+#ifdef _M_IX86
+    typedef void (__fastcall *my_fn_type)(double*, const double*, double*);
+#else
     typedef void (*my_fn_type)(double*, const double*, double*);
+#endif
     auto f = m_m.getFn<my_fn_type>();
     f(a,b,m_t.data());
   }

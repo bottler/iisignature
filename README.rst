@@ -12,7 +12,7 @@ Install with::
 
     pip install iisignature
 
-For the moment, don't install this package if you don't have numpy > 1.7 installed, or if you can't compile C++ extensions. Log signature calculations (except the slow version) are designed for x86-64 and have only been tested on Linux. They will probably crash on other platforms.
+For the moment, don't install this package if you don't have numpy > 1.7 installed, or if you can't compile C++ extensions. The on-the-fly compiled versions of the log signature calculations are for Windows (32 and 64 bit) and 64 bit linux.
 
 Authors
 -------
