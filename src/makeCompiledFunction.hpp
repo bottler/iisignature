@@ -215,7 +215,7 @@ struct Maker{
       xmmkWithRegOffset(m,make_pair(InputArr::T, (int)l.m_rhs_offset),base_xmm);
       //xmmkWithRegOffset(m,make_pair(InputArr::T, 3),base_xmm);//FAKE
       if(true) //try to amalgamate with subsequent lines before writing to memory.
-        while(l.m_lhs_offset==d.m_lines[idx+1].m_lhs_offset){
+        while(idx+1<d.m_lines.size() && l.m_lhs_offset==d.m_lines[idx+1].m_lhs_offset){
           ++idx;
           const auto& l2 = d.m_lines[idx];
           //Load next into xmm1
