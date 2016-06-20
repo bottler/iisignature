@@ -1,7 +1,7 @@
 from setuptools import setup, Extension
 import numpy
 
-version = "0.14"
+version = "0.15"
 
 xtn = Extension('iisignature', ['src/pythonsigs.cpp'], 
                 extra_compile_args=['-std=c++11'],# '-DVERSION="'+version+'"'], 
