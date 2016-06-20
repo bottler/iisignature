@@ -286,7 +286,7 @@ struct Maker{
     //MOV the third argument, T, from R8 where windows sticks it, to our preferred register
     //this saves using a REX byte every time we access it!
     //this REX - 4c - has a bit for 64bit and one to add to the 0 for R8
-    m.push(0x4c, 0x89, getRegNumber(InputArr::T)); 
+    m.push(0x4c, 0x89, 0xc0 + getRegNumber(InputArr::T));
 #endif
 
     make_form_t(m,d);
