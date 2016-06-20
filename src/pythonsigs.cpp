@@ -241,12 +241,14 @@ prepare(PyObject *self, PyObject *args){
     return NULL;
   if(!getData())
     return NULL;
-  WantedMethods wantedmethods;
-  if(methods)
-    if(setWantedMethods(wantedmethods,methods))
-      ERR(methodError);
   if(dim<2) ERR("dimension must be at least 2");
   if(level<1) ERR("level must be positive");
+  WantedMethods wantedmethods;
+  std::string methodString;
+  if(methods)
+    methodString = methods;
+  if(setWantedMethods(wantedmethods,dim,level,false,methodString))
+    ERR(methodError);
   std::unique_ptr<LogSigFunction> lsf(new LogSigFunction);
   std::string exceptionMessage;
   setup_signals();
@@ -335,10 +337,15 @@ logsig(PyObject *self, PyObject *args){
   const char* methods = nullptr;
   if (!PyArg_ParseTuple(args, "OO|z", &a1, &a2, &methods))
     return NULL;
+  LogSigFunction* lsf = getLogSigFunction(a2);
+  if(!lsf)
+    return NULL;
   WantedMethods wantedmethods;
+  std::string methodString;
   if(methods)
-    if(setWantedMethods(wantedmethods,methods))
-      ERR(methodError);
+    methodString = methods;
+  if(setWantedMethods(wantedmethods,lsf->m_dim,lsf->m_level,true,methodString))
+    ERR(methodError);
   if(!PyArray_Check(a1)) ERR("data must be a numpy array");
   //PyArrayObject* a = reinterpret_cast<PyArrayObject*>(a1);
   PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a1));
@@ -346,9 +353,6 @@ logsig(PyObject *self, PyObject *args){
   if(PyArray_NDIM(a)!=2) ERR("data must be 2d");
   if(PyArray_TYPE(a)!=NPY_FLOAT32 && PyArray_TYPE(a)!=NPY_FLOAT64) ERR("data must be float32 or float64");
   const int lengthOfPath = (int)PyArray_DIM(a,0);
-  LogSigFunction* lsf = getLogSigFunction(a2);
-  if(!lsf)
-    return NULL;
   const int d = (int)PyArray_DIM(a,1);
   if(lengthOfPath<1) ERR("Path has no length");
   if(d!=lsf->m_dim) 
@@ -451,7 +455,8 @@ logsig(PyObject *self, PyObject *args){
   ERR("We had not prepare()d for this request type");
 }
 
-#define METHOD_DESC "some combination of 'd' (the default, compiled bch formula), "\
+#define METHOD_DESC "some combination of 'd' (the default), "\
+  "'c' (the bch formula compiled on the fly), "\
   "'o' (the bch formula evaluated simply and stored in an object without " \
   "on-the-fly compilation and perhaps more slowly), "\
   "and 's' (calculating the log signature by first calculating "\

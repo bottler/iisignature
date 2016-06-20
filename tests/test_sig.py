@@ -97,7 +97,7 @@ class A(unittest.TestCase):
         #numpy.random.seed(21)
         dim=3
         level = 4
-        s = iisignature.prepare(dim,level)
+        s = iisignature.prepare(dim,level,"cosx")
         path = numpy.random.uniform(size=(10,dim))
         basis = iisignature.basis(s)
         logsig = iisignature.logsig(path,s)

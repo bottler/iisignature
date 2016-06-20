@@ -260,18 +260,23 @@ void makeLogSigFunction(int dim, int level, LogSigFunction& lsf, const WantedMet
 }
 
 //interpret a string as a list of wanted methods, return true on error
-bool setWantedMethods(WantedMethods& w, const std::string& input){
+bool setWantedMethods(WantedMethods& w, int dim, int level, bool consumer, const std::string& input){
   const auto npos = std::string::npos;
-  if(npos == input.find_first_not_of(" ")) //nothing to do.
-    return false;
-  w.m_compiled_bch=(input.empty() || npos!=input.find_first_of("dD"));
-  w.m_simple_bch=(npos!=input.find_first_of("oO"));
-  w.m_log_of_signature=(npos!=input.find_first_of("sS"));
+  bool noInput = npos == input.find_first_not_of(" ");
+  bool doDefault= (noInput && !consumer) || npos!=input.find_first_of("dD");
+  bool defaultIsCompiled = (dim==2 && level<10) || (dim>2 && dim<10 && level < 5);
+  bool doEverything = noInput && consumer;
+  bool forceCompiled = (defaultIsCompiled && doDefault) || doEverything;
+  bool forceLog = (!defaultIsCompiled && doDefault) || doEverything;
+
+  w.m_compiled_bch = forceCompiled || npos!=input.find_first_of("cC");
+  w.m_simple_bch=doEverything || (npos!=input.find_first_of("oO"));
+  w.m_log_of_signature = forceLog || (npos!=input.find_first_of("sS"));
   w.m_expanded=(npos!=input.find_first_of("xX"));
-  return npos!=input.find_first_not_of("dDoOsSxX ");
+  return npos!=input.find_first_not_of("cCdDoOsSxX ");
 }
 
-const char* const methodError = "Invalid method string. Should be 'd' (default, compiled), 'o' (simple BCH object, not compiled), 's' (by taking the log of the signature), or 'x' (to report the expanded log signature), or some combination - order ignored, or None.";
+const char* const methodError = "Invalid method string. Should be 'd' (default), 'c' (compiled), 'o' (simple BCH object, not compiled), 's' (by taking the log of the signature), or 'x' (to report the expanded log signature), or some combination - order ignored, or None.";
 
 //rename LogSigFunction to LogSigData
 
