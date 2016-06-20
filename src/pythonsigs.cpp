@@ -451,20 +451,44 @@ logsig(PyObject *self, PyObject *args){
   ERR("We had not prepare()d for this request type");
 }
 
-#define METHOD_DESC "some combination of 'd' (the default, compiled bch formula), 'o' (the bch formula evaluated simply and stored in an object without on-the-fly compilation and perhaps more slowly), and 's' (calculating the log signature by first calculating the signature and then taking its log, which may be faster for high levels or long paths)"
+#define METHOD_DESC "some combination of 'd' (the default, compiled bch formula), "\
+  "'o' (the bch formula evaluated simply and stored in an object without " \
+  "on-the-fly compilation and perhaps more slowly), "\
+  "and 's' (calculating the log signature by first calculating "\
+  "the signature and then taking its log, "\
+  "which may be faster for high levels or long paths)"
 
 static PyMethodDef Methods[] = {
-  {"sig",  sig, METH_VARARGS, "sig(X,m)\n Returns the signature of a path X up to level m. X must be a numpy NxD float32 or float64 array of points making up the path in R^d. The initial 1 in the zeroth level of the signature is excluded."},
-  {"siglength", siglength, METH_VARARGS, "siglength(d,m) \n Returns the length of the signature (excluding the initial 1) of a d dimensional path up to level m"},
-  {"logsiglength", logsiglength, METH_VARARGS, "logsiglength(d,m) \n Returns the length of the log signature of a d dimensional path up to level m"},
-  {"prepare", prepare, METH_VARARGS, "prepare(d, m, methods=None) \n  This prepares the way to calculate log signatures of d dimensional paths up to level m. The returned object is used in the logsig and basis functions. \n By default, all methods whill be prepared, but you can restrict it by setting methods to " METHOD_DESC "."}, 
-  {"basis", basis, METH_VARARGS, "basis(s) \n  Returns a tuple of strings which are the basis elements of the log signature. s must have come from prepare. This function is work in progress, especially for dimension greater than 8. An example of how to parse the output of this function can be seen in the tests."},
-  {"logsig", logsig, METH_VARARGS, "logsig(X, s, methods=None) \n  Calculates the log signature of the path X. X must be a numpy NxD float32 or float64 array of points making up the path in R^d. s must have come from prepare(D,m) for some m. The value is returned as a 1D numpy array of its log signature up to level m. By default, the method used is the default out of those which have been prepared, but you can restrict it by setting methods to " METHOD_DESC "."},
+  {"sig",  sig, METH_VARARGS, "sig(X,m)\n Returns the signature of a path X "
+   "up to level m. X must be a numpy NxD float32 or float64 array of points "
+   "making up the path in R^d. The initial 1 in the zeroth level of the signature is excluded."},
+  {"siglength", siglength, METH_VARARGS, "siglength(d,m) \n "
+   "Returns the length of the signature (excluding the initial 1) of a d dimensional path up to level m"},
+  {"logsiglength", logsiglength, METH_VARARGS, "logsiglength(d,m) \n "
+   "Returns the length of the log signature of a d dimensional path up to level m"},
+  {"prepare", prepare, METH_VARARGS, "prepare(d, m, methods=None) \n "
+   "This prepares the way to calculate log signatures of d dimensional paths"
+   " up to level m. The returned object is used in the logsig and basis functions. \n"
+   " By default, all methods will be prepared, but you can restrict it "
+   "by setting methods to " METHOD_DESC "."}, 
+  {"basis", basis, METH_VARARGS, "basis(s) \n  Returns a tuple of strings "
+   "which are the basis elements of the log signature. s must have come from prepare."
+   " This function is work in progress, especially for dimension greater than 8. "
+   "An example of how to parse the output of this function can be seen in the tests."},
+  {"logsig", logsig, METH_VARARGS, "logsig(X, s, methods=None) \n "
+   "Calculates the log signature of the path X. X must be a numpy NxD float32 "
+   "or float64 array of points making up the path in R^d. s must have come from "
+   "prepare(D,m) for some m. The value is returned as a 1D numpy array of its "
+   "log signature up to level m. By default, the method used is the default out "
+   "of those which have been prepared, "
+   "but you can restrict it by setting methods to " METHOD_DESC "."},
   {"version", version, METH_NOARGS, "return the iisignature version string"},
   {NULL, NULL, 0, NULL}        /* Sentinel */
 };
 
-#define MODULEDOC "iisignature: Iterated integral signature and logsignature calculations\n\nPlease find documentation at http://www2.warwick.ac.uk/jreizenstein and code at https://github.com/bottler/iisignature."
+#define MODULEDOC "iisignature: Iterated integral signature and logsignature calculations"\
+"\n\nPlease find documentation at http://www2.warwick.ac.uk/jreizenstein"\
+" and code at https://github.com/bottler/iisignature."
 
 #if PY_MAJOR_VERSION >= 3
  static struct PyModuleDef moduledef = {
