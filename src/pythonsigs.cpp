@@ -31,7 +31,7 @@ template<> class numpyTypeImpl<NPY_FLOAT64>{public: typedef double Type;};
 template<int i> using numpyNumToType = typename numpyTypeImpl<i>::Type;
 */
 
-#ifndef WIN32
+//INTERRUPTS - the following seems to be fine even on windows
 #include <signal.h>
 volatile bool g_signals_setup=false; 
 volatile bool g_signal_given=false; 
@@ -49,12 +49,7 @@ void setup_signals(){
 }
 bool interrupt_wanted(){return g_signal_given;}
 void interrupt(){if(g_signal_given) throw std::runtime_error("INTERRUPTION");}
-#else
-//I suspect there's no Ctrl-C problem on windows, so we don't need to do anything. Test sometime
-void setup_signals(){}
-bool interrupt_wanted(){return false;}
-void interrupt(){}
-#endif
+//end of Interrupts stuff
 
 #define ERR(X) {PyErr_SetString(PyExc_RuntimeError,X); return nullptr;}
 #define ERRb(X) {PyErr_SetString(PyExc_RuntimeError,X); return false;}
