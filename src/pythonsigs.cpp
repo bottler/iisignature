@@ -113,7 +113,8 @@ static bool calcSignature(CalculatedSignature& s2, PyObject* data, int level){
   PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(data));
   Deleter a_(reinterpret_cast<PyObject*>(a));
   if(PyArray_NDIM(a)!=2) ERRb("data must be 2d");
-  if(PyArray_TYPE(a)!=NPY_FLOAT32 && PyArray_TYPE(a)!=NPY_FLOAT64) ERRb("data must be float32 or float64");
+  if(PyArray_TYPE(a)!=NPY_FLOAT32 && PyArray_TYPE(a)!=NPY_FLOAT64)
+    ERRb("data must be float32 or float64");
   const int lengthOfPath = (int)PyArray_DIM(a,0);
   const int d = (int)PyArray_DIM(a,1);
   if(lengthOfPath<1) ERRb("Path has no length");
@@ -351,12 +352,14 @@ logsig(PyObject *self, PyObject *args){
   const int d = (int)PyArray_DIM(a,1);
   if(lengthOfPath<1) ERR("Path has no length");
   if(d!=lsf->m_dim) 
-    ERR(("Path has dimension "+std::to_string(d)+" but we prepared for dimension "+std::to_string(lsf->m_dim)).c_str());
+    ERR(("Path has dimension "+std::to_string(d)+" but we prepared for dimension "
+         +std::to_string(lsf->m_dim)).c_str());
   size_t logsiglength = lsf->m_basisWords.size();
   vector<double> out(logsiglength);//why double
 
   FunctionRunner* f = lsf->m_f.get();
-  if ((wantedmethods.m_compiled_bch && f!=nullptr) || (wantedmethods.m_simple_bch && !lsf->m_fd.m_formingT.empty())){
+  if ((wantedmethods.m_compiled_bch && f!=nullptr) || 
+      (wantedmethods.m_simple_bch && !lsf->m_fd.m_formingT.empty())){
     vector<double> displacement(d);
     const bool useCompiled = (f!=nullptr && wantedmethods.m_compiled_bch);
 
@@ -404,7 +407,8 @@ logsig(PyObject *self, PyObject *args){
       npy_intp siglength = (npy_intp) calcSigTotalLength(lsf->m_dim,lsf->m_level);
       npy_intp dims[] = {siglength};
       PyObject* flattenedFullLogSigAsNumpyArray = PyArray_SimpleNew(1,dims,NPY_FLOAT32);
-      sig.writeOut(static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(flattenedFullLogSigAsNumpyArray))));
+      auto asArray = reinterpret_cast<PyArrayObject*>(flattenedFullLogSigAsNumpyArray);
+      sig.writeOut(static_cast<float*>(PyArray_DATA(asArray)));
       return flattenedFullLogSigAsNumpyArray;
     }
     
