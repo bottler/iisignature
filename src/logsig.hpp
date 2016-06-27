@@ -11,8 +11,27 @@ struct LogSigFunction{
   std::vector<LyndonWord*> m_basisWords;
   FunctionData m_fd;
   std::unique_ptr<FunctionRunner> m_f;
-  std::vector<std::vector<float>> m_splitExpandedBasis; //a 2D array, (logsiglevellength * siglevellength), for each level
+
+  //Everything after here is used for the linear algebra calculation of sig -> logsig.
   std::vector<size_t> m_sigLevelSizes;
+  std::vector<size_t> m_logLevelSizes;
+
+  //A Simple describes how a certain element of a level of a logsig is just
+  //a constant multiple of a certain element of a level of a sig.
+  struct Simple { size_t m_dest, m_source; float m_factor; };
+
+  //SmallSVD is the data for a small part (block) of the mapping.
+  //m_sources is the indices of the relevant elements of the level of the sig
+  //m_dests is the indices of the relevant elements of the level of the logsig
+  //m_matrix has shape sources*dests when we fill them.
+  //In the python addin, they are replaced with their 
+  //pseudoinverses at the end of prepare(),
+  //so that it ends up with shape dests*sources
+  struct SmallSVD { std::vector<size_t> m_sources, m_dests; 
+                    std::vector<float> m_matrix; };
+  std::vector<std::vector<Simple>> m_simples;
+  std::vector<std::vector<SmallSVD>> m_smallSVDs;
+
 };
 
 InputPos inputPosFromSingle(Input i){
@@ -175,16 +194,31 @@ public:
   LogSigFunction* m_lsf;
 };
 
+//Given v, a sorted vector<pair<A,B> > which contains (a,x) for exactly one x,
+//lookupInFlatMap(v,a) returns x.
+template<typename V, typename A>
+const typename V::value_type::second_type&
+lookupInFlatMap(const V& v, const A& a){
+  auto i = std::lower_bound(v.begin(), v.end(), a, 
+                            [](const typename V::value_type& p, const A& a){
+                              return p.first<a;});
+  return i->second;
+}
+
 void makeSparseLogSigMatrices(int dim, int level, LogSigFunction& lsf, Interrupt interrupt){
   using P = std::pair<size_t,float>;
+  using std::vector;
   //it would be nice to use a lambda and decltype here, but visual studio
   //doesn't allow swapping two lambdas of the same type, 
   //so the vector operations fail.
+  //if x is a lyndon word, then m[len(x)-1][x] is the sparse vector which is its image in tensor
+  //space - what we call rho(x)
   std::vector<std::map<const LyndonWord*,std::vector<P>,LessLW> > m;
   m.reserve(level);
   for(int i=0; i<level; ++i)
     m.emplace_back(LessLW(lsf));
-  lsf.m_sigLevelSizes.assign(1,(size_t)dim);
+  lsf.m_sigLevelSizes.assign(1, (size_t)dim);
+  lsf.m_logLevelSizes.assign(1, (size_t)dim);
   for(int m=2; m<=level; ++m)
     lsf.m_sigLevelSizes.push_back(dim*lsf.m_sigLevelSizes.back());
   for(LyndonWord* w : lsf.m_basisWords){
@@ -210,29 +244,99 @@ void makeSparseLogSigMatrices(int dim, int level, LogSigFunction& lsf, Interrupt
       m[len1+len2-1][w]=std::move(v);
     }
   }
-  
-  lsf.m_splitExpandedBasis.resize(level);
-  for(int lev = 1; lev<=level; ++lev){
-    int withinSplitBasisEltOffset=0;
-    lsf.m_splitExpandedBasis[lev-1].assign(m[lev-1].size() * lsf.m_sigLevelSizes[lev-1],0);
-    for(const auto& p : m[lev-1]){
-      for(const auto& q : p.second){
-        //pinv this in advance?
-        lsf.m_splitExpandedBasis[lev-1][lsf.m_sigLevelSizes[lev-1]*withinSplitBasisEltOffset+q.first]=q.second;
-      }
-      ++withinSplitBasisEltOffset;
+  for (int lev = 2; lev <= level;++lev)
+    lsf.m_logLevelSizes.push_back(m[lev - 1].size());
+  //m has now been created. We next write output based on it.
+  //The idea is that the coefficient of the Lyndon word x in the log signature
+  //is affected by the coefficient of the word y in the signature only if 
+  //x and y are anagrams. So within each level, we group the Lyndon words
+  //by the alphabetical list of their letters.
+  lsf.m_simples.resize(level);
+  lsf.m_smallSVDs.resize(level);
+  for (int lev = 2; lev <= level; ++lev) {
+    interrupt();
+    using PP = std::pair<vector<Letter>, vector< const LyndonWord*>>;
+    vector<PP> letterOrderToLW;
+    letterOrderToLW.reserve(m[lev - 1].size());
+    vector<std::pair<const LyndonWord*, size_t>> lyndonWordToIndex;
+    size_t index = 0;
+    for (auto& a : m[lev - 1]) {
+      const LyndonWord* p = a.first;
+      std::vector<Letter> l;
+      l.reserve(lev);
+      p->iterateOverLetters([&l](Letter x) {l.push_back(x);});
+      std::sort(l.begin(), l.end());
+      letterOrderToLW.push_back(PP{ std::move(l), { p } });
+      lyndonWordToIndex.push_back(std::make_pair(p,index++));
     }
-  }
-    /* code to print matrices as binary zero/one - looks good in terminal
-    for(int lev=1; lev<=level; ++lev){
-      for(size_t i=0, j=0; i<m[lev-1].size(); ++i){
-        for(size_t k=0; k<lsf.m_sigLevelSizes[lev-1];++k, ++j)
-          std::cout<<(std::fabs(lsf.m_splitExpandedBasis[lev-1][j])==0 ? 0 : 1);
-        std::cout<<std::endl;
+    std::sort(letterOrderToLW.begin(), letterOrderToLW.end());
+    std::sort(lyndonWordToIndex.begin(), lyndonWordToIndex.end());
+    auto end = amalgamate_adjacent(letterOrderToLW.begin(), letterOrderToLW.end(),
+      [](PP& a, PP& b) {return a.first == b.first;},
+      [](vector<PP>::iterator a, vector<PP>::iterator b) {
+      auto aa = a;
+      ++aa;
+      std::for_each(aa, b, [a](PP& pp) {
+        a->second.push_back(pp.second[0]);});
+      return true;});
+    letterOrderToLW.erase(end, letterOrderToLW.end());
+
+    for (auto& i : letterOrderToLW) {
+      if (1 == i.second.size()) {
+        LogSigFunction::Simple sim;
+        const LyndonWord* lw = i.second[0];
+        sim.m_dest = lookupInFlatMap(lyndonWordToIndex,lw);
+        //we can take any we want, so just take the zeroth
+        const P& p = m[lev - 1][lw][0];
+        sim.m_factor = 1.0f / p.second;
+        sim.m_source = p.first;
+        lsf.m_simples[lev - 1].push_back(sim);
       }
-      std::cout<<std::endl;
+      else
+      {
+        lsf.m_smallSVDs[lev - 1].push_back(LogSigFunction::SmallSVD{});
+        LogSigFunction::SmallSVD& mtx = lsf.m_smallSVDs[lev-1].back();
+        //sourceMap maps expanded (i.e. pos in level of sig) to contracted (i.e. pos in our block)
+        //map seems to perform better here than a vector<std::pair<size_t,size_t>>
+        std::map<size_t,size_t> sourceMap;
+        for (auto& j : i.second) {
+          mtx.m_dests.push_back(lookupInFlatMap(lyndonWordToIndex,j));
+          for (auto& k : m[lev - 1][j]){
+            sourceMap[k.first]=0;//this element will very often be already present
+          }
+        }
+        size_t index = 0;
+        for (auto& j : sourceMap) {
+          j.second = index++;
+          mtx.m_sources.push_back(j.first);
+        }
+        mtx.m_matrix.assign(mtx.m_dests.size()*mtx.m_sources.size(), 0);
+        for (size_t j = 0; j < i.second.size(); ++j)
+        {
+          for (P& k : m[lev - 1][i.second[j]]) {
+            size_t rowBegin = sourceMap[k.first] * mtx.m_dests.size();
+            mtx.m_matrix[rowBegin+j] = k.second;
+          }
+        }
+      }
+    }
+
+    /*
+    for (auto& i : letterOrderToLW) {
+      std::cout << i.second.size() << ",";
+    }
+    std::cout << std::endl;
+    for (auto& i : letterOrderToLW) {
+      if (i.second.size() > 130) {
+        std::cout << i.second.size() << ",";
+        for (Letter l : i.first) {
+          printLetterAsDigit(l, std::cout);
+        }
+        std::cout << "\n";
+      }
     }
     */
+  }
 }
 
 struct WantedMethods{
@@ -255,7 +359,7 @@ void makeLogSigFunction(int dim, int level, LogSigFunction& lsf, const WantedMet
   else
     lsf.m_f.reset(nullptr);
   interrupt();
-  if(wm.m_log_of_signature || wm.m_expanded)
+  if(wm.m_log_of_signature)
     makeSparseLogSigMatrices(dim,level,lsf,interrupt);
 }
 

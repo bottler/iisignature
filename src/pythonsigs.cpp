@@ -229,6 +229,132 @@ bool getData(){
   return true;
 }
 
+//this class just provides access to the functions lstsq, pinv, and transpose from numpy
+class LeastSquares {
+  PyObject* m_transpose;
+  PyObject* m_lstsq;
+  PyObject* m_pinv;
+  std::unique_ptr<Deleter> m_t_, m_l_, m_p_; //we can do better than this
+public:
+  bool m_ok = false;
+  LeastSquares() {
+    PyObject* numpy = PyImport_AddModule("numpy");
+    if (!numpy)
+      return;
+    PyObject* linalg = PyObject_GetAttrString(numpy, "linalg");
+    if (!linalg)
+      return;
+    Deleter linalg_(linalg);
+    m_transpose = PyObject_GetAttrString(numpy, "transpose");
+    if (!m_transpose)
+      return;
+    m_t_.reset(new Deleter(m_transpose));
+    m_lstsq = PyObject_GetAttrString(linalg, "lstsq");
+    if (!m_lstsq)
+      return;
+    m_l_.reset(new Deleter(m_lstsq));
+    m_pinv = PyObject_GetAttrString(linalg, "pinv");
+    if (!m_pinv)
+      return;
+    m_p_.reset(new Deleter(m_pinv));
+    m_ok = true;
+  }
+  PyObject* lstsqWithTranspose(PyObject *a1, PyObject *a2) const {
+    PyObject* a1t = PyObject_CallFunctionObjArgs(m_transpose, a1, NULL);
+    if (!a1t)
+      return nullptr;
+    Deleter a1t_(a1t);
+    PyObject* o = PyObject_CallFunctionObjArgs(m_lstsq, a1t, a2, NULL);
+    if (!o)
+      return nullptr;
+    //return o;
+    //return PyTuple_Pack(2,o,a1);
+    Deleter o_(o);
+    PyObject* answer = PyTuple_GetItem(o, 0);
+    Py_INCREF(answer);
+    return answer;
+  }
+  PyObject* lstsqNoTranspose(PyObject *a1, PyObject *a2) const {
+    PyObject* o = PyObject_CallFunctionObjArgs(m_lstsq, a1, a2, NULL);
+    if (!o)
+      return nullptr;
+    //return o;
+    //return PyTuple_Pack(2,o,a1);
+    Deleter o_(o);
+    PyObject* answer = PyTuple_GetItem(o, 0);
+    Py_INCREF(answer);
+    return answer;
+  }
+  //this replaces the r x c matrix matrix by its Moore-Penrose pseudoinverse, 
+  //which is a c x r matrix 
+  //returns true on success
+  bool inplacePinvMatrix(float* matrix, size_t r, size_t c) const {
+    vector<float> input(matrix, matrix + r*c);
+    npy_intp dims2[] = { (npy_intp)(r), (npy_intp)c };
+    PyObject* mat = PyArray_SimpleNewFromData(2, dims2, NPY_FLOAT32, input.data());
+    Deleter m_(mat);
+    PyObject* o = PyObject_CallFunctionObjArgs(m_pinv, mat, NULL);
+    if (!o)
+      return false;
+    Deleter o_(o);
+    PyArrayObject* oa = reinterpret_cast<PyArrayObject*>(o);
+    bool ok = PyArray_Check(o) && PyArray_TYPE(oa) == NPY_FLOAT32
+      && PyArray_NDIM(oa) == 2 
+      && PyArray_DIM(oa, 0) == ((npy_intp)c) && PyArray_DIM(oa, 1) == ((npy_intp)r);
+    if (!ok)
+      ERRb("bad output from pinv");
+    PyArrayObject* outc = PyArray_GETCONTIGUOUS(oa);
+    Deleter l2_(reinterpret_cast<PyObject*>(outc));
+    float* ptr = static_cast<float*>(PyArray_DATA(outc));
+    for (size_t i = 0; i < r*c; ++i)
+      matrix[i] = ptr[i];
+    return true;
+  }
+};
+
+//This function takes a dim1xdim2 matrix and an rhs and calls resultAction on a pointer
+//to the results of lstsq on it
+//returns true on success
+/*
+template<typename T>
+bool callLeastSquares(LeastSquares& ls, float* matrix, size_t dim1, size_t dim2, float* rhs,
+  bool transpose, T&& resultAction) {
+  const size_t rhs_length = (transpose ? dim2 : dim1);
+  //const size_t out_length = (transpose ? dim1 : dim2);
+  npy_intp dims[] = { (npy_intp)rhs_length };
+  PyObject* rhs_ = PyArray_SimpleNewFromData(1, dims, NPY_FLOAT32, rhs);
+  Deleter r_(rhs_);
+
+  npy_intp dims2[] = { (npy_intp)(dim1), (npy_intp)dim2 };
+  PyObject* mat = PyArray_SimpleNewFromData(2, dims2, NPY_FLOAT32, matrix);
+  Deleter m_(mat);
+  PyObject* out = transpose ? ls.lstsqWithTranspose(mat, rhs_) : ls.lstsqNoTranspose(mat, rhs_);
+  if (!out)
+    return false;
+  Deleter o_(out);
+  auto outa = reinterpret_cast<PyArrayObject*>(out);
+  PyArrayObject* outc = PyArray_GETCONTIGUOUS(outa);
+  Deleter l2_(reinterpret_cast<PyObject*>(outc));
+  float* ptr = static_cast<float*>(PyArray_DATA(outc));
+  if (false) {
+    for (size_t row = 0;row < dim1;row++) {
+      for (size_t col = 0; col < dim2; ++col)
+        std::cout << matrix[row*dim2 + col] << ",";
+      std::cout << "\n";
+    }
+    std::cout << (transpose ? "transpose times\n" : "times\n");
+    for (size_t row = 0; row < out_length;++row)
+      std::cout << ptr[row] << "\n";
+    std::cout << "is\n";
+    for (size_t row = 0; row<rhs_length;++row)
+      std::cout <<rhs[row] << "\n";
+    std::cout << std::endl;
+  }
+  resultAction(ptr);
+  return true;
+}
+*/
+
 static PyObject *
 prepare(PyObject *self, PyObject *args){
   int level=0, dim=0;
@@ -259,6 +385,18 @@ prepare(PyObject *self, PyObject *args){
     return NULL;
   if(!exceptionMessage.empty())
     ERR(exceptionMessage.c_str());
+
+  LeastSquares ls;
+  if (!ls.m_ok)
+    return nullptr;
+  for (auto& i : lsf->m_smallSVDs)
+    for (auto& j : i){
+      bool ok = ls.inplacePinvMatrix(j.m_matrix.data(),
+                                     j.m_sources.size(), j.m_dests.size());
+      if(!ok)
+        return nullptr;
+    }
+
 #ifdef NO_CAPSULES
   PyObject * out = PyCObject_FromVoidPtr(lsf.release(), killLogSigFunction);
 #else
@@ -284,48 +422,6 @@ static PyObject* basis(PyObject *self, PyObject *args){
   }
   return o;
 }
-
-//this class just provides access to the function numpy.linalg.lstsq
-class LeastSquares{
-  PyObject* m_transpose;
-  PyObject* m_lstsq;
-  std::unique_ptr<Deleter> m_t_, m_l_; //we can do better than this
-public:
-  bool m_ok = false;
-  LeastSquares(){
-    PyObject* numpy = PyImport_AddModule("numpy");
-    if(!numpy)
-      return;
-    PyObject* linalg = PyObject_GetAttrString(numpy,"linalg");
-    if(!linalg)
-      return;
-    Deleter linalg_(linalg);
-    m_transpose = PyObject_GetAttrString(numpy,"transpose");
-    if(!m_transpose)
-      return;
-    m_t_.reset(new Deleter(m_transpose));
-    m_lstsq = PyObject_GetAttrString(linalg,"lstsq");
-    if(!m_lstsq)
-      return;
-    m_l_.reset(new Deleter(m_lstsq));
-    m_ok = true;
-  }
-  PyObject* lstsq(PyObject *a1, PyObject *a2) const {
-    PyObject* a1t = PyObject_CallFunctionObjArgs(m_transpose,a1,NULL);
-    if(!a1t)
-      return nullptr;
-    Deleter a1t_(a1t);
-    PyObject* o = PyObject_CallFunctionObjArgs(m_lstsq,a1t,a2,NULL); 
-    if(!o)
-      return nullptr;
-    //return o;
-    //return PyTuple_Pack(2,o,a1);
-    Deleter o_(o);
-    PyObject* answer = PyTuple_GetItem(o,0);
-    Py_INCREF(answer);
-    return answer;
-  }
-};
 
 static PyObject *
 logsig(PyObject *self, PyObject *args){
@@ -399,7 +495,9 @@ logsig(PyObject *self, PyObject *args){
       *dest++ = (float) d;
     return o;
   }
-  if((wantedmethods.m_log_of_signature || wantedmethods.m_expanded) && !lsf->m_splitExpandedBasis.empty() ){
+  bool canTakeLogOfSig = lsf->m_level < 2 || !lsf->m_simples.empty();
+  if(wantedmethods.m_expanded || 
+     (wantedmethods.m_log_of_signature && canTakeLogOfSig)){
     CalculatedSignature sig;
     calcSignature(sig,a1,lsf->m_level);
     logTensor(sig);
@@ -413,35 +511,27 @@ logsig(PyObject *self, PyObject *args){
     }
     
     size_t writeOffset = 0;
-    LeastSquares ls;
-    if(!ls.m_ok)
-      return nullptr;
+    vector<float> rhs;
     for(float f : sig.m_data[0])
       out[writeOffset++]=f;
-    for(int l=2; l<=lsf->m_level; ++l){
-      std::vector<float>& matrix = lsf->m_splitExpandedBasis[l-1];
-      const npy_intp siglevelLength = lsf->m_sigLevelSizes[l-1];
-      npy_intp dims[] = {siglevelLength};
-      PyObject* sigLevel = PyArray_SimpleNewFromData(1,dims,NPY_FLOAT32,sig.m_data[l-1].data());
-      Deleter s_(sigLevel);
-      
-      npy_intp dims2[] = {(npy_intp)(matrix.size()/siglevelLength), siglevelLength};
-      PyObject* mat = PyArray_SimpleNewFromData(2,dims2,NPY_FLOAT32,matrix.data());
-      Deleter m_(mat);
-      PyObject* loglevel = ls.lstsq(mat,sigLevel);
-      if(!loglevel)
-        return nullptr;
-      Deleter l_(loglevel);
-      auto loglevela = reinterpret_cast<PyArrayObject*>(loglevel);
-      if(!PyArray_Check(loglevel) || 1!=PyArray_NDIM(loglevela) || PyArray_TYPE(loglevela)!=NPY_FLOAT32)
-        ERR("internal error?");
-      PyArrayObject* loglevelc = PyArray_GETCONTIGUOUS(loglevela);
-      Deleter l2_(reinterpret_cast<PyObject*>(loglevelc));
-      float* logleveld = static_cast<float*>(PyArray_DATA(loglevelc));
-      int j=0;
-      for(int i=(int)PyArray_DIM(loglevelc,0); i>0; --i, ++j){
-        out[writeOffset++]=logleveld[j];
+    for (int l = 2; l <= lsf->m_level; ++l) {
+      const size_t loglevelLength = lsf->m_logLevelSizes[l - 1];
+      for (const auto& i : lsf->m_simples[l - 1]) {
+        out[writeOffset + i.m_dest] = sig.m_data[l - 1][i.m_source] * i.m_factor;
       }
+      for (auto& i : lsf->m_smallSVDs[l-1]) {
+        size_t nSources = i.m_sources.size();
+        rhs.resize(nSources);
+        for (size_t j = 0; j < nSources;++j)
+          rhs[j] = sig.m_data[l - 1][i.m_sources[j]];
+        for (size_t j = 0; j < i.m_dests.size();++j) {
+          double val = 0;
+          for (size_t k = 0; k < nSources; ++k)
+            val += i.m_matrix[nSources*j + k] * rhs[k];
+          out[writeOffset + i.m_dests[j]] = val;
+        }
+      }
+      writeOffset += loglevelLength;
     }
 
     npy_intp dims[] = {(npy_intp)out.size()};
