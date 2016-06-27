@@ -1,7 +1,7 @@
 #ifndef READ_BCH_COEFFS_H
 #define READ_BCH_COEFFS_H
 
-#include<fstream>
+//#include<fstream>
 #include<sstream>
 #include<iostream>
 #include<numeric>
@@ -31,6 +31,8 @@ namespace ReadBCH{
       throw std::runtime_error("Can't open file " BCHFILE);
     */
     //std::istringstream is(bchLyndon20_dat);
+    if (!g_bchLyndon20_dat)
+      throw std::logic_error("g_bchLyndon20_dat not set");
     std::istringstream is(g_bchLyndon20_dat);
     FileData o;
     std::vector<Row>& out = o.m_rows;

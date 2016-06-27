@@ -2,11 +2,13 @@ from setuptools import setup, Extension
 import numpy
 
 version = "0.15"
+headers = ["bch","calcSignature","logsig","logSigLength","makeCompiledFunction","readBCHCoeffs"]
 
 xtn = Extension('iisignature', ['src/pythonsigs.cpp'], 
                 extra_compile_args=['-std=c++11'],# '-DVERSION="'+version+'"'], 
                 define_macros=[("VERSION",version)],
-                include_dirs=[numpy.get_include()])
+                include_dirs=[numpy.get_include()],
+                depends=["src/"+i+".hpp" for i in headers])
 
 def readme():
     with open('README.rst') as f:
