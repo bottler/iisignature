@@ -78,21 +78,27 @@ void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, s
   auto wordList = makeListOfLyndonWords(s,dim,level);
   std::unique_ptr<Polynomial> lhs(new Polynomial);
   std::unique_ptr<Polynomial> rhs(new Polynomial);
-  if(!justWords)
+  if(!justWords){
+    rhs->m_data.resize(1);
     for(int i=0; i<dim; ++i)
-      rhs->m_data.push_back(std::make_pair(wordList[i],basicCoeff(-i-1))); //just the letters in order
-  std::sort(wordList.begin(),wordList.end(),[&s](LyndonWord* a, LyndonWord* b){
+      rhs->m_data[0].push_back(std::make_pair(wordList[0][i],basicCoeff(-i-1))); //just the letters in order
+  }
+  for(auto& l : wordList)
+    std::sort(l.begin(),l.end(),[&s](LyndonWord* a, LyndonWord* b){
       return s.lexicographicLess(a,b);});
-  std::stable_sort(wordList.begin(),wordList.end(),[](LyndonWord* a, LyndonWord* b){return a->length()<b->length();});
-
-  if(!justWords)
-    for(int i=0; i<(int)wordList.size(); ++i){
-      lhs->m_data.push_back(std::make_pair(wordList[i],basicCoeff( i+1)));
+  if(!justWords){
+    lhs->m_data.resize(level);
+    for(int l=1,i=1; l<=level; ++l)
+      for(auto w : wordList[l-1]){
+        lhs->m_data[l-1].push_back(std::make_pair(w,basicCoeff(i++)));
     }
-  wordList.swap(basisWords);
+  }
+  for(auto& l : wordList)
+    for(auto& k : l)
+      basisWords.push_back(k);
+  
   if(justWords)
     return;
-  std::sort(lhs->m_data.begin(),lhs->m_data.end(),TermLess(s));
   //std::cout<<"bchbefore"<<std::endl;
   //For bch, poly must be lexicographic. For our purposes in this function, we want lexicographic within levels
   auto poly = bch(s,std::move(lhs),std::move(rhs),level, interrupt);
@@ -108,10 +114,11 @@ void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, s
   m_neededProduct_indices.resize(level);
   //printPolynomial(poly,std::cout);
   //m_neededProducts[i-1] is all the products of i terms which we need.
-  for(auto& i : poly.m_data)
-    for(auto & v : i.second.m_details){
-      m_neededProducts.at(v.first.size()-1).push_back(&v.first);
-    }
+  for(auto& l : poly.m_data)
+    for(auto& i : l)
+      for(auto & v : i.second.m_details){
+        m_neededProducts.at(v.first.size()-1).push_back(&v.first);
+      }
   for(auto& v : m_neededProducts){
     std::sort(v.begin(), v.end(), [](const InProduct* a, const InProduct* b){return *a<*b;});
     v.erase(std::unique(v.begin(),v.end(),[](const InProduct* a, const InProduct* b){return *a==*b;}),v.end());
@@ -132,7 +139,8 @@ void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, s
         for(size_t k=0; k<j->size(); ++k){
           temp = *j;
           temp.erase(temp.begin()+k);
-          auto it = std::lower_bound(prev.begin(),prev.end(),temp,[](const InProduct* a, const InProduct& b){return *a<b;});
+          auto it = std::lower_bound(prev.begin(),prev.end(),temp,
+                                     [](const InProduct* a, const InProduct& b){return *a<b;});
           if(it!=prev.end() && **it == temp){
             found=true;
             fd.m_formingT.push_back(std::make_pair(inputPosFromSingle((*j)[k]),
@@ -151,32 +159,32 @@ void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, s
   }
 
   interrupt();
-  std::stable_sort(poly.m_data.begin(), poly.m_data.end(), 
-                   [](const Term& a, const Term& b){return a.first->length()<b.first->length();});
   vector<double> wantedConstants;//sorted
   size_t lhs_index=0;
-  for(Term& t : poly.m_data){
-    //first do the whole thing assuming no uniquification of constants
-    Coefficient& c = t.second;
-    for(auto& i : c.m_details){
-      FunctionData::LineData l;
-      l.m_const_offset = (int)wantedConstants.size();
-      double constant = i.second;
-      if(constant == 0)
-        continue;
-      wantedConstants.push_back(std::fabs(constant));
-      l.m_negative = constant<0;
-      l.m_lhs_offset = (int)lhs_index;
-      size_t length = i.first.size();
-      if(length<2)
-        continue;
-      const auto& v = m_neededProducts[length-1];
-      auto it = std::lower_bound(v.begin(),v.end(),i.first,[](const InProduct* a, const InProduct& b){return *a<b;});
-      l.m_rhs_offset = m_neededProduct_indices[length-1][it-v.begin()];
-      fd.m_lines.push_back(l);
+  for(auto& tt : poly.m_data)
+    for(Term& t : tt){
+      //first do the whole thing assuming no uniquification of constants
+      Coefficient& c = t.second;
+      for(auto& i : c.m_details){
+        FunctionData::LineData l;
+        l.m_const_offset = (int)wantedConstants.size();
+        double constant = i.second;
+        if(constant == 0)
+          continue;
+        wantedConstants.push_back(std::fabs(constant));
+        l.m_negative = constant<0;
+        l.m_lhs_offset = (int)lhs_index;
+        size_t length = i.first.size();
+        if(length<2)
+          continue;
+        const auto& v = m_neededProducts[length-1];
+        auto it = std::lower_bound(v.begin(),v.end(),i.first,
+                          [](const InProduct* a, const InProduct& b){return *a<b;});
+        l.m_rhs_offset = m_neededProduct_indices[length-1][it-v.begin()];
+        fd.m_lines.push_back(l);
+      }
+      ++lhs_index;
     }
-    ++lhs_index;
-  }
 
   vector<size_t> mapping;
   uniquifyDoubles(wantedConstants,mapping,fd.m_constants,0.00000001);

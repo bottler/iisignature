@@ -4,6 +4,7 @@
 #include<functional>
 #include<iostream>
 #include<iterator>
+#include<map>
 #include<memory>
 #include<utility>
 #include<vector>
@@ -113,11 +114,15 @@ class LyndonWord{
   bool isEqual(const LyndonWord& o) const {
     if(this==&o)
       return true;
+#ifdef CACHE
+  return false;
+#else
     if(isLetter() != o.isLetter())
       return false;
     if(isLetter())
       return getLetter()==o.getLetter();
     return getLeft()->isEqual(*o.getLeft()) && getRight()->isEqual(*o.getRight());
+#endif
   }
  private:
   const LyndonWord* m_left; //nullptr if we are a letter
@@ -210,6 +215,10 @@ class WordPool{
   }
   std::vector<std::vector<void*>> m_space;
   std::vector<const LyndonWord*> m_spaceForIterator1, m_spaceForIterator2;
+#ifdef CACHE
+  std::map<std::pair<const LyndonWord*,const LyndonWord*>,LyndonWord*> m_products;
+  std::vector<std::pair<const LyndonWord*, size_t> > m_orderLookup;
+#endif
  public:
   static const int eachLength = 2000;
   static const int objectSize = (sizeof(LyndonWord)+sizeof(void*)-1)/sizeof(void*);
@@ -220,16 +229,72 @@ class WordPool{
     return new(getSpace()) LyndonWord(l);
   }
   LyndonWord* newLyndonWord(const LyndonWord& left, const LyndonWord& right){
+#ifdef CACHE
+    auto p = std::make_pair(&left,&right);
+    LyndonWord*& o = m_products[p];
+    if(!o)
+      o=new(getSpace()) LyndonWord(left,right);
+    return o;
+#else
     return new(getSpace()) LyndonWord(left,right);
+#endif
   }
-  bool lexicographicLess(const LyndonWord* l, const LyndonWord* r){
+#ifdef CACHE
+  LyndonWord* concatenateIfAllowed(const LyndonWord& left, const LyndonWord& right){
+    auto p = std::make_pair(&left,&right);
+    auto i = m_products.find(p);
+    if(i==m_products.end())
+      return nullptr;
+    return i->second;
+  }
+  void doneAdding(){
+    using std::make_pair;
+    m_orderLookup.clear();
+    std::map<const LyndonWord*,size_t> all;
+    for(auto& i : m_products){
+      all.insert(make_pair(i.second,0u));
+      if(i.first.first->isLetter())
+        all.insert(make_pair(i.first.first,0u));
+      if(i.first.second->isLetter())
+        all.insert(make_pair(i.first.second,0u));
+    }
+    std::vector<const LyndonWord*> all2;
+    for(auto& i : all)
+      all2.push_back(i.first);
+    std::sort(all2.begin(), all2.end(), [this](const LyndonWord* l, const LyndonWord* r){
+        return lexicographicLess(l,r);});
+    for(size_t i=0; i<all2.size(); ++i){
+      const LyndonWord* l = all2[i];
+      all[l] = i;
+    }
+    for(auto& i : all)
+      m_orderLookup.push_back(i);
+  } 
+  size_t getProxy(const LyndonWord* w){
+    auto lookerUpper = [](const std::pair<const LyndonWord*, size_t>& a, const LyndonWord* b){
+      return a.first<b;
+    };
+    auto a = std::lower_bound(m_orderLookup.begin(), m_orderLookup.end(), w, lookerUpper);
+    if (a==m_orderLookup.end() || a->first != w)
+      throw std::runtime_error("??");
+    return a->second;
+  }
+#endif
+  bool /*__attribute__ ((noinline))*/ manualLexicographicLess(const LyndonWord* l, const LyndonWord* r){
     LyndonWordIterator lit(l,m_spaceForIterator1), rit(r,m_spaceForIterator2), end;
     //  return std::lexicographical_compare(std::ref(lit),std::ref(end),std::ref(rit),std::ref(end));
     return std::lexicographical_compare(lit,end,rit,end);
   }
+  bool lexicographicLess(const LyndonWord* l, const LyndonWord* r){
+#ifdef CACHE
+    if(!m_orderLookup.empty())
+      return getProxy(l)<getProxy(r);
+#endif
+    return manualLexicographicLess(l,r);
+  }
 };
 
-std::vector<LyndonWord*> makeListOfLyndonWords(WordPool& s, int d,int m){
+std::vector<std::vector<LyndonWord*>> makeListOfLyndonWords(WordPool& s, int d,int m){
   std::vector<std::vector<LyndonWord*>> words(m);
   words[0].resize(d);
   for(Letter i=0; i<d; ++i){
@@ -245,12 +310,10 @@ std::vector<LyndonWord*> makeListOfLyndonWords(WordPool& s, int d,int m){
             words[level-1].push_back(s.newLyndonWord(*left,*right));
     }
   }
-  //return words;
-  std::vector<LyndonWord*> out;
-  for(const auto& v : words){
-    out.insert(out.end(),v.begin(),v.end());
-  }
-  return out;
+#ifdef CACHE
+  s.doneAdding();
+#endif
+  return words;
 }
 
 class Input{
@@ -277,6 +340,7 @@ Coefficient productCoefficients (const Coefficient& a, const Coefficient& b){
   for(const auto& x : a.m_details)
     for(const auto& y : b.m_details){
       out.push_back({});
+      out.back().first.reserve(x.first.size()+y.first.size());
       std::merge(x.first.begin(),x.first.end(),
                  y.first.begin(),y.first.end(),
                  std::back_inserter(out.back().first));
@@ -320,18 +384,21 @@ void sumCoefficients(Coefficient& lhs, Coefficient& rhs){//make the lhs be lhs+r
 
 class Polynomial{
 public:
-  std::vector<std::pair<const LyndonWord*,Coefficient>> m_data; //kept lexicographic
+  //kept lexicographic within each level
+  std::vector<std::vector<std::pair<const LyndonWord*,Coefficient>>> m_data;
 };
 
 std::ostream& printPolynomial(Polynomial& poly, std::ostream& o){
-  for(auto &m : poly.m_data){
-    printLyndonWordDigits(*m.first,o);
-    o<<" ";
-    for(const auto& c : m.second.m_details){
-      for(const auto& i : c.first){
-        o<<"["<<i.m_index<<"]";
+  for(auto &l : poly.m_data){
+    for(auto& m : l){
+      printLyndonWordDigits(*m.first,o);
+      o<<" ";
+      for(const auto& c : m.second.m_details){
+        for(const auto& i : c.first){
+          o<<"["<<i.m_index<<"]";
+        }
+        o<<c.second<<"\n";
       }
-      o<<c.second<<"\n";
     }
   }
   return o;
@@ -339,10 +406,13 @@ std::ostream& printPolynomial(Polynomial& poly, std::ostream& o){
 
 std::unique_ptr<Polynomial> polynomialOfWord(const LyndonWord* w){
     auto a = std::unique_ptr<Polynomial>(new Polynomial);
-    a->m_data.resize(1);
-    a->m_data[0].first = w;
-    a->m_data[0].second.m_details.resize(1);
-    a->m_data[0].second.m_details[0].second=1;
+    auto len = w->length();   
+    a->m_data.resize(len);
+    auto& dest = a->m_data.back();
+    dest.resize(1);
+    dest[0].first = w;
+    dest[0].second.m_details.resize(1);
+    dest[0].second.m_details[0].second=1;
     return a;
 }
 
@@ -351,21 +421,28 @@ using Term = std::pair<const LyndonWord*,Coefficient>;
 struct TermLess{
   WordPool& m_s;
   TermLess(WordPool& s):m_s(s){}
+  //mutable int count = 0;
   bool operator() (const Term& a, const Term& b) const {
+  //  ++count;
     return m_s.lexicographicLess(a.first, b.first);
   }
 };
 
-void sumPolynomials(WordPool& s, Polynomial& lhs, Polynomial& rhs){//make the lhs be lhs+rhs, rhs is preserved
-  auto& a = lhs.m_data;
-  auto& b = rhs.m_data;
-
+void sumPolynomialLevels(WordPool& s, std::vector<std::pair<const LyndonWord*,Coefficient>>& lhs,
+    std::vector<std::pair<const LyndonWord*,Coefficient>>& rhs){
+  auto comp = TermLess(s);
+  auto& a = lhs;
+  auto& b = rhs;
   size_t ss = a.size();
   //if b has enough capacity, maybe we should detect and swap them here. similar in sumCoefficients.
   //or reserve double?
   a.reserve(a.size()+b.size());
+  /*
+  if(b.capacity()>=a.capacity())
+    std::cout<<a.capacity()<<" "<<b.capacity()<<" "<<a.size()<<" "<<b.size()<<std::endl;
+  */
   std::move(b.begin(),b.end(),std::back_inserter(a));
-  std::inplace_merge(a.begin(),a.begin()+ss,a.end(),TermLess(s));
+  std::inplace_merge(a.begin(),a.begin()+ss,a.end(),std::ref(comp));
   a.erase(amalgamate_adjacent_pairs(a.begin(), a.end(),
                                     [](const Term& a, const Term& b){
                                       return a.first->isEqual(*b.first);},
@@ -374,10 +451,18 @@ void sumPolynomials(WordPool& s, Polynomial& lhs, Polynomial& rhs){//make the lh
                                       return !a.second.m_details.empty();})
           ,a.end());
 }
+    
+//make the lhs be lhs+rhs, rhs can be pilfered
+void sumPolynomials(WordPool& s, Polynomial& lhs, Polynomial& rhs){
+  if(lhs.m_data.size()<rhs.m_data.size())
+    lhs.m_data.resize(rhs.m_data.size());
+  for(size_t l=0; l<rhs.m_data.size(); ++l)
+    sumPolynomialLevels(s,lhs.m_data[l],rhs.m_data[l]);
+}
 
 std::unique_ptr<Polynomial> 
 productLyndonWords(WordPool& s, const LyndonWord& a, const LyndonWord& b, 
-                   int maxLength, bool check=true);
+                   int maxLength, bool check);
 
 //returns 0 or a new Polynomial, taking ownership
 //std::unique_ptr<Polynomial> productPolynomials(WordPool& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Polynomial> y, int maxLength){
@@ -387,18 +472,28 @@ productPolynomials(WordPool& s, const Polynomial* x, const Polynomial* y, int ma
     return nullptr;
   }
   auto out = std::unique_ptr<Polynomial>(new Polynomial);
-  for (auto& keyx : x->m_data)
-    if(keyx.first->length()<maxLength)
-      for(auto& keyy : y->m_data)
-        if(keyy.first->length()<maxLength){
-          auto t = productLyndonWords(s,*keyx.first,*keyy.first,maxLength);
+  size_t xsize = x->m_data.size(), ysize = y->m_data.size();
+  size_t newSize = std::min((size_t)maxLength,xsize+ysize);
+  out->m_data.resize(newSize);
+  for(size_t xlevel = 1; xlevel<=xsize; ++xlevel){
+    for(size_t ylevel = 1; ylevel<=ysize; ++ylevel){
+      size_t targetlevel = xlevel+ylevel;
+      if(targetlevel>newSize)
+        break;
+      for (auto& keyx : x->m_data[xlevel-1]){
+        for(auto& keyy : y->m_data[ylevel-1]){
+          auto t = productLyndonWords(s,*keyx.first,*keyy.first,maxLength, true);
           if(t){
             auto scalar = productCoefficients(keyx.second, keyy.second);
-            for(auto& key : t->m_data)
+            auto& tt = t->m_data[targetlevel-1];
+            for(auto& key : tt)
               key.second = productCoefficients(key.second, scalar);
-            sumPolynomials(s,*out,*t);
+            sumPolynomialLevels(s,out->m_data[targetlevel-1],tt);
           }
         }
+      }
+    }
+  }
   return out;
 }
 //returns 0 or a new Polynomial
@@ -413,21 +508,28 @@ productLyndonWords(WordPool& s, const LyndonWord& a, const LyndonWord& b, int ma
     if(s.lexicographicLess(&b,&a)){
       auto x = productLyndonWords(s,b,a,maxLength,false);
       if(x){
-        for(auto& i : x->m_data)
-          for(auto& j : i.second.m_details)
-            j.second *= -1;
+        for(auto& l : x->m_data)
+          for(auto&i : l)
+            for(auto& j : i.second.m_details)
+              j.second *= -1;
       }
       return x;
     }
   }
+#ifdef CACHE
+  auto candidate = s.concatenateIfAllowed(a,b);
+  if(candidate)
+    return polynomialOfWord(candidate);
+#else
   auto candidate = s.newLyndonWord(a,b);//don't know yet if this is a LW, we might be able to save creating this,
   if(s.lexicographicLess(candidate,&b) && (a.isLetter() || !s.lexicographicLess(a.getRight(),&b))){
     return polynomialOfWord(candidate);
   }
+#endif
   auto a1 = productPolynomials(s,polynomialOfWord(a.getRight()).get(), 
-                               productLyndonWords(s,b,*a.getLeft(),maxLength ).get(),maxLength);
+                               productLyndonWords(s,b,*a.getLeft(),maxLength,true).get(),maxLength);
   auto a2 = productPolynomials(s,polynomialOfWord(a.getLeft()).get() ,
-                               productLyndonWords(s,*a.getRight(),b,maxLength).get(),maxLength);
+                               productLyndonWords(s,*a.getRight(),b,maxLength,true).get(),maxLength);
   if(!a1)
     return a2;
   if(a2)
@@ -438,9 +540,11 @@ productLyndonWords(WordPool& s, const LyndonWord& a, const LyndonWord& b, int ma
 void printListOfLyndonWords(int d, int m){
   WordPool s;
   auto list = makeListOfLyndonWords(s,d,m);
-  for (const LyndonWord* l : list){
-    printLyndonWordBracketsDigits(*l, std::cout);
-    std::cout<<"\n";
+  for(const auto& level : list){
+    for (const LyndonWord* l : level){
+      printLyndonWordBracketsDigits(*l, std::cout);
+      std::cout<<"\n";
+    }
   }
 }
 
@@ -492,9 +596,10 @@ Polynomial bch(WordPool& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Polyn
   for(int i=2; i<bchTable.m_totalLengths[m-1];++i){
     const auto& row = bchTable.m_rows[i];
     auto& p = arr[i];
-    for(auto& m : p->m_data)
-      for(auto& c : m.second.m_details)
-        c.second *= row.m_coeff; //when m_coeff is zero, we're keeping this in
+    for(auto& l : p->m_data)
+      for (auto&m : l)
+        for(auto& c : m.second.m_details)
+          c.second *= row.m_coeff; //when m_coeff is zero, we're keeping this in
     sumPolynomials(s,out,*p);
     interrupt();
   }
@@ -504,17 +609,26 @@ Polynomial bch(WordPool& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Polyn
 void calcFla(int d, int m, Interrupt interrupt){
   WordPool s;
   auto wordList = makeListOfLyndonWords(s,d,m);
-  std::sort(wordList.begin(),wordList.end(),[&s](LyndonWord* a, LyndonWord* b){
+  for(auto& l : wordList)
+    std::sort(l.begin(),l.end(),[&s](LyndonWord* a, LyndonWord* b){
       return s.lexicographicLess(a,b);});
   std::unique_ptr<Polynomial> lhs(new Polynomial);
   std::unique_ptr<Polynomial> rhs(new Polynomial);
-  for(int i=0; i<(int)wordList.size(); ++i){
-    lhs->m_data.push_back(std::make_pair(wordList[i],basicCoeff( i+1)));
-    rhs->m_data.push_back(std::make_pair(wordList[i],basicCoeff(-i-1)));
+  lhs->m_data.resize(wordList.size());
+  rhs->m_data.resize(wordList.size());
+  for(int i=0, ii=0; i<(int)wordList.size(); ++i){
+    for(size_t j=0; j<wordList[i].size(); ++j,++ii){
+      lhs->m_data[i].push_back(std::make_pair(wordList[i][j],basicCoeff( ii+1)));
+      rhs->m_data[i].push_back(std::make_pair(wordList[i][j],basicCoeff(-ii-1)));
+    }
   }
-  std::cout<<"bchbefore"<<std::endl;
+  
+  //printPolynomial(*lhs,std::cout);
+  //printPolynomial(*rhs,std::cout);
+  //std::cout<<"bchbefore"<<std::endl;
   auto poly = bch(s,std::move(lhs),std::move(rhs),m, interrupt);
-  std::cout<<"bchdone"<<std::endl;
-  printPolynomial(poly,std::cout);
+  //std::cout<<"bchdone"<<std::endl;
+  //printPolynomial(poly,std::cout);
 }
+
 #endif
