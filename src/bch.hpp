@@ -114,15 +114,7 @@ class LyndonWord{
   bool isEqual(const LyndonWord& o) const {
     if(this==&o)
       return true;
-#ifdef CACHE
-  return false;
-#else
-    if(isLetter() != o.isLetter())
-      return false;
-    if(isLetter())
-      return getLetter()==o.getLetter();
-    return getLeft()->isEqual(*o.getLeft()) && getRight()->isEqual(*o.getRight());
-#endif
+    return false;
   }
  private:
   const LyndonWord* m_left; //nullptr if we are a letter
@@ -215,10 +207,8 @@ class WordPool{
   }
   std::vector<std::vector<void*>> m_space;
   std::vector<const LyndonWord*> m_spaceForIterator1, m_spaceForIterator2;
-#ifdef CACHE
   std::map<std::pair<const LyndonWord*,const LyndonWord*>,LyndonWord*> m_products;
   std::vector<std::pair<const LyndonWord*, size_t> > m_orderLookup;
-#endif
  public:
   static const int eachLength = 2000;
   static const int objectSize = (sizeof(LyndonWord)+sizeof(void*)-1)/sizeof(void*);
@@ -229,17 +219,12 @@ class WordPool{
     return new(getSpace()) LyndonWord(l);
   }
   LyndonWord* newLyndonWord(const LyndonWord& left, const LyndonWord& right){
-#ifdef CACHE
     auto p = std::make_pair(&left,&right);
     LyndonWord*& o = m_products[p];
     if(!o)
       o=new(getSpace()) LyndonWord(left,right);
     return o;
-#else
-    return new(getSpace()) LyndonWord(left,right);
-#endif
   }
-#ifdef CACHE
   LyndonWord* concatenateIfAllowed(const LyndonWord& left, const LyndonWord& right){
     auto p = std::make_pair(&left,&right);
     auto i = m_products.find(p);
@@ -279,17 +264,14 @@ class WordPool{
       throw std::runtime_error("??");
     return a->second;
   }
-#endif
   bool /*__attribute__ ((noinline))*/ manualLexicographicLess(const LyndonWord* l, const LyndonWord* r){
     LyndonWordIterator lit(l,m_spaceForIterator1), rit(r,m_spaceForIterator2), end;
     //  return std::lexicographical_compare(std::ref(lit),std::ref(end),std::ref(rit),std::ref(end));
     return std::lexicographical_compare(lit,end,rit,end);
   }
   bool lexicographicLess(const LyndonWord* l, const LyndonWord* r){
-#ifdef CACHE
     if(!m_orderLookup.empty())
       return getProxy(l)<getProxy(r);
-#endif
     return manualLexicographicLess(l,r);
   }
 };
@@ -310,9 +292,7 @@ std::vector<std::vector<LyndonWord*>> makeListOfLyndonWords(WordPool& s, int d,i
             words[level-1].push_back(s.newLyndonWord(*left,*right));
     }
   }
-#ifdef CACHE
   s.doneAdding();
-#endif
   return words;
 }
 
@@ -516,16 +496,9 @@ productLyndonWords(WordPool& s, const LyndonWord& a, const LyndonWord& b, int ma
       return x;
     }
   }
-#ifdef CACHE
   auto candidate = s.concatenateIfAllowed(a,b);
   if(candidate)
     return polynomialOfWord(candidate);
-#else
-  auto candidate = s.newLyndonWord(a,b);//don't know yet if this is a LW, we might be able to save creating this,
-  if(s.lexicographicLess(candidate,&b) && (a.isLetter() || !s.lexicographicLess(a.getRight(),&b))){
-    return polynomialOfWord(candidate);
-  }
-#endif
   auto a1 = productPolynomials(s,polynomialOfWord(a.getRight()).get(), 
                                productLyndonWords(s,b,*a.getLeft(),maxLength,true).get(),maxLength);
   auto a2 = productPolynomials(s,polynomialOfWord(a.getLeft()).get() ,
