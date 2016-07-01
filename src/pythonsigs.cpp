@@ -109,7 +109,6 @@ logsiglength(PyObject *self, PyObject *args){
 //makes s2 be the signature of the path in data
 static bool calcSignature(CalculatedSignature& s2, PyObject* data, int level){
   if(!PyArray_Check(data)) ERRb("data must be a numpy array");
-  //PyArrayObject* a = reinterpret_cast<PyArrayObject*>(a1);
   PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(data));
   Deleter a_(reinterpret_cast<PyObject*>(a));
   if(PyArray_NDIM(a)!=2) ERRb("data must be 2d");
@@ -169,6 +168,49 @@ sig(PyObject *self, PyObject *args){
   npy_intp dims[] = {(npy_intp) calcSigTotalLength(d,level)};
   PyObject* o = PyArray_SimpleNew(1,dims,NPY_FLOAT32);
   s.writeOut(static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o))));
+  return o;
+}
+
+static PyObject *
+sigJacobian(PyObject *self, PyObject *args){
+  PyObject* a1;
+  int level=0;
+  if (!PyArg_ParseTuple(args, "Oi", &a1, &level))
+    return NULL;
+  if(level<1) ERR("level must be positive");
+  if(!PyArray_Check(a1)) ERR("data must be a numpy array");
+  PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a1));
+  Deleter a_(reinterpret_cast<PyObject*>(a));
+  if(PyArray_NDIM(a)!=2) ERR("data must be 2d");
+  if(PyArray_TYPE(a)!=NPY_FLOAT32 && PyArray_TYPE(a)!=NPY_FLOAT64)
+    ERR("data must be float32 or float64");
+  const int lengthOfPath = (int)PyArray_DIM(a,0);
+  const int d = (int)PyArray_DIM(a,1);
+  if(lengthOfPath<1) ERR("Path has no length");
+  if(d<1) ERR("Path must have positive dimension");
+  size_t sigLength = calcSigTotalLength(d,level);
+  std::vector<TotalDerivativeSignature::Number> input;
+  TotalDerivativeSignature::Number* inp;
+  if(PyArray_TYPE(a)==NPY_FLOAT64)
+    inp = static_cast<double*>(PyArray_DATA(a));
+  else{
+    try{
+      input.resize(lengthOfPath*d);
+      auto source = static_cast<float*>(PyArray_DATA(a));
+      for(size_t i=0; i<input.size(); ++i)
+        input[i]=source[i];
+      inp = input.data();
+    }catch(std::exception&){
+      ERR("Out of memory");
+    }
+  }
+
+  npy_intp dims[] = {(npy_intp) lengthOfPath, (npy_intp) d, (npy_intp)sigLength};
+  PyObject* o = PyArray_SimpleNew(3,dims,NPY_FLOAT32);
+  if(!o)
+    return nullptr;
+  float* out = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
+  TotalDerivativeSignature::sigJacobian(inp,lengthOfPath,d,level,out);  
   return o;
 }
 
@@ -556,6 +598,10 @@ static PyMethodDef Methods[] = {
   {"sig",  sig, METH_VARARGS, "sig(X,m)\n Returns the signature of a path X "
    "up to level m. X must be a numpy NxD float32 or float64 array of points "
    "making up the path in R^d. The initial 1 in the zeroth level of the signature is excluded."},
+  {"sigjacobian",  sigJacobian, METH_VARARGS, "sigjacobian(X,m)\n "
+   "Returns the full Jacobian matrix of "
+   "derivatives of sig(X,m) with respect to X. "
+   "If X is an NxD array then the output is an NxDx(siglength(D,m)) array."},
   {"siglength", siglength, METH_VARARGS, "siglength(d,m) \n "
    "Returns the length of the signature (excluding the initial 1) of a d dimensional path up to level m"},
   {"logsiglength", logsiglength, METH_VARARGS, "logsiglength(d,m) \n "

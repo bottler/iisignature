@@ -144,5 +144,38 @@ class A(unittest.TestCase):
         sigLogSig = iisignature.logsig(path,s,"s")
         diffs = numpy.max(numpy.abs(sigLogSig-calculatedLogSig))
         self.assertLess(diffs,0.00001)
-            
+
+#test that sigjacobian is compatible with sig
+class Deriv(unittest.TestCase):
+    def testa(self):
+        numpy.random.seed(291)
+        d = 3
+        m = 5
+        pathLength = 10
+        path = numpy.random.uniform(size=(pathLength,d))
+        path = numpy.cumsum(2*(path-0.5),0)#makes it more random-walk-ish, less like a scribble
+        increment = 0.01*numpy.random.uniform(size=(pathLength,d))
+        base_sig = iisignature.sig(path,m)
+
+        bumped_sig = iisignature.sig(path+increment,m)
+        target = bumped_sig - base_sig
+        
+        gradient = iisignature.sigjacobian(path,m)
+        calculated = numpy.tensordot(increment,gradient)
+
+        diffs = numpy.max(numpy.abs(calculated-target))
+        niceOnes=numpy.abs(calculated)>1.e-4
+        ratioDiffs = numpy.max(numpy.abs(calculated[niceOnes]/target[niceOnes]-1))
+
+        #numpy.set_printoptions(suppress=True, linewidth=150)
+        #print ("")
+        #print (path)
+        #print (numpy.vstack([range(len(base_sig)),base_sig,calculated,target,calculated/target-1]).transpose())
+        #print (diffs, ratioDiffs, numpy.argmax(numpy.abs(calculated[niceOnes]/target[niceOnes]-1)))
+
+        #These assertions are pretty weak, the small answers are a bit volatile
+        self.assertLess(diffs,0.0001)
+        self.assertLess(ratioDiffs,0.2)
+
+        
 
