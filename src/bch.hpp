@@ -82,6 +82,43 @@ I amalgamate_adjacent_pairs(I a, I b, F1&& tojoin, F2&& amalgamater){
   return dest;
 }
 
+//3 input version of std::merge - no care about order of equivalent elements, 
+//it makes sense not to compare with first1 all the time because it will tend to be the shortest.
+//This implemention does repeat comparisons unnecessarily - but they are quick in our case.
+template<class InputIt1, class InputIt2, class InputIt3, class OutputIt>
+OutputIt merge3(InputIt1 first1, InputIt1 last1,
+                InputIt2 first2, InputIt2 last2,
+                InputIt3 first3, InputIt3 last3,
+                OutputIt d_first)
+{
+  for (; first1 != last1; ++d_first) {
+    if (first2 == last2) {
+      return std::merge(first1, last1, first3, last3, d_first);
+    }
+    if (first3 == last3) {
+      return std::merge(first1, last1, first2, last2, d_first);
+    }
+    if (*first2 < *first3) {
+      if(*first2 < *first1){
+        *d_first = *first2;
+        ++first2;
+      } else {
+        *d_first = *first1;
+        ++first1;
+      }
+    } else {
+      if(*first1<*first3){
+        *d_first = *first1;
+        ++first1;
+      } else {
+        *d_first = *first3;
+        ++first3;
+      }
+    }
+  }
+  return std::merge(first2, last2, first3, last3, d_first);
+}
+
 //need transform version
 
 const int maxDim = 255; //so I can use unsigned char for letter
@@ -312,34 +349,71 @@ public:
   std::vector<std::pair<std::vector<Input>,double>> m_details;
 };
 
-//we could have an in-place version too
 Coefficient productCoefficients (const Coefficient& a, const Coefficient& b){
   Coefficient o;
   auto& out = o.m_details;
   out.reserve(a.m_details.size()*b.m_details.size());
-  for(const auto& x : a.m_details)
-    for(const auto& y : b.m_details){
+  for(size_t ix = 0; ix<a.m_details.size(); ++ix){
+    const auto& x = a.m_details[ix];
+    for(size_t iy = 0; iy<b.m_details.size(); ++iy){
+      const auto& y = b.m_details[iy];
       out.push_back({});
-      out.back().first.reserve(x.first.size()+y.first.size());
+      out.back().first.resize(x.first.size()+y.first.size());
       std::merge(x.first.begin(),x.first.end(),
                  y.first.begin(),y.first.end(),
-                 std::back_inserter(out.back().first));
-      out.back().second = x.second * y.second;
+                 out.back().first.begin());
+        out.back().second = x.second * y.second;
     }
+  }
   std::sort(out.begin(), out.end());
   using A = std::pair<std::vector<Input>,double>;
   using I = std::vector<A>::iterator;
-  out.erase(amalgamate_adjacent(out.begin(),out.end(),
+  auto i = amalgamate_adjacent(out.begin(),out.end(),
                                 [](const A& a, const A& b){return a.first==b.first;},
                                 [](I a, I b){
                                   double total = 0;
                                   std::for_each(a,b,[&](const A& a){total += a.second;});
                                   a->second = total;
-                                  return std::fabs(total)>0.00000001;})
-            ,out.end());
+                                  return std::fabs(total)>0.00000001;});
+  out.erase(i,out.end());
   //Todo: we could have a member Coefficient::m_size which was the important bit of m_details, and not erase vectors whose memory 
   //we might want to reuse later. Same with Polynomial
   return o;
+}
+
+//a *= b * c
+void productCoefficients3 (Coefficient& a, const Coefficient& b, const Coefficient& c){
+  Coefficient o;
+  auto& out = o.m_details;
+  out.reserve(a.m_details.size()*b.m_details.size()*c.m_details.size());
+  for(size_t ix = 0; ix<a.m_details.size(); ++ix){
+    const auto& x = a.m_details[ix];
+    for(size_t iy = 0; iy<b.m_details.size(); ++iy){
+      const auto& y = b.m_details[iy];
+      for(size_t iz = 0; iz<c.m_details.size(); ++iz){
+        const auto& z = c.m_details[iz];
+        out.push_back({});
+        out.back().first.resize(x.first.size()+y.first.size()+z.first.size());
+        merge3(x.first.begin(),x.first.end(),
+               y.first.begin(),y.first.end(),
+               z.first.begin(),z.first.end(),
+               out.back().first.begin());
+        out.back().second = x.second * y.second * z.second;
+      }
+    }
+  }
+  std::sort(out.begin(), out.end());
+  using A = std::pair<std::vector<Input>,double>;
+  using I = std::vector<A>::iterator;
+  auto i = amalgamate_adjacent(out.begin(),out.end(),
+                                [](const A& a, const A& b){return a.first==b.first;},
+                                [](I a, I b){
+                                  double total = 0;
+                                  std::for_each(a,b,[&](const A& a){total += a.second;});
+                                  a->second = total;
+                                  return std::fabs(total)>0.00000001;});
+  out.erase(i,out.end());
+  out.swap(a.m_details);
 }
 
 void sumCoefficients(Coefficient& lhs, Coefficient& rhs){//make the lhs be lhs+rhs, no care about rhs
@@ -464,10 +538,9 @@ productPolynomials(WordPool& s, const Polynomial* x, const Polynomial* y, int ma
         for(auto& keyy : y->m_data[ylevel-1]){
           auto t = productLyndonWords(s,*keyx.first,*keyy.first,maxLength, true);
           if(t){
-            auto scalar = productCoefficients(keyx.second, keyy.second);
             auto& tt = t->m_data[targetlevel-1];
-            for(auto& key : tt)
-              key.second = productCoefficients(key.second, scalar);
+            for(auto& key : tt)//this loop usually happens not many times I think 
+              productCoefficients3(key.second, keyx.second, keyy.second);
             sumPolynomialLevels(s,out->m_data[targetlevel-1],tt);
           }
         }
