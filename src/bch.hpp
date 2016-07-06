@@ -201,6 +201,20 @@ class LyndonWordIterator : public std::iterator<std::forward_iterator_tag, Lette
   std::vector<const LyndonWord*>* m_vec;
 };
 
+//Useful for debugging
+bool isLyndonWord(const LyndonWord* a, const std::string& ss){
+  std::vector<const LyndonWord*> foo;
+  LyndonWordIterator x(a, foo);
+  LyndonWordIterator end;
+  auto y=ss.begin();
+  while(x!=end && y!=ss.end()){
+    if('1'+(*x)!=*y)
+      return false;
+    ++x; ++y;
+  }
+  return x==end  && y==ss.end();  
+}
+
 void printLetterAsDigit(Letter l, std::ostream& o){
   if(l>8)
     o<<'?';
@@ -348,6 +362,16 @@ public:
   //the vector<Input> is sorted
   std::vector<std::pair<std::vector<Input>,double>> m_details;
 };
+
+void printCoefficient(const Coefficient& d, std::ostream& o){
+  for(size_t ic = 0; ic<d.m_details.size(); ++ic){
+    const auto& c = d.m_details[ic];
+    for(const auto& i : c.first){
+      o<<"["<<i.m_index<<"]";
+    }
+    o<<c.second<<"\n";
+  }
+}
 
 Coefficient productCoefficients (const Coefficient& a, const Coefficient& b){
   Coefficient o;
