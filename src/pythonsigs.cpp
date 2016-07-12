@@ -14,6 +14,8 @@
 #include "logSigLength.hpp"
 #include "logsig.hpp"
 
+using std::vector;
+
 #if PY_MAJOR_VERSION <3 && PY_MINOR_VERSION<7
   #define NO_CAPSULES
 #endif
@@ -107,6 +109,7 @@ logsiglength(PyObject *self, PyObject *args){
 
 //returns true on success
 //makes s2 be the signature of the path in data
+using CalcSignature::CalculatedSignature;
 static bool calcSignature(CalculatedSignature& s2, PyObject* data, int level){
   if(!PyArray_Check(data)) ERRb("data must be a numpy array");
   PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(data));
@@ -189,7 +192,7 @@ sigJacobian(PyObject *self, PyObject *args){
   if(lengthOfPath<1) ERR("Path has no length");
   if(d<1) ERR("Path must have positive dimension");
   size_t sigLength = calcSigTotalLength(d,level);
-  std::vector<TotalDerivativeSignature::Number> input;
+  vector<TotalDerivativeSignature::Number> input;
   TotalDerivativeSignature::Number* inp;
   if(PyArray_TYPE(a)==NPY_FLOAT64)
     inp = static_cast<double*>(PyArray_DATA(a));
