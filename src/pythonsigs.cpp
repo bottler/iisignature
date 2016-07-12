@@ -175,6 +175,74 @@ sig(PyObject *self, PyObject *args){
 }
 
 static PyObject *
+sigBackwards(PyObject *self, PyObject *args){
+  PyObject* a1;
+  PyObject* a2;
+  int level=0;
+  if (!PyArg_ParseTuple(args, "OiO", &a1, &level, &a2))
+    return NULL;
+  if(level<1) ERR("level must be positive");
+  if(!PyArray_Check(a1)) ERR("path must be a numpy array");
+  if(!PyArray_Check(a2)) ERR("derivs must be a numpy array");
+  PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a1));
+  Deleter a_(reinterpret_cast<PyObject*>(a));
+  if(PyArray_NDIM(a)!=2) ERR("path must be 2d");
+  if(PyArray_TYPE(a)!=NPY_FLOAT32 && PyArray_TYPE(a)!=NPY_FLOAT64)
+    ERR("path must be float32 or float64");
+  const int lengthOfPath = (int)PyArray_DIM(a,0);
+  const int d = (int)PyArray_DIM(a,1);
+  if(lengthOfPath<1) ERR("Path has no length");
+  if(d<1) ERR("Path must have positive dimension");
+  size_t sigLength = calcSigTotalLength(d,level);
+  PyArrayObject* b = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a2));
+  Deleter b_(reinterpret_cast<PyObject*>(b));
+  if(PyArray_NDIM(b)!=1) ERR("derivs must be 1d");
+  if(PyArray_TYPE(b)!=NPY_FLOAT32 && PyArray_TYPE(b)!=NPY_FLOAT64)
+    ERR("derivs must be float32 or float64");
+  if(sigLength!=(size_t)PyArray_DIM(b,0))
+    ERR(("derivs should have length "+std::to_string(sigLength)+
+         " but it has length "+std::to_string(PyArray_DIM(b,0))).c_str());
+  
+  vector<BackwardDerivativeSignature::Number> input, derivs;
+  BackwardDerivativeSignature::Number *inp, *der;
+  if(PyArray_TYPE(a)==NPY_FLOAT64)
+    inp = static_cast<double*>(PyArray_DATA(a));
+  else{
+    try{
+      input.resize(lengthOfPath*d);
+      auto source = static_cast<float*>(PyArray_DATA(a));
+      for(size_t i=0; i<input.size(); ++i)
+        input[i]=source[i];
+      inp = input.data();
+    }catch(std::exception&){
+      ERR("Out of memory");
+    }
+  }
+  if(PyArray_TYPE(b)==NPY_FLOAT64)
+    der = static_cast<double*>(PyArray_DATA(b));
+  else{
+    try{
+      derivs.resize(sigLength);
+      auto source = static_cast<float*>(PyArray_DATA(b));
+      for(size_t i=0; i<sigLength; ++i)
+        derivs[i]=source[i];
+      der = derivs.data();
+    }catch(std::exception&){
+      ERR("Out of memory");
+    }
+  }
+  npy_intp dims[] = {(npy_intp) lengthOfPath, (npy_intp) d};
+  PyObject* o = PyArray_SimpleNew(2,dims,NPY_FLOAT32);
+  if(!o)
+    return nullptr;
+  float* out = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
+  for(int i=0; i<lengthOfPath*d; ++i)
+    out[i]=0.0f;
+  BackwardDerivativeSignature::sigBackwards(d,level,lengthOfPath,inp,der,out);  
+  return o;
+}
+
+static PyObject *
 sigJacobian(PyObject *self, PyObject *args){
   PyObject* a1;
   int level=0;
@@ -605,6 +673,11 @@ static PyMethodDef Methods[] = {
    "Returns the full Jacobian matrix of "
    "derivatives of sig(X,m) with respect to X. "
    "If X is an NxD array then the output is an NxDx(siglength(D,m)) array."},
+  {"sigbackprop",  sigBackwards, METH_VARARGS, "sigbackprop(X,m,s)\n "
+   "If s is the derivative of something with respect to sig(X,m), "
+   "then this returns the derivative of that thing with respect to X. "
+   "sigBackpropDeriv(X,m,s) should be approximately numpy.dot(sigjacobian(X,m),s)"},
+   //"If X is an NxD array then out s must be a (siglength(D,m),) array."},
   {"siglength", siglength, METH_VARARGS, "siglength(d,m) \n "
    "Returns the length of the signature (excluding the initial 1) of a d dimensional path up to level m"},
   {"logsiglength", logsiglength, METH_VARARGS, "logsiglength(d,m) \n "

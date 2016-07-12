@@ -145,7 +145,7 @@ class A(unittest.TestCase):
         diffs = numpy.max(numpy.abs(sigLogSig-calculatedLogSig))
         self.assertLess(diffs,0.00001)
 
-#test that sigjacobian is compatible with sig
+#test that sigjacobian and sigbackprop compatible with sig
 class Deriv(unittest.TestCase):
     def testa(self):
         numpy.random.seed(291)
@@ -165,17 +165,29 @@ class Deriv(unittest.TestCase):
 
         diffs = numpy.max(numpy.abs(calculated-target))
         niceOnes=numpy.abs(calculated)>1.e-4
+        niceOnes2=numpy.abs(calculated)<numpy.abs(base_sig)
+        diffs1 = numpy.max(numpy.abs((calculated[niceOnes2]-target[niceOnes2])/base_sig[niceOnes2]))
+        diffs2 = numpy.max(numpy.abs(calculated[1-niceOnes2]-target[1-niceOnes2]))
         ratioDiffs = numpy.max(numpy.abs(calculated[niceOnes]/target[niceOnes]-1))
 
         #numpy.set_printoptions(suppress=True, linewidth=150)
         #print ("")
         #print (path)
-        #print (numpy.vstack([range(len(base_sig)),base_sig,calculated,target,calculated/target-1]).transpose())
-        #print (diffs, ratioDiffs, numpy.argmax(numpy.abs(calculated[niceOnes]/target[niceOnes]-1)))
+        #print (numpy.vstack([range(len(base_sig)),base_sig,calculated,target,(calculated-target)/base_sig,calculated/target-1]).transpose())
+        #print (diffs, diffs1, diffs2, ratioDiffs, numpy.argmax(numpy.abs(calculated[niceOnes]/target[niceOnes]-1)),numpy.argmax(numpy.abs((calculated-target)/base_sig)))
 
         #These assertions are pretty weak, the small answers are a bit volatile
         self.assertLess(diffs,0.0001)
         self.assertLess(ratioDiffs,0.2)
+        self.assertLess(diffs1,0.05) 
+        self.assertLess(diffs2,0.00001) 
+
+        #compatibility between sigbackprop and sigjacobian is strong
+        dFdSig = numpy.random.uniform(size=(iisignature.siglength(d,m),))
+        backProp = iisignature.sigbackprop(path,m,dFdSig)
+        manualCalcBackProp = numpy.dot(gradient,dFdSig)
+        backDiffs = numpy.max(numpy.abs(backProp-manualCalcBackProp))
+        self.assertLess(backDiffs,0.000001)
 
         
 

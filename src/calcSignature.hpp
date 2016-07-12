@@ -284,4 +284,199 @@ namespace TotalDerivativeSignature{
   }
 }
 
+namespace BackwardDerivativeSignature{
+  //functions to pass a derivative of some scalar F back through a signature calculation
+  using std::vector;
+  using Number = double;
+
+  //Simple functions for calculating arbitrary signatures at runtime
+  //- perhaps slower to run but easier to use than the template version 
+
+ 
+  class Signature{
+  public:
+    vector<vector<Number>> m_data;
+    
+    template<typename Num>
+    void sigOfSegment(int d, int m, const Num* segment){
+      m_data.resize(m);
+      auto& first = m_data[0];
+      first.resize(d);
+      for(int i=0; i<d; ++i)
+        first[i]=(Number)segment[i];
+      for(int level=2; level<=m; ++level){
+        const auto& last = m_data[level-2];
+        auto& s = m_data[level-1];
+        s.assign(calcSigLevelLength(d,level),0);
+        int i=0;
+        for(auto l: last)
+          for(auto p=segment; p<segment+d; ++p)
+            s[i++]=(Number)(*p * l * (1.0/level));
+      }
+    }
+  
+    //if a is the signature of path A, b of B, then
+    //a.concatenateWith(d,m,b) makes a be the signature of the concatenated path AB
+    //This is also the (concatenation) product of the elements a and b in the tensor algebra.
+    void concatenateWith(int d, int m, const Signature& other){
+      for(int level=m; level>0; --level){
+        for(int mylevel=level-1; mylevel>0; --mylevel){
+          int otherlevel=level-mylevel;
+          auto& oth = other.m_data[otherlevel-1];
+          for(auto dest=m_data[level-1].begin(), 
+                my =m_data[mylevel-1].begin(),
+                myE=m_data[mylevel-1].end(); my!=myE; ++my){
+            for(const Number& d : oth){
+              *(dest++) += d * *my;
+            }
+          }
+        }
+        auto source =other.m_data[level-1].begin();
+        for(auto dest=m_data[level-1].begin(),
+              e=m_data[level-1].end();
+            dest!=e;)
+          *(dest++) += *(source++);
+      }
+    }
+    //if a is the signature of the concatenated path AB, b of the straight line segment B, then
+    //a.unconcatenateWith(d,m,b) makes a be the signature of A
+    //this is like concatenateWith except that other is taken to be negative in its odd levels
+    //which depends critically on the fact that other is the signature of a straight line
+    void unconcatenateWith(int d, int m, const Signature& other){
+      for(int level=m; level>0; --level){
+        for(int mylevel=level-1; mylevel>0; --mylevel){
+          int otherlevel=level-mylevel;
+          const float factor = ((otherlevel % 2) ? -1.0f : 1.0f);
+          auto& oth = other.m_data[otherlevel-1];
+          for(auto dest=m_data[level-1].begin(), 
+                my =m_data[mylevel-1].begin(),
+                myE=m_data[mylevel-1].end(); my!=myE; ++my){
+            for(const Number& d : oth){
+              *(dest++) += d * *my * factor;
+            }
+          }
+        }
+        const float factor = ((level % 2) ? -1.0f : 1.0f);
+        auto source =other.m_data[level-1].begin();
+        for(auto dest=m_data[level-1].begin(),
+              e=m_data[level-1].end();
+            dest!=e;)
+          *(dest++) += *(source++) * factor;       
+      }
+    }
+    void swap(Signature& other){
+      m_data.swap(other.m_data);
+    }
+    void fromRaw(int d, int m, const Number* raw){
+      m_data.resize(m);
+      size_t levelLength = d;
+      for(int level=1; level<=m; ++level){
+        const Number* end = raw+levelLength;
+        auto& s = m_data[level-1];
+        s.assign(raw,end);
+        raw=end;
+        levelLength *= d;
+      }
+    }
+  };
+
+  //let A and B be paths with signatures sig(A), sig(B) and sig(AB) the sig of the concatenated path, 
+  // where B is straight. Let F be some scalar
+  //input: b is sig(B), a is sig(AB) and ww is dF/d(sig(AB))
+  //output: a is sig(A), bb is dF/d(sig(B)), ww is dF/d(sig(AB))
+  void backConcatenate(int d, int m, Signature& a, const Signature& b, Signature& ww, Signature& bb){
+    a.unconcatenateWith(d,m,b);
+    bb=ww;
+    //in this block, we only modify bb
+    for(int level=m; level>0; --level){
+      for(int mylevel=level-1; mylevel>0; --mylevel){
+        int otherlevel=level-mylevel;
+        auto& oth = bb.m_data[otherlevel-1];
+        for(auto dest=ww.m_data[level-1].begin(), 
+              my =a.m_data[mylevel-1].begin(),
+              myE=a.m_data[mylevel-1].end(); my!=myE; ++my){
+          for(Number& d : oth){
+            d += *(dest++) * *my;
+          }
+        }
+      }
+    }
+    //in this block, we only modify ww. 
+    //The level which we modify increases, and the level we read is always higher
+    //so note the loops are different but equivalent to all the others
+    for(int mylevel=1; mylevel<m; ++mylevel){
+      for(int level=mylevel+1; level<=m; ++level){
+        int otherlevel=level-mylevel;
+        auto& oth = b.m_data[otherlevel-1];
+        for(auto dest=ww.m_data[level-1].begin(), 
+              my =ww.m_data[mylevel-1].begin(),
+              myE=ww.m_data[mylevel-1].end(); my!=myE; ++my){
+          for(const Number& d : oth){
+            *my += *(dest++) * d;
+          }
+        }
+      }
+    }
+  }
+
+  using OutputNumber = float;
+
+  //if X is a line segment with signature x and s is dF/d(sig(X)) for some scalar F,
+  //then this function increments pos and decrements neg by dF/d(displacement of X)
+  //and leaves s in a meaningless state
+  void backToSegment(int d, int m, const Signature& x, Signature& s, OutputNumber* pos, OutputNumber* neg){
+    const auto& segment = x.m_data[0];
+    auto& dSegment = s.m_data[0];
+    for(int level = m; level>1; --level){
+      auto i = s.m_data[level-1].begin();
+      for(size_t j=0; j<s.m_data[level-2].size(); ++j)
+        for(int dd=0; dd<d; ++dd, ++i){
+          s.m_data[level-2][j] += segment[dd] * (1.0/level) * *i;
+          dSegment[dd] += x.m_data[level-2][j] * (1.0/level) * *i;
+        }
+    }
+    auto& source = s.m_data[0];
+    for(int i = 0; i<d; ++i){
+      const Number n = source[i];
+      pos[i] += n;
+      neg[i] -= n;
+    }
+  }
+
+
+  void calcSignature(int d, int m, int lengthOfPath, const Number* data, Signature& s2){
+    Signature s1;
+    vector<Number> displacement(d);
+    for(int i=1; i<lengthOfPath; ++i){
+      for(int j=0;j<d; ++j)
+        displacement[j]=data[i*d+j]-data[(i-1)*d+j];
+      s1.sigOfSegment(d,m,&displacement[0]);
+      if(i==1)
+        s2.swap(s1);
+      else
+        s2.concatenateWith(d,m,s1);
+    }    
+  }
+
+  //path is a (lengthOfPath)xd path, derivs is dF/d(sig(path)) of length siglength(d,m), 
+  //output is (lengthOfPath)xd
+  //this function just increments output[i,j] by dF/d(path[i,j])
+  void sigBackwards(int d, int m, int lengthOfPath, const Number* path, 
+                    const Number* derivs, OutputNumber* output){
+    if(lengthOfPath<2)
+      return;
+    Signature allSigDerivs, allSig, localDerivs,segmentSig;
+    calcSignature(d,m,lengthOfPath, path, allSig);
+    allSigDerivs.fromRaw(d,m,derivs);
+    vector<Number> displacement(d);
+    for(int i=lengthOfPath-1; i>0; --i){
+      for(int j=0; j<d; ++j)
+        displacement[j]=path[i*d+j]-path[(i-1)*d+j];
+      segmentSig.sigOfSegment(d,m,&displacement[0]);
+      backConcatenate(d,m,allSig,segmentSig,allSigDerivs,localDerivs);
+      backToSegment(d,m,segmentSig,localDerivs,output+i*d,output+(i-1)*d);
+    }
+  }
+}
+
 #endif
