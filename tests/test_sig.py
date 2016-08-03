@@ -170,7 +170,8 @@ class Deriv(unittest.TestCase):
         diffs2 = numpy.max(numpy.abs(calculated[1-niceOnes2]-target[1-niceOnes2]))
         ratioDiffs = numpy.max(numpy.abs(calculated[niceOnes]/target[niceOnes]-1))
 
-        #numpy.set_printoptions(suppress=True, linewidth=150)
+        #numpy.set_printoptions(suppress=True,linewidth=os.popen('stty size', 'r').read().split()[1] #LINUX
+        #numpy.set_printoptions(suppress=True,linewidth=150)
         #print ("")
         #print (path)
         #print (numpy.vstack([range(len(base_sig)),base_sig,calculated,target,(calculated-target)/base_sig,calculated/target-1]).transpose())

@@ -4,6 +4,8 @@
 import theano, numpy
 import iisignature
 
+#This is a theano Op which wraps iisignature.siglength .
+#It is used to implement shape inference of Sig.
 class SigLength_op(theano.Op):
     __props__=()
     def make_node(self,d,m):
@@ -17,6 +19,10 @@ class SigLength_op(theano.Op):
         return [[]]
 SigLength=SigLength_op()
 
+#This is a theano Op which wraps sigbackprop .
+#It is used in the grad method of Sig.
+#Ideally we would have an optimization to sum a variable with this in place
+# - like backward in torch
 class SigGrad_op(theano.Op):
     __props__=()
     def infer_shape(self,node,shapes):
@@ -34,6 +40,7 @@ class SigGrad_op(theano.Op):
         out[0][0]=iisignature.sigbackprop(x,m,s)
 SigGrad=SigGrad_op()
 
+#This is a theano Op which wraps iisignature.sig
 class Sig_op(theano.Op):
     __props__=()
     def infer_shape(self,node,shapes):
@@ -49,6 +56,7 @@ class Sig_op(theano.Op):
         outputs_storage[0][0]=iisignature.sig(x,m)
     def grad(self,inputs,g):
         return [SigGrad(inputs[0],inputs[1],g[0]),theano.gof.null_type.NullType()()]
+#The variable Sig is the only thing in this module intended for external use.
 Sig = Sig_op()
 
 #http://deeplearning.net/software/theano/extending/extending_theano_gpu.html
