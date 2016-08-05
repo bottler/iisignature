@@ -1,3 +1,8 @@
+#ifdef __MINGW32__
+  #define _hypot hypot
+  #include <cmath>
+#endif
+
 #include<utility>
 #include<vector>
 #include<utility>
