@@ -504,6 +504,8 @@ prepare(PyObject *self, PyObject *args){
     return nullptr;
   for (auto& i : lsf->m_smallSVDs)
     for (auto& j : i){
+      if(j.m_matrix.empty())
+        continue;
       bool ok = ls.inplacePinvMatrix(j.m_matrix.data(),
                                      j.m_sources.size(), j.m_dests.size());
       if(!ok)
@@ -633,6 +635,12 @@ logsig(PyObject *self, PyObject *args){
         out[writeOffset + i.m_dest] = sig.m_data[l - 1][i.m_source] * i.m_factor;
       }
       for (auto& i : lsf->m_smallSVDs[l-1]) {
+        auto mat = 
+#ifdef SHAREMAT
+          i.m_matrix.empty() ? 
+          lsf->m_smallSVDs[l-1][i.m_matrixToUse].m_matrix.data() :
+#endif
+          i.m_matrix.data();
         size_t nSources = i.m_sources.size();
         rhs.resize(nSources);
         for (size_t j = 0; j < nSources;++j)
@@ -640,7 +648,7 @@ logsig(PyObject *self, PyObject *args){
         for (size_t j = 0; j < i.m_dests.size();++j) {
           double val = 0;
           for (size_t k = 0; k < nSources; ++k)
-            val += i.m_matrix[nSources*j + k] * rhs[k];
+            val += mat[nSources*j + k] * rhs[k];
           out[writeOffset + i.m_dests[j]] = val;
         }
       }

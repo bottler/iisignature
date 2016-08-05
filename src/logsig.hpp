@@ -19,6 +19,7 @@ struct LogSigFunction{
   //A Simple describes how a certain element of a level of a logsig is just
   //a constant multiple of a certain element of a level of a sig.
   struct Simple { size_t m_dest, m_source; float m_factor; };
+  std::vector<std::vector<Simple>> m_simples;
 
   //SmallSVD is the data for a small part (block) of the mapping.
   //m_sources is the indices of the relevant elements of the level of the sig
@@ -27,9 +28,21 @@ struct LogSigFunction{
   //In the python addin, they are replaced with their 
   //pseudoinverses at the end of prepare(),
   //so that it ends up with shape dests*sources
-  struct SmallSVD { std::vector<size_t> m_sources, m_dests; 
-                    std::vector<float> m_matrix; };
-  std::vector<std::vector<Simple>> m_simples;
+  //Todo as a performance optimization in prepare():
+  // -some of these matrices are identical and should be pinv'd once, e.g. those corresponding
+  //   to the sets of Lyndon words {1223, 1232, 1322} and {1224, 1242, 1422}
+  //   - not convincingly quicker, perhaps because it takes work to find these cases
+  //     and there are not so many of them. This is commented out with #ifdef SHAREMAT.
+  // -beyond that, some are permutation similar, e.g. the above and {1123, 1132, 1213}, and
+  //   could also be shared.
+  struct SmallSVD { 
+    std::vector<size_t> m_sources, m_dests; 
+    std::vector<float> m_matrix; 
+#ifdef SHAREMAT
+    //if m_matrix is empty, look at this element of our element of m_smallSVDs instead
+    size_t m_matrixToUse;
+#endif
+  };
   std::vector<std::vector<SmallSVD>> m_smallSVDs;
 
 };
@@ -213,6 +226,26 @@ lookupInFlatMap(const V& v, const A& a){
   return i->second;
 }
 
+std::vector<size_t> getLetterFrequencies(const LyndonWord* lw){
+  std::vector<Letter> letters;
+  lw->iterateOverLetters([&](Letter l){letters.push_back(l);});
+  std::sort(letters.begin(),letters.end());
+  Letter lastLetter=letters[0];
+  size_t n = 0;
+  std::vector<size_t> out;
+  for(Letter l : letters){
+    if(l==lastLetter)
+      ++n;
+    else{
+      out.push_back(n);
+      lastLetter=l;
+      n=1;
+    }
+  }
+  out.push_back(n);
+  return out;
+}
+
 void makeSparseLogSigMatrices(int dim, int level, LogSigFunction& lsf, Interrupt interrupt){
   using P = std::pair<size_t,float>;
   using std::vector;
@@ -288,7 +321,10 @@ void makeSparseLogSigMatrices(int dim, int level, LogSigFunction& lsf, Interrupt
         a->second.push_back(pp.second[0]);});
       return true;});
     letterOrderToLW.erase(end, letterOrderToLW.end());
-
+    //Now, within lev, letterOrderToLW and lyndonWordToIndex have been created
+#ifdef SHAREMAT
+    std::map<vector<size_t>,size_t> freq2Idx; //list of alphabetical letter frequencies -> pos in m_smallSVDs[lev-1]
+#endif
     for (auto& i : letterOrderToLW) {
       if (1 == i.second.size()) {
         LogSigFunction::Simple sim;
@@ -299,9 +335,7 @@ void makeSparseLogSigMatrices(int dim, int level, LogSigFunction& lsf, Interrupt
         sim.m_factor = 1.0f / p.second;
         sim.m_source = p.first;
         lsf.m_simples[lev - 1].push_back(sim);
-      }
-      else
-      {
+      }else{
         lsf.m_smallSVDs[lev - 1].push_back(LogSigFunction::SmallSVD{});
         LogSigFunction::SmallSVD& mtx = lsf.m_smallSVDs[lev-1].back();
         //sourceMap maps expanded (i.e. pos in level of sig) to contracted (i.e. pos in our block)
@@ -318,14 +352,25 @@ void makeSparseLogSigMatrices(int dim, int level, LogSigFunction& lsf, Interrupt
           j.second = index++;
           mtx.m_sources.push_back(j.first);
         }
-        mtx.m_matrix.assign(mtx.m_dests.size()*mtx.m_sources.size(), 0);
-        for (size_t j = 0; j < i.second.size(); ++j)
-        {
-          for (P& k : m[lev - 1][i.second[j]]) {
-            size_t rowBegin = sourceMap[k.first] * mtx.m_dests.size();
-            mtx.m_matrix[rowBegin+j] = k.second;
+#ifdef SHAREMAT
+        vector<size_t> letterFreqs = getLetterFrequencies(i.second[0]);
+        size_t dummy=0;
+        auto it_bool = freq2Idx.insert(std::make_pair(std::move(letterFreqs),dummy));
+        if(!it_bool.second)
+          mtx.m_matrixToUse = it_bool.first->second;
+        else{
+          it_bool.first->second=lsf.m_smallSVDs[lev-1].size()-1;
+#endif
+          mtx.m_matrix.assign(mtx.m_dests.size()*mtx.m_sources.size(), 0);
+          for (size_t j = 0; j < i.second.size(); ++j){
+            for (P& k : m[lev - 1][i.second[j]]) {
+              size_t rowBegin = sourceMap[k.first] * mtx.m_dests.size();
+              mtx.m_matrix[rowBegin+j] = k.second;
+            }
           }
+#ifdef SHAREMAT
         }
+#endif
       }
     }
 
