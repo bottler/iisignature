@@ -17,12 +17,16 @@ from iisignature_theano import Sig, SigJoin
 
 
 #1: SETUP VARIABLES
-dim=2
+dim=3
 level=6
 pathlength=4
+fixed = float("nan")
+fixed = 0.1
 
 numpy.random.seed(51)
 start = numpy.random.uniform(size=(pathlength,dim)).astype("float32")
+if not numpy.isnan(fixed):
+    start[:,-1]=fixed*numpy.arange(pathlength)
 
 #2: DEFINE THEANO STUFF
 
@@ -32,8 +36,13 @@ grad1 = theano.grad(cost1,path)
 
 signature = numpy.zeros((1,iisignature.siglength(dim,level))).astype("float32")
 for i in six.moves.xrange(1,pathlength):
-    displacement = path[i:(i+1),:]-path[(i-1):i,:]
-    signature = SigJoin(signature,displacement,level)
+    if not numpy.isnan(fixed):
+        displacement = path[i:(i+1),:-1]-path[(i-1):i,:-1]
+        signature = SigJoin(signature,displacement,level,fixed)
+    else:
+        displacement = path[i:(i+1),:]-path[(i-1):i,:]
+        signature = SigJoin(signature,displacement,level)
+
 cost2 = theano.tensor.mean(theano.tensor.sqr(signature))
 grad2 = theano.grad(cost2,path)
 

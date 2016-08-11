@@ -211,7 +211,7 @@ sigBackwards(PyObject *self, PyObject *args){
   PyObject* a1;
   PyObject* a2;
   int level=0;
-  if (!PyArg_ParseTuple(args, "OiO", &a1, &level, &a2))
+  if (!PyArg_ParseTuple(args, "OOi", &a2, &a1, &level))
     return NULL;
   if(level<1) ERR("level must be positive");
   if(!PyArray_Check(a1)) ERR("path must be a numpy array");
@@ -286,7 +286,8 @@ sigJoin(PyObject *self, PyObject *args){
   PyObject* a1;
   PyObject* a2;
   int level=0;
-  if (!PyArg_ParseTuple(args, "OOi", &a1, &a2, &level))
+  double fixedLast = std::numeric_limits<double>::quiet_NaN();
+  if (!PyArg_ParseTuple(args, "OOi|d", &a1, &a2, &level, &fixedLast))
     return NULL;
   if(level<1) ERR("level must be positive");
   if(!PyArray_Check(a1)) ERR("sigs must be a numpy array");
@@ -304,13 +305,14 @@ sigJoin(PyObject *self, PyObject *args){
   const int nPaths = (int)PyArray_DIM(a,0);
   if(nPaths!=(int)PyArray_DIM(b,0))
     ERR("different number of sigs and data");
-  const int d = (int)PyArray_DIM(b,1);
-  if(d<1) ERR("Path must have positive dimension");
-  size_t sigLength = calcSigTotalLength(d,level);
+  const int d_given = (int)PyArray_DIM(b,1);
+  if(d_given<1) ERR("Path must have positive dimension");
+  const int d_out = std::isnan(fixedLast) ? d_given : d_given+1;
+  size_t sigLength = calcSigTotalLength(d_out,level);
   if(sigLength != (size_t) PyArray_DIM(a,1))
     ERR("signatures have unexpected length");
   ReadArrayAsDoubles sig, displacement;
-  if(sig.read(a,nPaths*sigLength)||displacement.read(b,nPaths*d))
+  if(sig.read(a,nPaths*sigLength)||displacement.read(b,nPaths*d_given))
     ERR("Out of memory");
 
   npy_intp dims[] = {(npy_intp) nPaths, (npy_intp)sigLength};
@@ -319,8 +321,8 @@ sigJoin(PyObject *self, PyObject *args){
     return nullptr;
   float* out = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
   for(int iPath=0; iPath<nPaths; ++iPath)
-    BackwardDerivativeSignature::sigJoin(d,level,sig.ptr()+iPath*sigLength,
-    displacement.ptr()+iPath*d,out+iPath*sigLength);
+    BackwardDerivativeSignature::sigJoin(d_out,level,sig.ptr()+iPath*sigLength,
+    displacement.ptr()+iPath*d_given,fixedLast,out+iPath*sigLength);
   return o;
 }
  
@@ -330,7 +332,8 @@ static PyObject *
   PyObject* a2;
   PyObject* a3;
   int level=0;
-  if (!PyArg_ParseTuple(args, "OOiO", &a1, &a2, &level, &a3))
+  double fixedLast = std::numeric_limits<double>::quiet_NaN();
+  if (!PyArg_ParseTuple(args, "OOOi|d", &a3, &a1, &a2, &level, &fixedLast))
     return NULL;
   if(level<1) ERR("level must be positive");
   if(!PyArray_Check(a1)) ERR("sigs must be a numpy array");
@@ -356,20 +359,21 @@ static PyObject *
     ERR("different number of sigs and data");
   if(nPaths!=(int)PyArray_DIM(c,0))
     ERR("different number of sigs and derivs");
-  const int d = (int)PyArray_DIM(b,1);
-  if(d<1) ERR("Path must have positive dimension");
-  size_t sigLength = calcSigTotalLength(d,level);
+  const int d_given = (int)PyArray_DIM(b,1);
+  if(d_given<1) ERR("Path must have positive dimension");
+  const int d_out = std::isnan(fixedLast) ? d_given : d_given+1;
+  size_t sigLength = calcSigTotalLength(d_out,level);
   if(sigLength != (size_t) PyArray_DIM(a,1))
     ERR("signatures have unexpected length");
   if(sigLength != (size_t) PyArray_DIM(c,1))
     ERR("derivs should have the same shape as signatures");
   ReadArrayAsDoubles sig, displacement, derivs;
-  if(sig.read(a,nPaths*sigLength)||displacement.read(b,nPaths*d)
+  if(sig.read(a,nPaths*sigLength)||displacement.read(b,nPaths*d_given)
      ||derivs.read(c,nPaths*sigLength))
     ERR("Out of memory");
 
   npy_intp dims1[] = {(npy_intp) nPaths, (npy_intp) sigLength};
-  npy_intp dims2[] = {(npy_intp) nPaths, (npy_intp) d};
+  npy_intp dims2[] = {(npy_intp) nPaths, (npy_intp) d_given};
                      
   PyObject* o1 = PyArray_SimpleNew(2,dims1,NPY_FLOAT32);
   if(!o1)
@@ -381,11 +385,12 @@ static PyObject *
   float* out1 = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o1)));
   float* out2 = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o2)));
   for(int iPath=0; iPath<nPaths; ++iPath)
-    BackwardDerivativeSignature::sigJoinBackwards(d,level,sig.ptr()+iPath*sigLength,
-                                                  displacement.ptr()+iPath*d,
+    BackwardDerivativeSignature::sigJoinBackwards(d_out,level,sig.ptr()+iPath*sigLength,
+                                                  displacement.ptr()+iPath*d_given,
                                                   derivs.ptr()+iPath*sigLength,
+                                                  fixedLast,
                                                   out1+iPath*sigLength,
-                                                  out2+iPath*d);
+                                                  out2+iPath*d_given);
   return PyTuple_Pack(2,o1,o2);
 }
  
@@ -781,22 +786,25 @@ static PyMethodDef Methods[] = {
   {"sig",  sig, METH_VARARGS, "sig(X,m)\n Returns the signature of a path X "
    "up to level m. X must be a numpy NxD float32 or float64 array of points "
    "making up the path in R^d. The initial 1 in the zeroth level of the signature is excluded."},
-  {"sigjacobian",  sigJacobian, METH_VARARGS, "sigjacobian(X,m)\n "
+  {"sigjacobian", sigJacobian, METH_VARARGS, "sigjacobian(X,m)\n "
    "Returns the full Jacobian matrix of "
    "derivatives of sig(X,m) with respect to X. "
    "If X is an NxD array then the output is an NxDx(siglength(D,m)) array."},
-  {"sigbackprop",  sigBackwards, METH_VARARGS, "sigbackprop(X,m,s)\n "
+  {"sigbackprop", sigBackwards, METH_VARARGS, "sigbackprop(s,X,m)\n "
    "If s is the derivative of something with respect to sig(X,m), "
    "then this returns the derivative of that thing with respect to X. "
-   "sigBackpropDeriv(X,m,s) should be approximately numpy.dot(sigjacobian(X,m),s)"},
-  {"sigjoin", sigJoin, METH_VARARGS, "sigjoin(X,D,m)\n "
+   "sigbackprop(s,X,m) should be approximately numpy.dot(sigjacobian(X,m),s)"},
+  {"sigjoin", sigJoin, METH_VARARGS, "sigjoin(X,D,m[,f=float('nan')])\n "
    "If X is an array of signatures of d dimensional paths of shape "
    "(K, siglength(d,m)) and D is an array of d dimensional displacements "
    "of shape (K, d), then return an array shaped like X "
-   "of the signatures of the paths concatenated with the displacements."},
+   "of the signatures of the paths concatenated with the displacements. "
+   "If f is provided, then it is taken to be the fixed value of the "
+   "displacement in the last dimension, and D should have shape (K, d-1)."},
    //"If X is an NxD array then out s must be a (siglength(D,m),) array."},
-  {"sigjoinbackprop",sigJoinBackwards,METH_VARARGS, "sigjoinbackprop(X,D,m,s) \n "
-   "gives the derivatives of F with respect to X and D where s is the derivatives of F with respect to sigjoin(X,D,m). The result is a tuple of two items."}, 
+  {"sigjoinbackprop",sigJoinBackwards,METH_VARARGS, "sigjoinbackprop(s,X,D,m[,f=float('nan')]) \n "
+   "gives the derivatives of F with respect to X and D where s is the derivatives"
+   " of F with respect to sigjoin(X,D,m,f). The result is a tuple of two items."}, 
   {"siglength", siglength, METH_VARARGS, "siglength(d,m) \n "
    "Returns the length of the signature (excluding the initial 1) of a d dimensional path up to level m"},
   {"logsiglength", logsiglength, METH_VARARGS, "logsiglength(d,m) \n "

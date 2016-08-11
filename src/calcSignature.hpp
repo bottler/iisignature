@@ -289,26 +289,28 @@ namespace BackwardDerivativeSignature{
   //and also to do sigjoin etc.
   using std::vector;
   using Number = double;
+  static const double nan = std::numeric_limits<double>::quiet_NaN();
 
   class Signature{
   public:
     vector<vector<Number>> m_data;
     
     template<typename Num>
-    void sigOfSegment(int d, int m, const Num* segment){
+    void sigOfSegment(int d, int m, const Num* segment, double fixedLast=nan){
       m_data.resize(m);
       auto& first = m_data[0];
       first.resize(d);
-      for(int i=0; i<d; ++i)
+      for(int i=0; i<d-1; ++i)
         first[i]=(Number)segment[i];
+      first[d-1]= std::isnan(fixedLast) ? segment[d-1] : fixedLast;
       for(int level=2; level<=m; ++level){
         const auto& last = m_data[level-2];
         auto& s = m_data[level-1];
         s.assign(calcSigLevelLength(d,level),0);
         int i=0;
         for(auto l: last)
-          for(auto p=segment; p<segment+d; ++p)
-            s[i++]=(Number)(*p * l * (1.0/level));
+          for(auto p : first)
+            s[i++]=(Number)(p * l * (1.0/level));
       }
     }
   
@@ -483,24 +485,28 @@ namespace BackwardDerivativeSignature{
     }
   }
   void sigJoin(int d, int m, const Number* signature,
-               const Number* displacement, OutputNumber* output){
+               const Number* displacement, double fixedLast,
+               OutputNumber* output)
+  {
     Signature allSig, segmentSig;
     allSig.fromRaw(d,m,signature);
-    segmentSig.sigOfSegment(d,m,displacement);
+    segmentSig.sigOfSegment(d,m,displacement,fixedLast);
     allSig.concatenateWith(d,m,segmentSig);
-    allSig.writeOut(output);     
+    allSig.writeOut(output);
   }
   void sigJoinBackwards(int d, int m, const Number* signature,
-                         const Number* displacement, const Number* derivs,
-                         OutputNumber* dSig, OutputNumber* dSeg){
+                        const Number* displacement, const Number* derivs,
+                        double fixedLast,
+                        OutputNumber* dSig, OutputNumber* dSeg){
     Signature allSigDerivs, allSig, localDerivs,segmentSig;
     allSig.fromRaw(d,m,signature);
     allSigDerivs.fromRaw(d,m,derivs);
-    segmentSig.sigOfSegment(d,m,displacement);
+    segmentSig.sigOfSegment(d,m,displacement,fixedLast);
     backConcatenate(d,m,allSig,segmentSig,allSigDerivs,localDerivs);
     allSigDerivs.writeOut(dSig);
     backToSegment(d,m,segmentSig,localDerivs);
-    for(int j=0;j<d;++j)
+    const int d_given = std::isnan(fixedLast) ? d : d-1;
+    for(int j=0;j<d_given;++j)
       dSeg[j]=localDerivs.m_data[0][j];
   }
 }

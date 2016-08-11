@@ -28,18 +28,18 @@ SigLength=SigLength_op()
 class SigGrad_op(theano.Op):
     __props__=()
     def infer_shape(self,node,shapes):
-        return [shapes[0]]
-    def make_node(self,x,m,s):
+        return [shapes[1]]
+    def make_node(self,s,x,m):
+        s=theano.tensor.as_tensor_variable(s)
         x=theano.tensor.as_tensor_variable(x)
         m=theano.tensor.as_tensor_variable(m)
-        s=theano.tensor.as_tensor_variable(s)
-        return theano.Apply(self,inputs=[x,m,s],
+        return theano.Apply(self,inputs=[s,x,m],
                             outputs=[theano.tensor.fmatrix()])
     def perform(self,node,inputs_storage,out):
-        x=inputs_storage[0]
-        m=inputs_storage[1]
-        s=inputs_storage[2]
-        out[0][0]=iisignature.sigbackprop(x,m,s)
+        s=inputs_storage[0]
+        x=inputs_storage[1]
+        m=inputs_storage[2]
+        out[0][0]=iisignature.sigbackprop(s,x,m)
 SigGrad=SigGrad_op()
 
 #This is a theano Op which wraps iisignature.sig .
@@ -57,7 +57,7 @@ class Sig_op(theano.Op):
         m=inputs_storage[1]
         outputs_storage[0][0]=iisignature.sig(x,m)
     def grad(self,inputs,g):
-        return [SigGrad(inputs[0],inputs[1],g[0]),theano.gof.null_type.NullType()()]
+        return [SigGrad(g[0],inputs[0],inputs[1]),theano.gof.null_type.NullType()()]
 Sig = Sig_op()
 
 #This is a theano Op which wraps iisignature.sigjoinbackprop .
@@ -65,20 +65,22 @@ Sig = Sig_op()
 class SigJoinGrad_op(theano.Op):
     __props__=()
     def infer_shape(self,node,shapes):
-        return [shapes[0],shapes[1]]
-    def make_node(self,x,y,m,s):
+        return [shapes[1],shapes[2]]
+    def make_node(self,s,x,y,m,fixed):
+        s=theano.tensor.as_tensor_variable(s)
         x=theano.tensor.as_tensor_variable(x)
         y=theano.tensor.as_tensor_variable(y)
         m=theano.tensor.as_tensor_variable(m)
-        s=theano.tensor.as_tensor_variable(s)
-        return theano.Apply(self,inputs=[x,y,m,s],
+        fixed=theano.tensor.as_tensor_variable(fixed)
+        return theano.Apply(self,inputs=[s,x,y,m,fixed],
                             outputs=[theano.tensor.fmatrix(),theano.tensor.fmatrix()])
     def perform(self,node,inputs_storage,out):
-        x=inputs_storage[0]
-        y=inputs_storage[1]
-        m=inputs_storage[2]
-        s=inputs_storage[3]
-        o=iisignature.sigjoinbackprop(x,y,m,s)
+        s=inputs_storage[0]
+        x=inputs_storage[1]
+        y=inputs_storage[2]
+        m=inputs_storage[3]
+        fixed=inputs_storage[4]
+        o=iisignature.sigjoinbackprop(s,x,y,m,fixed)
         out[0][0]=o[0]
         out[1][0]=o[1]
 SigJoinGrad = SigJoinGrad_op()
@@ -88,20 +90,23 @@ class SigJoin_op(theano.Op):
     __props__=()
     def infer_shape(self,node,shapes):
         return [shapes[0]]
-    def make_node(self,x,y,m):
+    def make_node(self,x,y,m,fixed=float("nan")):
         x=theano.tensor.as_tensor_variable(x)
         y=theano.tensor.as_tensor_variable(y)
         m=theano.tensor.as_tensor_variable(m)
-        return theano.Apply(self,inputs=[x,y,m],
+        fixed=theano.tensor.as_tensor_variable(fixed)
+        return theano.Apply(self,inputs=[x,y,m,fixed],
                             outputs=[theano.tensor.fmatrix()])
     def perform(self,node,inputs_storage,outputs_storage):
         x=inputs_storage[0]
         y=inputs_storage[1]
         m=inputs_storage[2]
-        outputs_storage[0][0]=iisignature.sigjoin(x,y,m)
+        fixed = inputs_storage[3]
+        outputs_storage[0][0]=iisignature.sigjoin(x,y,m,fixed)
     def grad(self,inputs,g):
-        g = SigJoinGrad(inputs[0],inputs[1],inputs[2],g[0])
-        return [g[0],g[1],theano.gof.null_type.NullType()()]
+        gg = SigJoinGrad(g[0],inputs[0],inputs[1],inputs[2],inputs[3])
+        return [gg[0],gg[1],theano.gof.null_type.NullType()(),
+                theano.gof.null_type.NullType()()]
 SigJoin = SigJoin_op()
 
 

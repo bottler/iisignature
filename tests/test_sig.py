@@ -147,34 +147,43 @@ class A(unittest.TestCase):
 
     #test sigjoin is compatible with sig and also its deriv
     def testjoining(self):
-        numberToDo=4
-        dim=3
-        level = 4
+        numberToDo=1
+        dim=2
+        level = 2
         siglength = iisignature.siglength(dim,level)
-        pathLength = 10
-        paths = [numpy.random.uniform(size=(pathLength,dim))
-                 for i in range(numberToDo)]
-        sig = numpy.vstack([iisignature.sig(path,level) for path in paths])
+        for fixedPoint, inputDim, fixed in [(float('nan'),dim,False),(0.1,dim-1,True)]:
+            pathLength = 10
+            def makePath():
+                p = numpy.random.uniform(size=(pathLength,dim))
+                if fixed:
+                    p[:,-1]=fixedPoint*numpy.arange(pathLength)
+                return p
+            paths = [makePath() for i in range(numberToDo)]
+            sig = numpy.vstack([iisignature.sig(path,level) for path in paths])
 
-        joinee = numpy.zeros((numberToDo,siglength))
-        for i in range(1,pathLength):
-            displacement = numpy.vstack([path[i:(i+1),:]-path[(i-1):i,:] for path in paths])
-            joinee = iisignature.sigjoin(joinee,displacement,level)
-        diff=numpy.max(numpy.abs(sig-joinee))
-        self.assertLess(diff,0.0001)
+            joinee = numpy.zeros((numberToDo,siglength))
+            for i in range(1,pathLength):
+                displacements=[path[i:(i+1),:]-path[(i-1):i,:] for path in paths]
+                displacement = numpy.vstack(displacements)
+                if fixed:
+                    displacement = displacement[:,:-1]
+                joinee = iisignature.sigjoin(joinee,displacement,level,fixedPoint)
+            diff=numpy.max(numpy.abs(sig-joinee))
+            self.assertLess(diff,0.0001)
 
-        extra = numpy.random.uniform(size=(numberToDo,dim))
-        bumpedExtra = 1.001*extra
-        bumpedJoinee = 1.001*joinee
-        base = numpy.sum(iisignature.sigjoin(joinee,extra,level))
-        bump1 = numpy.sum(iisignature.sigjoin(bumpedJoinee,extra,level))
-        bump2 = numpy.sum(iisignature.sigjoin(joinee,bumpedExtra,level))
-        derivsOfSum = numpy.ones((numberToDo,siglength))
-        calculated = iisignature.sigjoinbackprop(joinee,extra,level,derivsOfSum)
-        diff1 = (bump1-base)-numpy.sum(calculated[0]*(bumpedJoinee-joinee))
-        diff2 = (bump2-base)-numpy.sum(calculated[1]*(bumpedExtra-extra))
-        self.assertLess(diff1,0.00001)
-        self.assertLess(diff2,0.0001)
+            extra = numpy.random.uniform(size=(numberToDo,inputDim))
+            bumpedExtra = 1.001*extra
+            bumpedJoinee = 1.001*joinee
+            base = numpy.sum(iisignature.sigjoin(joinee,extra,level,fixedPoint))
+            bump1 = numpy.sum(iisignature.sigjoin(bumpedJoinee,extra,level,fixedPoint))
+            bump2 = numpy.sum(iisignature.sigjoin(joinee,bumpedExtra,level,fixedPoint))
+            derivsOfSum = numpy.ones((numberToDo,siglength))
+            calculated = iisignature.sigjoinbackprop(derivsOfSum,joinee,extra,
+                                                     level,fixedPoint)
+            diff1 = (bump1-base)-numpy.sum(calculated[0]*(bumpedJoinee-joinee))
+            diff2 = (bump2-base)-numpy.sum(calculated[1]*(bumpedExtra-extra))
+            self.assertLess(diff1,0.00001)
+            self.assertLess(diff2,0.0001)
 
 #test that sigjacobian and sigbackprop compatible with sig
 class Deriv(unittest.TestCase):
@@ -216,7 +225,7 @@ class Deriv(unittest.TestCase):
 
         #compatibility between sigbackprop and sigjacobian is strong
         dFdSig = numpy.random.uniform(size=(iisignature.siglength(d,m),))
-        backProp = iisignature.sigbackprop(path,m,dFdSig)
+        backProp = iisignature.sigbackprop(dFdSig,path,m)
         manualCalcBackProp = numpy.dot(gradient,dFdSig)
         backDiffs = numpy.max(numpy.abs(backProp-manualCalcBackProp))
         self.assertLess(backDiffs,0.000001)
