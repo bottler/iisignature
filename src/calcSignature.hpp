@@ -286,13 +286,10 @@ namespace TotalDerivativeSignature{
 
 namespace BackwardDerivativeSignature{
   //functions to pass a derivative of some scalar F back through a signature calculation
+  //and also to do sigjoin etc.
   using std::vector;
   using Number = double;
 
-  //Simple functions for calculating arbitrary signatures at runtime
-  //- perhaps slower to run but easier to use than the template version 
-
- 
   class Signature{
   public:
     vector<vector<Number>> m_data;
@@ -339,9 +336,9 @@ namespace BackwardDerivativeSignature{
       }
     }
     //if a is the signature of the concatenated path AB, b of the straight line segment B, then
-    //a.unconcatenateWith(d,m,b) makes a be the signature of A
-    //this is like concatenateWith except that other is taken to be negative in its odd levels
-    //which depends critically on the fact that other is the signature of a straight line
+    //a.unconcatenateWith(d,m,b) makes a be the signature of A.
+    //This is like concatenateWith except that other is taken to be negative in its odd levels,
+    //which depends critically on the fact that other is the signature of a straight line.
     void unconcatenateWith(int d, int m, const Signature& other){
       for(int level=m; level>0; --level){
         for(int mylevel=level-1; mylevel>0; --mylevel){
@@ -378,22 +375,27 @@ namespace BackwardDerivativeSignature{
         levelLength *= d;
       }
     }
+    template<typename Numeric>
+    void writeOut(Numeric* dest) const{
+      for(auto& a: m_data)
+        for(auto& b:a)
+          *(dest++)=b;
+    }
   };
 
   //let A and B be paths with signatures sig(A), sig(B) and sig(AB) the sig of the concatenated path, 
-  // where B is straight. Let F be some scalar
-  //input: b is sig(B), a is sig(AB) and ww is dF/d(sig(AB))
-  //output: a is sig(A), bb is dF/d(sig(B)), ww is dF/d(sig(AB))
-  void backConcatenate(int d, int m, Signature& a, const Signature& b, Signature& ww, Signature& bb){
-    a.unconcatenateWith(d,m,b);
+  // where B is straight. Let F be some scalar.
+  //Given input: a is sig(A), b is sig(B) and ww is dF/d(sig(AB))
+  //Produces output: bb is dF/d(sig(B)), ww is dF/d(sig(AB))
+  void backConcatenate(int d, int m, const Signature& a, const Signature& b, Signature& ww, Signature& bb){
     bb=ww;
     //in this block, we only modify bb
     for(int level=m; level>0; --level){
       for(int mylevel=level-1; mylevel>0; --mylevel){
         int otherlevel=level-mylevel;
         auto& oth = bb.m_data[otherlevel-1];
-        for(auto dest=ww.m_data[level-1].begin(), 
-              my =a.m_data[mylevel-1].begin(),
+        auto dest=ww.m_data[level-1].begin();
+        for(auto my =a.m_data[mylevel-1].begin(),
               myE=a.m_data[mylevel-1].end(); my!=myE; ++my){
           for(Number& d : oth){
             d += *(dest++) * *my;
@@ -422,9 +424,9 @@ namespace BackwardDerivativeSignature{
   using OutputNumber = float;
 
   //if X is a line segment with signature x and s is dF/d(sig(X)) for some scalar F,
-  //then this function increments pos and decrements neg by dF/d(displacement of X)
-  //and leaves s in a meaningless state
-  void backToSegment(int d, int m, const Signature& x, Signature& s, OutputNumber* pos, OutputNumber* neg){
+  //then this function leaves s.m_data[0] with dF/d(displacement of X)
+  //and leaves the rest of s in a meaningless state
+  void backToSegment(int d, int m, const Signature& x, Signature& s){
     const auto& segment = x.m_data[0];
     auto& dSegment = s.m_data[0];
     for(int level = m; level>1; --level){
@@ -435,14 +437,7 @@ namespace BackwardDerivativeSignature{
           dSegment[dd] += x.m_data[level-2][j] * (1.0/level) * *i;
         }
     }
-    auto& source = s.m_data[0];
-    for(int i = 0; i<d; ++i){
-      const Number n = source[i];
-      pos[i] += n;
-      neg[i] -= n;
-    }
   }
-
 
   void calcSignature(int d, int m, int lengthOfPath, const Number* data, Signature& s2){
     Signature s1;
@@ -458,6 +453,8 @@ namespace BackwardDerivativeSignature{
     }    
   }
 
+  //THE PUBLIC FUNCTIONS IN THIS NAMESPACE BEGIN HERE
+  
   //path is a (lengthOfPath)xd path, derivs is dF/d(sig(path)) of length siglength(d,m), 
   //output is (lengthOfPath)xd
   //this function just increments output[i,j] by dF/d(path[i,j])
@@ -473,9 +470,38 @@ namespace BackwardDerivativeSignature{
       for(int j=0; j<d; ++j)
         displacement[j]=path[i*d+j]-path[(i-1)*d+j];
       segmentSig.sigOfSegment(d,m,&displacement[0]);
+      allSig.unconcatenateWith(d,m,segmentSig);
       backConcatenate(d,m,allSig,segmentSig,allSigDerivs,localDerivs);
-      backToSegment(d,m,segmentSig,localDerivs,output+i*d,output+(i-1)*d);
+      backToSegment(d,m,segmentSig,localDerivs);
+      auto pos = output+i*d;
+      auto neg = output+(i-1)*d;
+      auto& s = localDerivs.m_data[0];
+      for(int j=0;j<d;++j){
+        pos[j]+=s[j];
+        neg[j]-=s[j];
+      }
     }
+  }
+  void sigJoin(int d, int m, const Number* signature,
+               const Number* displacement, OutputNumber* output){
+    Signature allSig, segmentSig;
+    allSig.fromRaw(d,m,signature);
+    segmentSig.sigOfSegment(d,m,displacement);
+    allSig.concatenateWith(d,m,segmentSig);
+    allSig.writeOut(output);     
+  }
+  void sigJoinBackwards(int d, int m, const Number* signature,
+                         const Number* displacement, const Number* derivs,
+                         OutputNumber* dSig, OutputNumber* dSeg){
+    Signature allSigDerivs, allSig, localDerivs,segmentSig;
+    allSig.fromRaw(d,m,signature);
+    allSigDerivs.fromRaw(d,m,derivs);
+    segmentSig.sigOfSegment(d,m,displacement);
+    backConcatenate(d,m,allSig,segmentSig,allSigDerivs,localDerivs);
+    allSigDerivs.writeOut(dSig);
+    backToSegment(d,m,segmentSig,localDerivs);
+    for(int j=0;j<d;++j)
+      dSeg[j]=localDerivs.m_data[0][j];
   }
 }
 

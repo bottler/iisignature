@@ -179,6 +179,33 @@ sig(PyObject *self, PyObject *args){
   return o;
 }
 
+//Take a Numpy array which is already ensured contiguous and
+//either NPY_FLOAT32 or NPY_FLOAT64
+//and read from it as doubles
+class ReadArrayAsDoubles{
+  vector<double> m_store;
+  double* m_ptr = nullptr;
+public:
+  //returns true on bad_alloc
+  bool read(PyArrayObject* a, size_t size){
+    if(PyArray_TYPE(a)==NPY_FLOAT64){
+      m_ptr = static_cast<double*>(PyArray_DATA(a));
+      return false;
+    }
+    try{
+      m_store.resize(size);
+      auto source = static_cast<float*>(PyArray_DATA(a));
+      for(size_t i=0; i<size; ++i)
+        m_store[i]=source[i];
+      m_ptr = m_store.data();
+    }catch(std::exception&){
+      return true;
+    }
+    return false;
+  }
+  const double* ptr() const {return m_ptr;}
+};
+
 static PyObject *
 sigBackwards(PyObject *self, PyObject *args){
   PyObject* a1;
@@ -207,35 +234,10 @@ sigBackwards(PyObject *self, PyObject *args){
   if(sigLength!=(size_t)PyArray_DIM(b,0))
     ERR(("derivs should have length "+std::to_string(sigLength)+
          " but it has length "+std::to_string(PyArray_DIM(b,0))).c_str());
-  
-  vector<BackwardDerivativeSignature::Number> input, derivs;
-  BackwardDerivativeSignature::Number *inp, *der;
-  if(PyArray_TYPE(a)==NPY_FLOAT64)
-    inp = static_cast<double*>(PyArray_DATA(a));
-  else{
-    try{
-      input.resize(lengthOfPath*d);
-      auto source = static_cast<float*>(PyArray_DATA(a));
-      for(size_t i=0; i<input.size(); ++i)
-        input[i]=source[i];
-      inp = input.data();
-    }catch(std::exception&){
-      ERR("Out of memory");
-    }
-  }
-  if(PyArray_TYPE(b)==NPY_FLOAT64)
-    der = static_cast<double*>(PyArray_DATA(b));
-  else{
-    try{
-      derivs.resize(sigLength);
-      auto source = static_cast<float*>(PyArray_DATA(b));
-      for(size_t i=0; i<sigLength; ++i)
-        derivs[i]=source[i];
-      der = derivs.data();
-    }catch(std::exception&){
-      ERR("Out of memory");
-    }
-  }
+
+  ReadArrayAsDoubles input, derivs;
+  if(input.read(a,lengthOfPath*d) || derivs.read(b,sigLength))
+    ERR("Out of memory");
   npy_intp dims[] = {(npy_intp) lengthOfPath, (npy_intp) d};
   PyObject* o = PyArray_SimpleNew(2,dims,NPY_FLOAT32);
   if(!o)
@@ -243,7 +245,8 @@ sigBackwards(PyObject *self, PyObject *args){
   float* out = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
   for(int i=0; i<lengthOfPath*d; ++i)
     out[i]=0.0f;
-  BackwardDerivativeSignature::sigBackwards(d,level,lengthOfPath,inp,der,out);  
+  BackwardDerivativeSignature::sigBackwards(d,level,lengthOfPath,
+    input.ptr(),derivs.ptr(),out);  
   return o;
 }
 
@@ -265,31 +268,127 @@ sigJacobian(PyObject *self, PyObject *args){
   if(lengthOfPath<1) ERR("Path has no length");
   if(d<1) ERR("Path must have positive dimension");
   size_t sigLength = calcSigTotalLength(d,level);
-  vector<TotalDerivativeSignature::Number> input;
-  TotalDerivativeSignature::Number* inp;
-  if(PyArray_TYPE(a)==NPY_FLOAT64)
-    inp = static_cast<double*>(PyArray_DATA(a));
-  else{
-    try{
-      input.resize(lengthOfPath*d);
-      auto source = static_cast<float*>(PyArray_DATA(a));
-      for(size_t i=0; i<input.size(); ++i)
-        input[i]=source[i];
-      inp = input.data();
-    }catch(std::exception&){
-      ERR("Out of memory");
-    }
-  }
+  ReadArrayAsDoubles input;
+  if(input.read(a,lengthOfPath*d))
+    ERR("Out of memory");
 
   npy_intp dims[] = {(npy_intp) lengthOfPath, (npy_intp) d, (npy_intp)sigLength};
   PyObject* o = PyArray_SimpleNew(3,dims,NPY_FLOAT32);
   if(!o)
     return nullptr;
   float* out = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
-  TotalDerivativeSignature::sigJacobian(inp,lengthOfPath,d,level,out);  
+  TotalDerivativeSignature::sigJacobian(input.ptr(),lengthOfPath,d,level,out);  
   return o;
 }
 
+static PyObject *
+sigJoin(PyObject *self, PyObject *args){
+  PyObject* a1;
+  PyObject* a2;
+  int level=0;
+  if (!PyArg_ParseTuple(args, "OOi", &a1, &a2, &level))
+    return NULL;
+  if(level<1) ERR("level must be positive");
+  if(!PyArray_Check(a1)) ERR("sigs must be a numpy array");
+  if(!PyArray_Check(a2)) ERR("new data must be a numpy array");
+  PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a1));
+  Deleter a_(reinterpret_cast<PyObject*>(a));
+  PyArrayObject* b = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a2));
+  Deleter b_(reinterpret_cast<PyObject*>(b));
+  if(PyArray_NDIM(a)!=2) ERR("sigs must be 2d");
+  if(PyArray_NDIM(b)!=2) ERR("data must be 2d");
+  if(PyArray_TYPE(a)!=NPY_FLOAT32 && PyArray_TYPE(a)!=NPY_FLOAT64)
+    ERR("sigs must be float32 or float64");
+  if(PyArray_TYPE(b)!=NPY_FLOAT32 && PyArray_TYPE(b)!=NPY_FLOAT64)
+    ERR("data must be float32 or float64");
+  const int nPaths = (int)PyArray_DIM(a,0);
+  if(nPaths!=(int)PyArray_DIM(b,0))
+    ERR("different number of sigs and data");
+  const int d = (int)PyArray_DIM(b,1);
+  if(d<1) ERR("Path must have positive dimension");
+  size_t sigLength = calcSigTotalLength(d,level);
+  if(sigLength != (size_t) PyArray_DIM(a,1))
+    ERR("signatures have unexpected length");
+  ReadArrayAsDoubles sig, displacement;
+  if(sig.read(a,nPaths*sigLength)||displacement.read(b,nPaths*d))
+    ERR("Out of memory");
+
+  npy_intp dims[] = {(npy_intp) nPaths, (npy_intp)sigLength};
+  PyObject* o = PyArray_SimpleNew(2,dims,NPY_FLOAT32);
+  if(!o)
+    return nullptr;
+  float* out = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
+  for(int iPath=0; iPath<nPaths; ++iPath)
+    BackwardDerivativeSignature::sigJoin(d,level,sig.ptr()+iPath*sigLength,
+    displacement.ptr()+iPath*d,out+iPath*sigLength);
+  return o;
+}
+ 
+static PyObject *
+  sigJoinBackwards(PyObject* self, PyObject *args){
+  PyObject* a1;
+  PyObject* a2;
+  PyObject* a3;
+  int level=0;
+  if (!PyArg_ParseTuple(args, "OOiO", &a1, &a2, &level, &a3))
+    return NULL;
+  if(level<1) ERR("level must be positive");
+  if(!PyArray_Check(a1)) ERR("sigs must be a numpy array");
+  if(!PyArray_Check(a2)) ERR("new data must be a numpy array");
+  if(!PyArray_Check(a3)) ERR("derivs must be a numpy array");
+  PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a1));
+  Deleter a_(reinterpret_cast<PyObject*>(a));
+  PyArrayObject* b = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a2));
+  Deleter b_(reinterpret_cast<PyObject*>(b));
+  PyArrayObject* c = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a3));
+  Deleter c_(reinterpret_cast<PyObject*>(c));
+  if(PyArray_NDIM(a)!=2) ERR("sigs must be 2d");
+  if(PyArray_NDIM(b)!=2) ERR("data must be 2d");
+  if(PyArray_NDIM(c)!=2) ERR("derivs must be 2d");
+  if(PyArray_TYPE(a)!=NPY_FLOAT32 && PyArray_TYPE(a)!=NPY_FLOAT64)
+    ERR("sigs must be float32 or float64");
+  if(PyArray_TYPE(b)!=NPY_FLOAT32 && PyArray_TYPE(b)!=NPY_FLOAT64)
+    ERR("data must be float32 or float64");
+  if(PyArray_TYPE(c)!=NPY_FLOAT32 && PyArray_TYPE(c)!=NPY_FLOAT64)
+    ERR("derivs must be float32 or float64");
+  const int nPaths = (int)PyArray_DIM(a,0);
+  if(nPaths!=(int)PyArray_DIM(b,0))
+    ERR("different number of sigs and data");
+  if(nPaths!=(int)PyArray_DIM(c,0))
+    ERR("different number of sigs and derivs");
+  const int d = (int)PyArray_DIM(b,1);
+  if(d<1) ERR("Path must have positive dimension");
+  size_t sigLength = calcSigTotalLength(d,level);
+  if(sigLength != (size_t) PyArray_DIM(a,1))
+    ERR("signatures have unexpected length");
+  if(sigLength != (size_t) PyArray_DIM(c,1))
+    ERR("derivs should have the same shape as signatures");
+  ReadArrayAsDoubles sig, displacement, derivs;
+  if(sig.read(a,nPaths*sigLength)||displacement.read(b,nPaths*d)
+     ||derivs.read(c,nPaths*sigLength))
+    ERR("Out of memory");
+
+  npy_intp dims1[] = {(npy_intp) nPaths, (npy_intp) sigLength};
+  npy_intp dims2[] = {(npy_intp) nPaths, (npy_intp) d};
+                     
+  PyObject* o1 = PyArray_SimpleNew(2,dims1,NPY_FLOAT32);
+  if(!o1)
+    return nullptr;
+  PyObject* o2 = PyArray_SimpleNew(2,dims2,NPY_FLOAT32);
+  if(!o2)
+    return nullptr;
+  
+  float* out1 = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o1)));
+  float* out2 = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o2)));
+  for(int iPath=0; iPath<nPaths; ++iPath)
+    BackwardDerivativeSignature::sigJoinBackwards(d,level,sig.ptr()+iPath*sigLength,
+                                                  displacement.ptr()+iPath*d,
+                                                  derivs.ptr()+iPath*sigLength,
+                                                  out1+iPath*sigLength,
+                                                  out2+iPath*d);
+  return PyTuple_Pack(2,o1,o2);
+}
+ 
 const char* const logSigFunction_id = "iisignature.LogSigFunction";
 LogSigFunction* getLogSigFunction(PyObject* p){
 #ifdef NO_CAPSULES
@@ -690,7 +789,14 @@ static PyMethodDef Methods[] = {
    "If s is the derivative of something with respect to sig(X,m), "
    "then this returns the derivative of that thing with respect to X. "
    "sigBackpropDeriv(X,m,s) should be approximately numpy.dot(sigjacobian(X,m),s)"},
+  {"sigjoin", sigJoin, METH_VARARGS, "sigjoin(X,D,m)\n "
+   "If X is an array of signatures of d dimensional paths of shape "
+   "(K, siglength(d,m)) and D is an array of d dimensional displacements "
+   "of shape (K, d), then return an array shaped like X "
+   "of the signatures of the paths concatenated with the displacements."},
    //"If X is an NxD array then out s must be a (siglength(D,m),) array."},
+  {"sigjoinbackprop",sigJoinBackwards,METH_VARARGS, "sigjoinbackprop(X,D,m,s) \n "
+   "gives the derivatives of F with respect to X and D where s is the derivatives of F with respect to sigjoin(X,D,m). The result is a tuple of two items."}, 
   {"siglength", siglength, METH_VARARGS, "siglength(d,m) \n "
    "Returns the length of the signature (excluding the initial 1) of a d dimensional path up to level m"},
   {"logsiglength", logsiglength, METH_VARARGS, "logsiglength(d,m) \n "
