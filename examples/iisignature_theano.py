@@ -6,6 +6,10 @@
 import theano, numpy
 import iisignature
 
+nancheck = False
+def contains_nan(x):
+    return numpy.isnan(x).any()
+
 #This is a theano Op which wraps iisignature.siglength .
 #It is used to implement shape inference of Sig.
 class SigLength_op(theano.Op):
@@ -57,7 +61,8 @@ class Sig_op(theano.Op):
         m=inputs_storage[1]
         outputs_storage[0][0]=iisignature.sig(x,m)
     def grad(self,inputs,g):
-        return [SigGrad(g[0],inputs[0],inputs[1]),theano.gof.null_type.NullType()()]
+        return [SigGrad(g[0],inputs[0],inputs[1]),
+                theano.gradient.grad_undefined(self,1,inputs[1])]
 Sig = Sig_op()
 
 #This is a theano Op which wraps iisignature.sigjoinbackprop .
@@ -81,6 +86,13 @@ class SigJoinGrad_op(theano.Op):
         m=inputs_storage[3]
         fixed=inputs_storage[4]
         o=iisignature.sigjoinbackprop(s,x,y,m,fixed)
+        if(nancheck):
+            if contains_nan(x):
+                raise RuntimeError("nan in x")
+            if contains_nan(y):
+                raise RuntimeError("nan in y")
+            if contains_nan(o[0]) or contains_nan(o[1]):
+                raise RuntimeError("nan in output")
         out[0][0]=o[0]
         out[1][0]=o[1]
 SigJoinGrad = SigJoinGrad_op()
@@ -103,10 +115,18 @@ class SigJoin_op(theano.Op):
         m=inputs_storage[2]
         fixed = inputs_storage[3]
         outputs_storage[0][0]=iisignature.sigjoin(x,y,m,fixed)
+        if(nancheck):
+            if contains_nan(x):
+                raise RuntimeError("nan in x")
+            if contains_nan(y) :
+                raise RuntimeError("nan in y")
+            if contains_nan(outputs_storage[0][0]) :
+                raise RuntimeError("nan in output")
     def grad(self,inputs,g):
         gg = SigJoinGrad(g[0],inputs[0],inputs[1],inputs[2],inputs[3])
-        return [gg[0],gg[1],theano.gof.null_type.NullType()(),
-                theano.gof.null_type.NullType()()]
+        return [gg[0],gg[1],
+                theano.gradient.grad_undefined(self,2,inputs[2]),
+                theano.gradient.grad_not_implemented(self,3,inputs[3])]
 SigJoin = SigJoin_op()
 
 
