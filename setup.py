@@ -1,7 +1,7 @@
 from setuptools import setup, Extension
 import numpy
 
-version = "0.15"
+version = "0.16"
 headers = ["bch","calcSignature","logsig","logSigLength","makeCompiledFunction","readBCHCoeffs"]
 
 xtn = Extension('iisignature', ['src/pythonsigs.cpp'], 

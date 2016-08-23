@@ -25,9 +25,12 @@ class RecurrentSig(keras.layers.recurrent.Recurrent):
     train_time_lapse: whether to train the time lapse, this doesn't work yet because
     SigJoinGrad doesn't return a gradient wrt the time lapse.
 
-    output_signatures: whether the signatures as well as the current hidden state are output to succeeding layers
+    output_signatures: whether the signatures as well as the current hidden state are 
+    output to succeeding layers
    
-    use_signatures: whether the new state can depend on the value of the signature. Note that this layer is just like a simple RNN if use_signatures and output_signatures are both false.
+    use_signatures: whether the new state can depend on the value of the signature. 
+    Note that this layer is just like a simple RNN if use_signatures 
+    and output_signatures are both false.
 
     init: the initialisation of the map from input to state
 
@@ -84,7 +87,8 @@ class RecurrentSig(keras.layers.recurrent.Recurrent):
         prev_sigs_=K.reshape(prev_sigs,(-1,self.sigsize))#(batch*n_units,sigsize)
         prev_states=states[1]
         h = K.dot(x, self.W) + self.b
-        prev_states_as_memory = (K.concatenate([prev_sigs,prev_states],1) if self.use_signatures else prev_states)
+        prev_states_as_memory = (K.concatenate([prev_sigs,prev_states],1) if
+                                 self.use_signatures else prev_states)
         raw_output = self.activation(h + K.dot(prev_states_as_memory, self.U))
         displacements=K.reshape(raw_output-prev_states,(-1,1))
         sigs = SigJoin(prev_sigs_,displacements,self.sig_level,self.time_lapse)
