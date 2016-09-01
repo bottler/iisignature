@@ -278,7 +278,7 @@ namespace TotalDerivativeSignature{
     for(auto& level : s2.m_data)
       for(auto& value : level){
         for(size_t j=0; j<inputSize; ++j)
-          out[i+j*totalSigLength]=value.m_derivs[j];
+          out[i+j*totalSigLength]=(float)value.m_derivs[j];
         ++i;
       }
   }
@@ -381,7 +381,7 @@ namespace BackwardDerivativeSignature{
     void writeOut(Numeric* dest) const{
       for(auto& a: m_data)
         for(auto& b:a)
-          *(dest++)=b;
+          *(dest++)=(Numeric)b;
     }
   };
 
@@ -479,8 +479,8 @@ namespace BackwardDerivativeSignature{
       auto neg = output+(i-1)*d;
       auto& s = localDerivs.m_data[0];
       for(int j=0;j<d;++j){
-        pos[j]+=s[j];
-        neg[j]-=s[j];
+        pos[j]+=(OutputNumber)s[j];
+        neg[j]-=(OutputNumber)s[j];
       }
     }
   }
@@ -507,7 +507,7 @@ namespace BackwardDerivativeSignature{
     backToSegment(d,m,segmentSig,localDerivs);
     const int d_given = std::isnan(fixedLast) ? d : d-1;
     for(int j=0;j<d_given;++j)
-      dSeg[j]=localDerivs.m_data[0][j];
+      dSeg[j]=(OutputNumber)localDerivs.m_data[0][j];
   }
 }
 
