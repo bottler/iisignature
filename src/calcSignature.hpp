@@ -385,10 +385,10 @@ namespace BackwardDerivativeSignature{
     }
   };
 
-  //let A and B be paths with signatures sig(A), sig(B) and sig(AB) the sig of the concatenated path, 
-  // where B is straight. Let F be some scalar.
+  //Let A and B be paths with signatures sig(A), sig(B) and sig(AB) the sig of the concatenated path.
+  //Let F be some scalar.
   //Given input: a is sig(A), b is sig(B) and ww is dF/d(sig(AB))
-  //Produces output: bb is dF/d(sig(B)), ww is dF/d(sig(AB))
+  //Produces output: bb is dF/d(sig(B)), ww is dF/d(sig(A))
   void backConcatenate(int d, int m, const Signature& a, const Signature& b, Signature& ww, Signature& bb){
     bb=ww;
     //in this block, we only modify bb
