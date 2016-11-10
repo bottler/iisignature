@@ -169,7 +169,7 @@ class A(unittest.TestCase):
                     displacement = displacement[:,:-1]
                 joinee = iisignature.sigjoin(joinee,displacement,level,fixedPoint)
             diff=numpy.max(numpy.abs(sig-joinee))
-            self.assertLess(diff,0.0001)
+            self.assertLess(diff,0.0001,"fullSig matches sig"+(" with fixed Dim" if fixed else ""))
 
             extra = numpy.random.uniform(size=(numberToDo,inputDim))
             bumpedExtra = 1.001*extra
@@ -182,8 +182,8 @@ class A(unittest.TestCase):
                                                      level,fixedPoint)
             diff1 = (bump1-base)-numpy.sum(calculated[0]*(bumpedJoinee-joinee))
             diff2 = (bump2-base)-numpy.sum(calculated[1]*(bumpedExtra-extra))
-            self.assertLess(diff1,0.00001)
-            self.assertLess(diff2,0.0001)
+            self.assertLess(diff1,0.00001,"diff1 as expected "+(" with fixed Dim" if fixed else ""))
+            self.assertLess(diff2,0.0001,"diff2 as expected "+(" with fixed Dim" if fixed else ""))
 
 #test that sigjacobian and sigbackprop compatible with sig
 class Deriv(unittest.TestCase):
@@ -228,6 +228,12 @@ class Deriv(unittest.TestCase):
         backProp = iisignature.sigbackprop(dFdSig,path,m)
         manualCalcBackProp = numpy.dot(gradient,dFdSig)
         backDiffs = numpy.max(numpy.abs(backProp-manualCalcBackProp))
+        if 0: # to investigate the compile logic problem I used this and (d,m,pathLength)=(1,2,2)
+            print("")
+            print(dFdSig)
+            print(path)
+            print (backProp)
+            print (manualCalcBackProp)
         self.assertLess(backDiffs,0.000001)
 
         

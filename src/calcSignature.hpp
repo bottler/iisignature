@@ -383,6 +383,15 @@ namespace BackwardDerivativeSignature{
         for(auto& b:a)
           *(dest++)=(Numeric)b;
     }
+    void print() const {
+      std::cout << "\n";
+      for (auto& a : m_data) {
+        for (auto&b : a)
+          std::cout << b << " ";
+        std::cout << "\n";
+      }
+      std::cout.flush();
+    }
   };
 
   //Let A and B be paths with signatures sig(A), sig(B) and sig(AB) the sig of the concatenated path.
@@ -435,8 +444,18 @@ namespace BackwardDerivativeSignature{
       auto i = s.m_data[level-1].begin();
       for(size_t j=0; j<s.m_data[level-2].size(); ++j)
         for(int dd=0; dd<d; ++dd, ++i){
+#ifndef _MSC_VER
           s.m_data[level-2][j] += segment[dd] * (1.0/level) * *i;
           dSegment[dd] += x.m_data[level-2][j] * (1.0/level) * *i;
+#else
+          //The following 3 lines do the same thing as the preceding 2,
+          //but the above 2 (which are more succinct and closer mirrors of the code
+          //whose derivative they represent) seem to be miscompiled by
+          //VS 2015.
+          auto ii = s.m_data[level - 1][dd + d*j];
+          s.m_data[level - 2][j] += x.m_data[0][dd] * (1.0 / level) * ii;
+          s.m_data[0][dd] += x.m_data[level - 2][j] * (1.0 / level) * ii;
+#endif
         }
     }
   }
@@ -473,8 +492,13 @@ namespace BackwardDerivativeSignature{
         displacement[j]=path[i*d+j]-path[(i-1)*d+j];
       segmentSig.sigOfSegment(d,m,&displacement[0]);
       allSig.unconcatenateWith(d,m,segmentSig);
+      //allSig.print();
       backConcatenate(d,m,allSig,segmentSig,allSigDerivs,localDerivs);
+      //allSigDerivs.print();
+      //localDerivs.print();
+      //segmentSig.print();
       backToSegment(d,m,segmentSig,localDerivs);
+      //localDerivs.print();
       auto pos = output+i*d;
       auto neg = output+(i-1)*d;
       auto& s = localDerivs.m_data[0];
