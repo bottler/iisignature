@@ -139,10 +139,15 @@ static bool calcSignature(CalculatedSignature& s2, PyObject* data, int level){
       for(int j=0;j<d; ++j)
         displacement[j]=data[i*d+j]-data[(i-1)*d+j];
       s1.sigOfSegment(d,level,&displacement[0]);
+      if (interrupt_wanted())
+        return false;
       if(i==1)
         s2.swap(s1);
-      else
+      else{
         s2.concatenateWith(d,level,s1);
+        if (interrupt_wanted())
+          return false;
+      }
     }
   }else{
     vector<double> displacement(d);
@@ -151,10 +156,15 @@ static bool calcSignature(CalculatedSignature& s2, PyObject* data, int level){
       for(int j=0;j<d; ++j)
         displacement[j]=data[i*d+j]-data[(i-1)*d+j];
       s1.sigOfSegment(d,level,&displacement[0]);
+      if (interrupt_wanted())
+        return false;
       if(i==1)
         s2.swap(s1);
-      else
-        s2.concatenateWith(d,level,s1);
+      else {
+        s2.concatenateWith(d, level, s1);
+        if (interrupt_wanted())
+          return false;
+      }
     }
   }
   return true;
@@ -164,19 +174,44 @@ static PyObject *
 sig(PyObject *self, PyObject *args){
   PyObject* a1;
   int level=0;
-  if (!PyArg_ParseTuple(args, "Oi", &a1, &level))
+  int format = 0;
+  if (!PyArg_ParseTuple(args, "Oi|i", &a1, &level, &format))
     return NULL;
   if(level<1) ERR("level must be positive");
 
   CalculatedSignature s;
+  setup_signals();
   if(!calcSignature(s,a1,level))
     return NULL;
+  if (PyErr_CheckSignals())
+    return NULL;
   
+  PyObject* o;
   long d = (long)s.m_data[0].size();
-  npy_intp dims[] = {(npy_intp) calcSigTotalLength(d,level)};
-  PyObject* o = PyArray_SimpleNew(1,dims,NPY_FLOAT32);
-  s.writeOut(static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o))));
-  return o;
+  if (format == 0) { //by default, output all to a single array
+    npy_intp dims[] = { (npy_intp)calcSigTotalLength(d,level) };
+    o = PyArray_SimpleNew(1, dims, NPY_FLOAT32);
+    if (!o)
+      return nullptr;
+    s.writeOut(static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o))));
+  }
+  else if (format == 1){
+    o = PyTuple_New(level);
+    for (int m = 0; m < level; ++m) {
+      npy_intp dims[] = { (npy_intp)calcSigLevelLength(d,m+1) };
+      PyObject* p = PyArray_SimpleNew(1, dims, NPY_FLOAT32);
+      if (!p)
+        return nullptr;
+      auto ptr = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(p)));
+      for (auto f : s.m_data[m])
+        *(ptr++) = f;
+      PyTuple_SET_ITEM(o, m, p);
+    }
+  }
+  else
+    ERR("Invalid format requested");
+ 
+ return    o;
 }
 
 //Take a Numpy array which is already ensured contiguous and
@@ -603,7 +638,7 @@ prepare(PyObject *self, PyObject *args){
     exceptionMessage = e.what();
   }
   Py_END_ALLOW_THREADS
-  if(PyErr_CheckSignals()!=0) //I think if(interrupt_wanted()) would do just as well
+  if(PyErr_CheckSignals()) //I think if(interrupt_wanted()) would do just as well
     return NULL;
   if(!exceptionMessage.empty())
     ERR(exceptionMessage.c_str());
@@ -714,6 +749,8 @@ logsig(PyObject *self, PyObject *args){
     }
     npy_intp dims[] = {(npy_intp)out.size()};
     PyObject* o = PyArray_SimpleNew(1,dims,NPY_FLOAT32);
+    if (!o)
+      return nullptr;
     float* dest = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
     for(double d : out)
       *dest++ = (float) d;
@@ -723,12 +760,18 @@ logsig(PyObject *self, PyObject *args){
   if(wantedmethods.m_expanded || 
      (wantedmethods.m_log_of_signature && canTakeLogOfSig)){
     CalculatedSignature sig;
-    calcSignature(sig,a1,lsf->m_level);
+    setup_signals();
+    if (!calcSignature(sig, a1, lsf->m_level))
+      return nullptr;
+    if (PyErr_CheckSignals())
+      return NULL;
     logTensor(sig);
     if(wantedmethods.m_expanded){
       npy_intp siglength = (npy_intp) calcSigTotalLength(lsf->m_dim,lsf->m_level);
       npy_intp dims[] = {siglength};
       PyObject* flattenedFullLogSigAsNumpyArray = PyArray_SimpleNew(1,dims,NPY_FLOAT32);
+      if (!flattenedFullLogSigAsNumpyArray)
+        return nullptr;
       auto asArray = reinterpret_cast<PyArrayObject*>(flattenedFullLogSigAsNumpyArray);
       sig.writeOut(static_cast<float*>(PyArray_DATA(asArray)));
       return flattenedFullLogSigAsNumpyArray;
@@ -766,6 +809,8 @@ logsig(PyObject *self, PyObject *args){
 
     npy_intp dims[] = {(npy_intp)out.size()};
     PyObject* o = PyArray_SimpleNew(1,dims,NPY_FLOAT32);
+    if (!o)
+      return nullptr;
     float* dest = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
     for(double d : out)
       *dest++ = (float) d;
@@ -783,9 +828,10 @@ logsig(PyObject *self, PyObject *args){
   "which may be faster for high levels or long paths)"
 
 static PyMethodDef Methods[] = {
-  {"sig",  sig, METH_VARARGS, "sig(X,m)\n Returns the signature of a path X "
+  {"sig",  sig, METH_VARARGS, "sig(X,m,format=1)\n Returns the signature of a path X "
    "up to level m. X must be a numpy NxD float32 or float64 array of points "
-   "making up the path in R^d. The initial 1 in the zeroth level of the signature is excluded."},
+   "making up the path in R^d. The initial 1 in the zeroth level of the signature is excluded. "
+   "If format is 1, the output is a list of arrays not a single one."},
   {"sigjacobian", sigJacobian, METH_VARARGS, "sigjacobian(X,m)\n "
    "Returns the full Jacobian matrix of "
    "derivatives of sig(X,m) with respect to X. "
@@ -794,7 +840,7 @@ static PyMethodDef Methods[] = {
    "If s is the derivative of something with respect to sig(X,m), "
    "then this returns the derivative of that thing with respect to X. "
    "sigbackprop(s,X,m) should be approximately numpy.dot(sigjacobian(X,m),s)"},
-  {"sigjoin", sigJoin, METH_VARARGS, "sigjoin(X,D,m[,f=float('nan')])\n "
+  {"sigjoin", sigJoin, METH_VARARGS, "sigjoin(X,D,m,f=float('nan'))\n "
    "If X is an array of signatures of d dimensional paths of shape "
    "(K, siglength(d,m)) and D is an array of d dimensional displacements "
    "of shape (K, d), then return an array shaped like X "
@@ -802,7 +848,7 @@ static PyMethodDef Methods[] = {
    "If f is provided, then it is taken to be the fixed value of the "
    "displacement in the last dimension, and D should have shape (K, d-1)."},
    //"If X is an NxD array then out s must be a (siglength(D,m),) array."},
-  {"sigjoinbackprop",sigJoinBackwards,METH_VARARGS, "sigjoinbackprop(s,X,D,m[,f=float('nan')]) \n "
+  {"sigjoinbackprop",sigJoinBackwards,METH_VARARGS, "sigjoinbackprop(s,X,D,m,f=float('nan')) \n "
    "gives the derivatives of F with respect to X and D where s is the derivatives"
    " of F with respect to sigjoin(X,D,m,f). The result is a tuple of two items."}, 
   {"siglength", siglength, METH_VARARGS, "siglength(d,m) \n "
