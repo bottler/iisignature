@@ -467,9 +467,17 @@ LogSigFunction* getLogSigFunction(PyObject* p){
 #endif
 } 
 
+#ifndef NO_CAPSULES
 static void killLogSigFunction(PyObject* p){
+#else
+static void killLogSigFunction(void* v){
+  PyObject* p = (PyObject*) v;
+#endif
   delete getLogSigFunction(p);
 }
+
+
+
 //returns true on success
 bool getData(){
   if(g_bchLyndon20_dat) //already set

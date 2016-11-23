@@ -1,4 +1,4 @@
-import iisignature, unittest, numpy
+import iisignature, unittest, numpy, sys
 
 #text, index -> (either number or [res, res]), newIndex
 def parseBracketedExpression(text,index):
@@ -119,9 +119,14 @@ def chen(a,b):
 def diff(a,b):
     return numpy.max(numpy.abs(a-b))
 
+class TestCase(unittest.TestCase):
+    if sys.hexversion<0x20700000:
+        def assertLess(self,a,b,msg=None):
+            self.assertTrue(a<b,msg)
+
 #This test checks that basis, logsig and sig are compatible with each other by calculating a signature both using sig
 #and using logsig and checking they are equal 
-class A(unittest.TestCase):
+class A(TestCase):
     def testa(self):
         #numpy.random.seed(21)
         dim=3
@@ -213,7 +218,7 @@ class A(unittest.TestCase):
             self.assertLess(diff2,0.0001,"diff2 as expected "+(" with fixed Dim" if fixed else ""))
 
 #test that sigjacobian and sigbackprop compatible with sig
-class Deriv(unittest.TestCase):
+class Deriv(TestCase):
     def testa(self):
         numpy.random.seed(291)
         d = 3
@@ -263,7 +268,7 @@ class Deriv(unittest.TestCase):
             print (manualCalcBackProp)
         self.assertLess(backDiffs,0.000001)
 
-class Counts(unittest.TestCase):
+class Counts(TestCase):
     #check sigmultcount, and also that sig matches a manual signature calculation
     def testa(self):
         numpy.random.seed(2141)
