@@ -82,7 +82,7 @@ static PyObject *
 siglength(PyObject *self, PyObject *args){
   int d=0, m=0;
   if (!PyArg_ParseTuple(args, "ii", &d, &m))
-    return NULL;
+    return nullptr;
   if(m<1) ERR("level must be positive");
   if(d<1) ERR("dimension must be positive");
   long ans = calcSigTotalLength(d,m);
@@ -99,7 +99,7 @@ static PyObject *
 logsiglength(PyObject *self, PyObject *args){
   int d=0, m=0;
   if (!PyArg_ParseTuple(args, "ii", &d, &m))
-    return NULL;
+    return nullptr;
   if(m<1) ERR("level must be positive");
   if(d<1) ERR("dimension must be positive");
   LogSigLength::Int ans = d==1 ? 1 : m==1 ? d : LogSigLength::countNecklacesUptoLengthM(d,m);
@@ -176,15 +176,15 @@ sig(PyObject *self, PyObject *args){
   int level=0;
   int format = 0;
   if (!PyArg_ParseTuple(args, "Oi|i", &a1, &level, &format))
-    return NULL;
+    return nullptr;
   if(level<1) ERR("level must be positive");
 
   CalculatedSignature s;
   setup_signals();
   if(!calcSignature(s,a1,level))
-    return NULL;
+    return nullptr;
   if (PyErr_CheckSignals())
-    return NULL;
+    return nullptr;
   
   PyObject* o;
   long d = (long)s.m_data[0].size();
@@ -213,6 +213,31 @@ sig(PyObject *self, PyObject *args){
  
  return    o;
 }
+
+static PyObject *
+sigMultCount(PyObject *self, PyObject *args) {
+  PyObject* data;
+  int level = 0;
+  int format;
+  if (!PyArg_ParseTuple(args, "Oi|i", &data, &level, &format))
+    return nullptr;
+  if (level<1) ERR("level must be positive");
+  if (!PyArray_Check(data)) ERRb("data must be a numpy array");
+  PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(data));
+  Deleter a_(reinterpret_cast<PyObject*>(a));
+  if (PyArray_NDIM(a) != 2) ERRb("data must be 2d");
+  if (PyArray_TYPE(a) != NPY_FLOAT32 && PyArray_TYPE(a) != NPY_FLOAT64)
+    ERRb("data must be float32 or float64");
+  const int lengthOfPath = (int)PyArray_DIM(a, 0);
+  const int d = (int)PyArray_DIM(a, 1);
+  if (lengthOfPath<1) ERRb("Path has no length");
+  if (d<1) ERRb("Path must have positive dimension");
+
+  double out = CalcSignature::CalculatedSignature::concatenateWithMultCount(d,level)*(lengthOfPath-2);
+  out += CalcSignature::CalculatedSignature::sigOfSegmentMultCount(d, level)*(lengthOfPath - 1);
+  return PyLong_FromDouble(out);
+}
+
 
 //Take a Numpy array which is already ensured contiguous and
 //either NPY_FLOAT32 or NPY_FLOAT64
@@ -247,7 +272,7 @@ sigBackwards(PyObject *self, PyObject *args){
   PyObject* a2;
   int level=0;
   if (!PyArg_ParseTuple(args, "OOi", &a2, &a1, &level))
-    return NULL;
+    return nullptr;
   if(level<1) ERR("level must be positive");
   if(!PyArray_Check(a1)) ERR("path must be a numpy array");
   if(!PyArray_Check(a2)) ERR("derivs must be a numpy array");
@@ -290,7 +315,7 @@ sigJacobian(PyObject *self, PyObject *args){
   PyObject* a1;
   int level=0;
   if (!PyArg_ParseTuple(args, "Oi", &a1, &level))
-    return NULL;
+    return nullptr;
   if(level<1) ERR("level must be positive");
   if(!PyArray_Check(a1)) ERR("data must be a numpy array");
   PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a1));
@@ -323,7 +348,7 @@ sigJoin(PyObject *self, PyObject *args){
   int level=0;
   double fixedLast = std::numeric_limits<double>::quiet_NaN();
   if (!PyArg_ParseTuple(args, "OOi|d", &a1, &a2, &level, &fixedLast))
-    return NULL;
+    return nullptr;
   if(level<1) ERR("level must be positive");
   if(!PyArray_Check(a1)) ERR("sigs must be a numpy array");
   if(!PyArray_Check(a2)) ERR("new data must be a numpy array");
@@ -369,7 +394,7 @@ static PyObject *
   int level=0;
   double fixedLast = std::numeric_limits<double>::quiet_NaN();
   if (!PyArg_ParseTuple(args, "OOOi|d", &a3, &a1, &a2, &level, &fixedLast))
-    return NULL;
+    return nullptr;
   if(level<1) ERR("level must be positive");
   if(!PyArray_Check(a1)) ERR("sigs must be a numpy array");
   if(!PyArray_Check(a2)) ERR("new data must be a numpy array");
@@ -617,9 +642,9 @@ prepare(PyObject *self, PyObject *args){
   int level=0, dim=0;
   const char* methods = nullptr;
   if (!PyArg_ParseTuple(args, "ii|z", &dim, &level, &methods))
-    return NULL;
+    return nullptr;
   if(!getData())
-    return NULL;
+    return nullptr;
   if(dim<2) ERR("dimension must be at least 2");
   if(level<1) ERR("level must be positive");
   WantedMethods wantedmethods;
@@ -639,7 +664,7 @@ prepare(PyObject *self, PyObject *args){
   }
   Py_END_ALLOW_THREADS
   if(PyErr_CheckSignals()) //I think if(interrupt_wanted()) would do just as well
-    return NULL;
+    return nullptr;
   if(!exceptionMessage.empty())
     ERR(exceptionMessage.c_str());
 
@@ -667,10 +692,10 @@ prepare(PyObject *self, PyObject *args){
 static PyObject* basis(PyObject *self, PyObject *args){
   PyObject* c;
   if(!PyArg_ParseTuple(args,"O",&c))
-    return NULL;
+    return nullptr;
   LogSigFunction* lsf = getLogSigFunction(c);
   if(!lsf)
-    return NULL;
+    return nullptr;
   auto& wordlist = lsf->m_basisWords;
   PyObject* o = PyTuple_New(wordlist.size());
   for(size_t i=0; i<wordlist.size(); ++i){
@@ -687,10 +712,10 @@ logsig(PyObject *self, PyObject *args){
   PyObject* a1, *a2;
   const char* methods = nullptr;
   if (!PyArg_ParseTuple(args, "OO|z", &a1, &a2, &methods))
-    return NULL;
+    return nullptr;
   LogSigFunction* lsf = getLogSigFunction(a2);
   if(!lsf)
-    return NULL;
+    return nullptr;
   WantedMethods wantedmethods;
   std::string methodString;
   if(methods)
@@ -764,7 +789,7 @@ logsig(PyObject *self, PyObject *args){
     if (!calcSignature(sig, a1, lsf->m_level))
       return nullptr;
     if (PyErr_CheckSignals())
-      return NULL;
+      return nullptr;
     logTensor(sig);
     if(wantedmethods.m_expanded){
       npy_intp siglength = (npy_intp) calcSigTotalLength(lsf->m_dim,lsf->m_level);
@@ -832,6 +857,8 @@ static PyMethodDef Methods[] = {
    "up to level m. X must be a numpy NxD float32 or float64 array of points "
    "making up the path in R^d. The initial 1 in the zeroth level of the signature is excluded. "
    "If format is 1, the output is a list of arrays not a single one."},
+  {"sigmultcount", sigMultCount, METH_VARARGS, "sigmultcount(X,m)\n "
+   "Returns the number of multiplications which sig(X,m) would perform."},
   {"sigjacobian", sigJacobian, METH_VARARGS, "sigjacobian(X,m)\n "
    "Returns the full Jacobian matrix of "
    "derivatives of sig(X,m) with respect to X. "

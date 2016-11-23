@@ -48,6 +48,15 @@ namespace CalcSignature{
             s[i++]=(CalcSigNumeric)(*p * l * (1.0/level));
       }
     }
+    static double sigOfSegmentMultCount(int d, int m) {
+      double out = 0;
+      int prevLevelLength = d;
+      for (int level = 2; level <= m; ++level) {
+        out += 2 * d * prevLevelLength;
+        prevLevelLength *= d;
+      }
+      return out;
+    }
     
     void sigOfNothing(int d, int m){
       m_data.resize(m);
@@ -81,6 +90,15 @@ namespace CalcSignature{
           *(dest++) += *(source++);
         
       }
+    }
+    static double concatenateWithMultCount(int d, int m) {
+      double out = 0;
+      int levelLength = 1;
+      for (int level = 1; level <= m; ++level) {
+        levelLength *= d;
+        out += (level - 1)*levelLength;
+      }
+      return out;
     }
     void swap(CalculatedSignature& other){
       m_data.swap(other.m_data);

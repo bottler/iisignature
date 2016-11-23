@@ -90,6 +90,35 @@ def splitConcatenatedTensor(a, dim, level):
     assert(start==a.shape[0])
     return out
 
+#returns the signature of a straight line as a list of levels, and the number of multiplications used
+def sigOfSegment(displacement, level):
+    d=displacement.shape[0]
+    sig = [displacement]
+    mults = 0
+    denominator = 1
+    for m in range(2,level+1):
+        other = sig[-1]
+        mults += 2 * other.shape[0]*d
+        sig.append(numpy.outer(other,displacement).flatten()*(1.0/m))
+    return sig, mults
+    
+#inputs are values in the tensor algebra given as lists of levels (from 1 to level), assumed 1 in level 0.
+#returns their concatenation product, and also the number of multiplications used
+#c.f. multiplyTensor
+def chen(a,b):
+    level = len(a)
+    dim = len(a[0])
+    mults = 0
+    sum = [a[m]+b[m] for m in range(level)]
+    for leftLevel in range(1,level):
+        for rightLevel in range(1, 1+level-leftLevel):
+            sum[leftLevel+rightLevel-1]+=numpy.outer(a[leftLevel-1],b[rightLevel-1]).flatten()
+            mults += a[leftLevel-1].shape[0] * b[rightLevel-1].shape[0]
+    return sum, mults
+
+def diff(a,b):
+    return numpy.max(numpy.abs(a-b))
+
 #This test checks that basis, logsig and sig are compatible with each other by calculating a signature both using sig
 #and using logsig and checking they are equal 
 class A(unittest.TestCase):
@@ -114,8 +143,7 @@ class A(unittest.TestCase):
             values, depth  = valueOfBracket(expression,dim)
             expanded_logsig[depth-1]+=values*coeff
         calculated_sig = numpy.concatenate(exponentiateTensor(expanded_logsig))
-        diff = numpy.max(numpy.abs(sig-calculated_sig))
-        self.assertLess(diff,0.00001)
+        self.assertLess(diff(sig,calculated_sig),0.00001)
 
         #calculate a log signature from sig
         fullLogSig = numpy.concatenate(logTensor(splitConcatenatedTensor(sig,dim,level)))
@@ -168,8 +196,7 @@ class A(unittest.TestCase):
                 if fixed:
                     displacement = displacement[:,:-1]
                 joinee = iisignature.sigjoin(joinee,displacement,level,fixedPoint)
-            diff=numpy.max(numpy.abs(sig-joinee))
-            self.assertLess(diff,0.0001,"fullSig matches sig"+(" with fixed Dim" if fixed else ""))
+            self.assertLess(diff(sig,joinee),0.0001,"fullSig matches sig"+(" with fixed Dim" if fixed else ""))
 
             extra = numpy.random.uniform(size=(numberToDo,inputDim))
             bumpedExtra = 1.001*extra
@@ -236,5 +263,26 @@ class Deriv(unittest.TestCase):
             print (manualCalcBackProp)
         self.assertLess(backDiffs,0.000001)
 
-        
+class Counts(unittest.TestCase):
+    #check sigmultcount, and also that sig matches a manual signature calculation
+    def testa(self):
+        numpy.random.seed(2141)
+        d=5
+        m=5
+        pathLength = 4
+        displacement = numpy.random.uniform(size=(d))
+        sig,mults = sigOfSegment(displacement,m)
+        path=[numpy.zeros(d),displacement]
+        for x in range(pathLength):
+            displacement1 = numpy.random.uniform(size=(d))
+            path.append(path[-1]+displacement1)
+            sig1, mults1 = sigOfSegment(displacement1, m)
+            sig, mults2 = chen(sig,sig1)
+            mults+=mults1+mults2
+        #print (path)
+        path=numpy.vstack(path)
+        isig = iisignature.sig(path,m,1)
+        for i in range(m):
+            self.assertLess(diff(isig[i],sig[i]),0.00001)
+        self.assertEqual(mults,iisignature.sigmultcount(path,m))
 
