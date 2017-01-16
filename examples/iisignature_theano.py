@@ -1,7 +1,9 @@
 #This module defines a theano op called Sig,
 # which just does iisignature.sig,
-#and one called SigJoin,
+#one called SigJoin,
 # which just does iisignature.sigjoin.
+#and one called SigScale,
+# which just does iisignature.sigscale.
 
 import theano, numpy
 import iisignature
@@ -9,6 +11,9 @@ import iisignature
 nancheck = False
 def contains_nan(x):
     return numpy.isnan(x).any()
+
+#Todo: you can use x.ndim in make_node to change behaviour based on shapes of the input.
+#could make these functions optionally batched
 
 #This is a theano Op which wraps iisignature.siglength .
 #It is used to implement shape inference of Sig.
@@ -87,6 +92,8 @@ class SigJoinGrad_op(theano.Op):
         fixed=inputs_storage[4]
         o=iisignature.sigjoinbackprop(s,x,y,m,fixed)
         if(nancheck):
+            if contains_nan(s):
+                raise RuntimeError("nan in s")
             if contains_nan(x):
                 raise RuntimeError("nan in x")
             if contains_nan(y):
@@ -128,6 +135,67 @@ class SigJoin_op(theano.Op):
                 theano.gradient.grad_undefined(self,2,inputs[2]),
                 theano.gradient.grad_not_implemented(self,3,inputs[3])]
 SigJoin = SigJoin_op()
+
+#This is a theano Op which wraps iisignature.sigscalebackprop .
+#It has two outputs.
+class SigScaleGrad_op(theano.Op):
+    __props__=()
+    def infer_shape(self,node,shapes):
+        return [shapes[1],shapes[2]]
+    def make_node(self,s,x,y,m):
+        s=theano.tensor.as_tensor_variable(s)
+        x=theano.tensor.as_tensor_variable(x)
+        y=theano.tensor.as_tensor_variable(y)
+        m=theano.tensor.as_tensor_variable(m)
+        return theano.Apply(self,inputs=[s,x,y,m],
+                            outputs=[theano.tensor.fmatrix(),theano.tensor.fmatrix()])
+    def perform(self,node,inputs_storage,out):
+        s=inputs_storage[0]
+        x=inputs_storage[1]
+        y=inputs_storage[2]
+        m=inputs_storage[3]
+        o=iisignature.sigscalebackprop(s,x,y,m)
+        if(nancheck):
+            if contains_nan(s):
+                raise RuntimeError("nan in s")
+            if contains_nan(x):
+                raise RuntimeError("nan in x")
+            if contains_nan(y):
+                raise RuntimeError("nan in y")
+            if contains_nan(o[0]) or contains_nan(o[1]):
+                raise RuntimeError("nan in output")
+        out[0][0]=o[0]
+        out[1][0]=o[1]
+SigScaleGrad = SigScaleGrad_op()
+
+#This is a theano Op which wraps iisignature.sigscale .
+class SigScale_op(theano.Op):
+    __props__=()
+    def infer_shape(self,node,shapes):
+        return [shapes[0]]
+    def make_node(self,x,y,m):
+        x=theano.tensor.as_tensor_variable(x)
+        y=theano.tensor.as_tensor_variable(y)
+        m=theano.tensor.as_tensor_variable(m)
+        return theano.Apply(self,inputs=[x,y,m],
+                            outputs=[theano.tensor.fmatrix()])
+    def perform(self,node,inputs_storage,outputs_storage):
+        x=inputs_storage[0]
+        y=inputs_storage[1]
+        m=inputs_storage[2]
+        outputs_storage[0][0]=iisignature.sigscale(x,y,m)
+        if(nancheck):
+            if contains_nan(x):
+                raise RuntimeError("nan in x")
+            if contains_nan(y) :
+                raise RuntimeError("nan in y")
+            if contains_nan(outputs_storage[0][0]) :
+                raise RuntimeError("nan in output")
+    def grad(self,inputs,g):
+        gg = SigScaleGrad(g[0],inputs[0],inputs[1],inputs[2])
+        return [gg[0],gg[1],
+                theano.gradient.grad_undefined(self,2,inputs[2])]
+SigScale = SigScale_op()
 
 
 #http://deeplearning.net/software/theano/extending/extending_theano_gpu.html

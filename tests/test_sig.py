@@ -1,4 +1,7 @@
-import iisignature, unittest, numpy, sys
+if __name__!="__main__":
+    import iisignature
+
+import unittest, numpy, sys
 
 #text, index -> (either number or [res, res]), newIndex
 def parseBracketedExpression(text,index):
@@ -291,3 +294,40 @@ class Counts(TestCase):
             self.assertLess(diff(isig[i],sig[i]),0.00001)
         self.assertEqual(mults,iisignature.sigmultcount(path,m))
 
+class Scales(TestCase):
+    #check sigscale and its derivatives
+    def testa(self):
+        numpy.random.seed(775)
+        d=3
+        m=5
+        pathLength=5
+        numberToDo=2
+        paths = numpy.random.uniform(size=(numberToDo,pathLength,d))
+        sigs=numpy.vstack([iisignature.sig(i,m) for i in paths])
+        scales = numpy.random.uniform(0.5,0.97,size=(numberToDo,d))
+        scaledPaths=paths*scales[:,numpy.newaxis,:]
+        scaledSigs=numpy.vstack([iisignature.sig(i,m) for i in scaledPaths])
+        scaledSigsCalc=iisignature.sigscale(sigs,scales,m)
+        self.assertEqual(scaledSigs.shape,scaledSigsCalc.shape)
+        self.assertLess(diff(scaledSigs,scaledSigsCalc),0.0000001)
+
+        bumpedScales = 1.001*scales
+        bumpedSigs = 1.001*sigs
+        base = numpy.sum(scaledSigsCalc)
+        bump1 = numpy.sum(iisignature.sigscale(bumpedSigs,scales,m))
+        bump2 = numpy.sum(iisignature.sigscale(sigs,bumpedScales,m))
+        derivsOfSum = numpy.ones_like(scaledSigsCalc)
+        calculated = iisignature.sigscalebackprop(derivsOfSum,sigs,scales,m)
+        diff1 = (bump1-base)-numpy.sum(calculated[0]*(bumpedSigs-sigs))
+        diff2 = (bump2-base)-numpy.sum(calculated[1]*(bumpedScales-scales))
+        #print (bump1,bump2,base,diff1,diff2)
+        self.assertLess(diff1,0.00001)
+        self.assertLess(diff2,0.0001)
+        
+if __name__=="__main__":
+    sys.path.append("..")
+    import iisignature
+
+    #This is convenient for running some tests just by running this file,
+    #but only works with python3 (you may need to have built inplace first)
+    a=Scales().testa()

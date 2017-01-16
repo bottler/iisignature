@@ -222,16 +222,16 @@ sigMultCount(PyObject *self, PyObject *args) {
   if (!PyArg_ParseTuple(args, "Oi|i", &data, &level, &format))
     return nullptr;
   if (level<1) ERR("level must be positive");
-  if (!PyArray_Check(data)) ERRb("data must be a numpy array");
+  if (!PyArray_Check(data)) ERR("data must be a numpy array");
   PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(data));
   Deleter a_(reinterpret_cast<PyObject*>(a));
-  if (PyArray_NDIM(a) != 2) ERRb("data must be 2d");
+  if (PyArray_NDIM(a) != 2) ERR("data must be 2d");
   if (PyArray_TYPE(a) != NPY_FLOAT32 && PyArray_TYPE(a) != NPY_FLOAT64)
-    ERRb("data must be float32 or float64");
+    ERR("data must be float32 or float64");
   const int lengthOfPath = (int)PyArray_DIM(a, 0);
   const int d = (int)PyArray_DIM(a, 1);
-  if (lengthOfPath<1) ERRb("Path has no length");
-  if (d<1) ERRb("Path must have positive dimension");
+  if (lengthOfPath<1) ERR("Path has no length");
+  if (d<1) ERR("Path must have positive dimension");
 
   double out = CalcSignature::CalculatedSignature::concatenateWithMultCount(d,level)*(lengthOfPath-2);
   out += CalcSignature::CalculatedSignature::sigOfSegmentMultCount(d, level)*(lengthOfPath - 1);
@@ -254,13 +254,13 @@ public:
     }
     try{
       m_store.resize(size);
-      auto source = static_cast<float*>(PyArray_DATA(a));
-      for(size_t i=0; i<size; ++i)
-        m_store[i]=source[i];
-      m_ptr = m_store.data();
-    }catch(std::exception&){
+    }catch(std::bad_alloc&){
       return true;
     }
+    auto source = static_cast<float*>(PyArray_DATA(a));
+    for(size_t i=0; i<size; ++i)
+      m_store[i]=source[i];
+    m_ptr = m_store.data();
     return false;
   }
   const double* ptr() const {return m_ptr;}
@@ -453,7 +453,116 @@ static PyObject *
                                                   out2+iPath*d_given);
   return PyTuple_Pack(2,o1,o2);
 }
- 
+
+static PyObject *
+sigScale(PyObject *self, PyObject *args){
+  PyObject* a1;
+  PyObject* a2;
+  int level=0;
+  if (!PyArg_ParseTuple(args, "OOi", &a1, &a2, &level))
+    return nullptr;
+  if(level<1) ERR("level must be positive");
+  if(!PyArray_Check(a1)) ERR("sigs must be a numpy array");
+  if(!PyArray_Check(a2)) ERR("scales must be a numpy array");
+  PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a1));
+  Deleter a_(reinterpret_cast<PyObject*>(a));
+  PyArrayObject* b = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a2));
+  Deleter b_(reinterpret_cast<PyObject*>(b));
+  if(PyArray_NDIM(a)!=2) ERR("sigs must be 2d");
+  if(PyArray_NDIM(b)!=2) ERR("scales must be 2d");
+  if(PyArray_TYPE(a)!=NPY_FLOAT32 && PyArray_TYPE(a)!=NPY_FLOAT64)
+    ERR("sigs must be float32 or float64");
+  if(PyArray_TYPE(b)!=NPY_FLOAT32 && PyArray_TYPE(b)!=NPY_FLOAT64)
+    ERR("scales must be float32 or float64");
+  const int nPaths = (int)PyArray_DIM(a,0);
+  if(nPaths!=(int)PyArray_DIM(b,0))
+    ERR("different number of sigs and data");
+  const int d = (int)PyArray_DIM(b,1);
+  if(d<1) ERR("scales must have positive dimension");
+  size_t sigLength = calcSigTotalLength(d,level);
+  if(sigLength != (size_t) PyArray_DIM(a,1))
+    ERR("signatures have unexpected length");
+  ReadArrayAsDoubles sig, scales;
+  if(sig.read(a,nPaths*sigLength)||scales.read(b,nPaths*d))
+    ERR("Out of memory");
+
+  npy_intp dims[] = {(npy_intp) nPaths, (npy_intp)sigLength};
+  PyObject* o = PyArray_SimpleNew(2,dims,NPY_FLOAT32);
+  if(!o)
+    return nullptr;
+  float* out = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
+  for(int iPath=0; iPath<nPaths; ++iPath)
+    BackwardDerivativeSignature::sigScale(d,level,sig.ptr()+iPath*sigLength,
+                                          scales.ptr()+iPath*d,out+iPath*sigLength);
+  return o;
+}
+
+static PyObject *
+  sigScaleBackwards(PyObject* self, PyObject *args){
+  PyObject* a1;
+  PyObject* a2;
+  PyObject* a3;
+  int level=0;
+  if (!PyArg_ParseTuple(args, "OOOi", &a3, &a1, &a2, &level))
+    return nullptr;
+  if(level<1) ERR("level must be positive");
+  if(!PyArray_Check(a1)) ERR("sigs must be a numpy array");
+  if(!PyArray_Check(a2)) ERR("scales must be a numpy array");
+  if(!PyArray_Check(a3)) ERR("derivs must be a numpy array");
+  PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a1));
+  Deleter a_(reinterpret_cast<PyObject*>(a));
+  PyArrayObject* b = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a2));
+  Deleter b_(reinterpret_cast<PyObject*>(b));
+  PyArrayObject* c = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a3));
+  Deleter c_(reinterpret_cast<PyObject*>(c));
+  if(PyArray_NDIM(a)!=2) ERR("sigs must be 2d");
+  if(PyArray_NDIM(b)!=2) ERR("scales must be 2d");
+  if(PyArray_NDIM(c)!=2) ERR("derivs must be 2d");
+  if(PyArray_TYPE(a)!=NPY_FLOAT32 && PyArray_TYPE(a)!=NPY_FLOAT64)
+    ERR("sigs must be float32 or float64");
+  if(PyArray_TYPE(b)!=NPY_FLOAT32 && PyArray_TYPE(b)!=NPY_FLOAT64)
+    ERR("scales must be float32 or float64");
+  if(PyArray_TYPE(c)!=NPY_FLOAT32 && PyArray_TYPE(c)!=NPY_FLOAT64)
+    ERR("derivs must be float32 or float64");
+  const int nPaths = (int)PyArray_DIM(a,0);
+  if(nPaths!=(int)PyArray_DIM(b,0))
+    ERR("different number of sigs and scales");
+  if(nPaths!=(int)PyArray_DIM(c,0))
+    ERR("different number of sigs and derivs");
+  const int d = (int)PyArray_DIM(b,1);
+  if(d<1) ERR("Path must have positive dimension");
+  size_t sigLength = calcSigTotalLength(d,level);
+  if(sigLength != (size_t) PyArray_DIM(a,1))
+    ERR("signatures have unexpected length");
+  if(sigLength != (size_t) PyArray_DIM(c,1))
+    ERR("derivs should have the same shape as signatures");
+  ReadArrayAsDoubles sig, scale, derivs;
+  if(sig.read(a,nPaths*sigLength)||scale.read(b,nPaths*d)
+     ||derivs.read(c,nPaths*sigLength))
+    ERR("Out of memory");
+
+  npy_intp dims1[] = {(npy_intp) nPaths, (npy_intp) sigLength};
+  npy_intp dims2[] = {(npy_intp) nPaths, (npy_intp) d};
+                     
+  PyObject* o1 = PyArray_SimpleNew(2,dims1,NPY_FLOAT32);
+  if(!o1)
+    return nullptr;
+  PyObject* o2 = PyArray_SimpleNew(2,dims2,NPY_FLOAT32);
+  if(!o2)
+    return nullptr;
+  
+  float* out1 = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o1)));
+  float* out2 = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o2)));
+  for(int iPath=0; iPath<nPaths; ++iPath)
+    BackwardDerivativeSignature::sigScaleBackwards(d,level,sig.ptr()+iPath*sigLength,
+                                                  scale.ptr()+iPath*d,
+                                                  derivs.ptr()+iPath*sigLength,
+                                                  out1+iPath*sigLength,
+                                                  out2+iPath*d);
+  return PyTuple_Pack(2,o1,o2);
+}
+
+
 const char* const logSigFunction_id = "iisignature.LogSigFunction";
 LogSigFunction* getLogSigFunction(PyObject* p){
 #ifdef NO_CAPSULES
@@ -886,6 +995,14 @@ static PyMethodDef Methods[] = {
   {"sigjoinbackprop",sigJoinBackwards,METH_VARARGS, "sigjoinbackprop(s,X,D,m,f=float('nan')) \n "
    "gives the derivatives of F with respect to X and D where s is the derivatives"
    " of F with respect to sigjoin(X,D,m,f). The result is a tuple of two items."}, 
+  {"sigscale", sigScale, METH_VARARGS, "sigjoin(X,D,m))\n "
+   "If X is an array of signatures of d dimensional paths of shape "
+   "(K, siglength(d,m)) and D is an array of d dimensional scales "
+   "of shape (K, d), then return an array shaped like X "
+   "of the signatures of the paths scaled by the corresponding scale factor in each dimension. "},
+  {"sigscalebackprop",sigScaleBackwards,METH_VARARGS, "sigscalebackprop(s,X,D,m) \n "
+   "gives the derivatives of F with respect to X and D where s is the derivatives"
+   " of F with respect to sigscale(X,D,m). The result is a tuple of two items."}, 
   {"siglength", siglength, METH_VARARGS, "siglength(d,m) \n "
    "Returns the length of the signature (excluding the initial 1) of a d dimensional path up to level m"},
   {"logsiglength", logsiglength, METH_VARARGS, "logsiglength(d,m) \n "

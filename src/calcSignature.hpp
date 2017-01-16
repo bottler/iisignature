@@ -332,6 +332,14 @@ namespace BackwardDerivativeSignature{
       }
     }
   
+    void sigOfNothing(size_t d, int m){
+      m_data.resize(m);
+      size_t size = 1;
+      for(int level=0; level<m; ++level){
+        m_data[level].assign(size*=d,0);
+      }
+    }
+  
     //if a is the signature of path A, b of B, then
     //a.concatenateWith(d,m,b) makes a be the signature of the concatenated path AB
     //This is also the (concatenation) product of the elements a and b in the tensor algebra.
@@ -551,6 +559,115 @@ namespace BackwardDerivativeSignature{
     for(int j=0;j<d_given;++j)
       dSeg[j]=(OutputNumber)localDerivs.m_data[0][j];
   }
+
+  //replace s with the signature of its path scaled by scales[.] in each dim
+  //a coroutine would be great here?
+  void scaleSignature(Signature& s, const double* scales){
+    const size_t m = s.m_data.size();
+    const size_t d = s.m_data[0].size();
+    vector<size_t> ind(m);
+    for(size_t level = 1; level<=m; ++level){
+      size_t out_idx = 0;
+      //Do for all combinations of [0,d) in ind[[0,level)]
+      //in lexicographic order ...
+      ind.assign(m,0);
+      while(1){
+        //...the task which begins here...
+        double prod=1;
+        for(size_t i=0; i<level; ++i)
+          prod *= scales[ind.at(i)];
+        s.m_data.at(level-1).at(out_idx++)*=prod;
+        //... and ends here.
+        bool found = false;
+        for(size_t n1=0; n1<level; ++n1){
+          if(ind[level-1-n1]+1<d){
+            found = true;
+            ind[level-1-n1]++;
+            for(size_t n2=0; n2<n1; ++n2)
+              ind[level-1-n2]=0;
+            break;
+          }
+        }
+        if(!found)
+          break;
+      }
+    }       
+  }
+  void scaleSignatureBackwards(const Signature& s, const double* scales,
+                               const Signature& derivs,
+                               Signature& d_s, vector<double>& d_scales){
+    const size_t m = s.m_data.size();
+    const size_t d = s.m_data[0].size();
+    vector<size_t> ind(m);
+    vector<size_t> counts(d);//perhaps use a smaller type, so pow is clever
+    for(size_t level = 1; level<=m; ++level){
+      size_t out_idx = 0;
+      //Do for all combinations of [0,d) in ind[[0,level)] (?with their tallies in counts)
+      //in lexicographic order ...
+      ind.assign(m,0);
+      while(1){
+        //...the task which begins here...
+        double prod=1;
+        counts.assign(d,0);
+        for(size_t i=0; i<level; ++i){
+          counts[ind.at(i)]++;
+          prod *= scales[ind.at(i)];
+        }
+        //s.m_data.at(level-1).at(out_idx++)*=prod;
+        const double d_out = derivs.m_data[level-1][out_idx];
+        const double s_in = s.m_data[level-1][out_idx];
+        d_s.m_data[level-1][out_idx]=prod*d_out;
+        for(size_t i=0; i<d; ++i){
+          const auto count = counts[i];
+          if (count==1)
+            d_scales[i]+=s_in*prod*d_out/scales[i];
+          else if (count>1)
+            d_scales[i]+=s_in*prod*d_out*count/std::pow(scales[i],count-1);
+        } 
+        out_idx++;
+        //... and ends here.
+        bool found = false;
+        for(size_t n1=0; n1<level; ++n1){
+          if(ind[level-1-n1]+1<d){
+            found = true;
+            ind[level-1-n1]++;
+            for(size_t n2=0; n2<n1; ++n2)
+              ind[level-1-n2]=0;
+            break;
+          }
+        }
+        if(!found)
+          break;
+      }
+    }       
+  }
+
+  //scale the signature by the amounts specified in scales in each dimension
+  void sigScale(int d, int m, const Number* signature,
+                const Number* scales,
+                OutputNumber* output)
+  {
+    Signature s;
+    s.fromRaw(d,m,signature);
+    scaleSignature(s,scales);
+    s.writeOut(output);
+  }
+  //scale the signature by the amounts specified in scales in each dimension
+  void sigScaleBackwards(int d, int m, const Number* signature,
+                         const Number* scales, const Number* deriv,
+                         OutputNumber* d_sig, OutputNumber* d_scale)
+  {
+    Signature s, d_s, derivs;
+    vector<double> d_scales(d);
+    s.fromRaw(d,m,signature);
+    derivs.fromRaw(d,m,deriv);
+    d_s.sigOfNothing((size_t)d, m);
+    scaleSignatureBackwards(s,scales,derivs,d_s,d_scales);
+    for(int i=0; i<d; ++i)
+      d_scale[i]=(OutputNumber) d_scales[i];
+    d_s.writeOut(d_sig);
+  }
+
 }
 
 #endif
