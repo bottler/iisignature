@@ -321,8 +321,8 @@ class Scales(TestCase):
         diff1 = (bump1-base)-numpy.sum(calculated[0]*(bumpedSigs-sigs))
         diff2 = (bump2-base)-numpy.sum(calculated[1]*(bumpedScales-scales))
         #print (bump1,bump2,base,diff1,diff2)
-        self.assertLess(diff1,0.00001)
-        self.assertLess(diff2,0.0001)
+        self.assertLess(diff1,0.0000001)
+        self.assertLess(diff2,0.0000001)
         
 if __name__=="__main__":
     sys.path.append("..")

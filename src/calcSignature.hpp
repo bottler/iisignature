@@ -600,6 +600,10 @@ namespace BackwardDerivativeSignature{
     const size_t d = s.m_data[0].size();
     vector<size_t> ind(m);
     vector<size_t> counts(d);//perhaps use a smaller type, so pow is clever
+    vector<double> inverseScales(d); //inverseScales[i] is 1.0/scales[i]
+    for (size_t j = 0; j < d; ++j)
+      inverseScales[j] = 1.0/scales[j];
+
     for(size_t level = 1; level<=m; ++level){
       size_t out_idx = 0;
       //Do for all combinations of [0,d) in ind[[0,level)] (?with their tallies in counts)
@@ -619,10 +623,8 @@ namespace BackwardDerivativeSignature{
         d_s.m_data[level-1][out_idx]=prod*d_out;
         for(size_t i=0; i<d; ++i){
           const auto count = counts[i];
-          if (count==1)
-            d_scales[i]+=s_in*prod*d_out/scales[i];
-          else if (count>1)
-            d_scales[i]+=s_in*prod*d_out*count/std::pow(scales[i],count-1);
+          if (count >= 1)
+             d_scales[i]+=s_in*prod*d_out*count*inverseScales[i];
         } 
         out_idx++;
         //... and ends here.
