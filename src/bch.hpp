@@ -15,12 +15,15 @@
 typedef void (*Interrupt)();
 
 //amalgamate_adjacent(v.begin(),v.end(),tojoin,amalgamater)
-//iterates over v and when finding a range [i..j) for which tojoin(*i,*n) for all n in (i,j), replaces it with 
+//iterates over v and when finding a range [i..j) for which
+//tojoin(*i,*n) for all n in (i,j), replaces it with 
 //  (the single element *i if amalgamater(i,j) and nothing otherwise)
 //returns one past the last - removes everything made unnecessary
 
-//I.e.: If you have a sequence where you want to merge any sequence of adjacent elements which have something in common so that they become
-//either a single element or nothing, use this function where tojoin identifies elements with the "something in common" and amalgamater makes
+//I.e.: If you have a sequence where you want to merge any sequence of adjacent
+//elements which have something in common so that they become
+//either a single element or nothing, use this function where
+//tojoin identifies elements with the "something in common" and amalgamater makes
 //what they become and returns whether they become anything at all.
 
 template<typename I, typename F1, typename F2>
@@ -49,12 +52,14 @@ I amalgamate_adjacent(I a, I b, F1&& tojoin, F2&& amalgamater){
 }
 
 //amalgamate_adjacent_pairs(v.begin(),v.end(),tojoin,amalgamater)
-//iterates over v and  if tojoin(*i,*(i+1)), replaces *i and *(i+1) with the single element *i if amalgamater(*i,*(i+1)) and nothing otherwise
+//iterates over v and  if tojoin(*i,*(i+1)), replaces *i and *(i+1)
+//with the single element *i if amalgamater(*i,*(i+1)) and nothing otherwise
 //returns one past the last - removes everything made unnecessary
 
-//This is the same as the previous function for the case where we know already that there won't be sequences longer 
-//than 2 elements with the something in common,
-//so we can simplify a bit and we can pass 2 elements instead of a pair of iterators into amalgamater.
+//This is the same as the previous function for the case where we know already that
+//that there won't be sequences longer than 2 elements with the something in common,
+//so we can simplify a bit and we can pass 2 elements instead of a
+//pair of iterators into amalgamater.
 
 template<typename I, typename F1, typename F2>
 I amalgamate_adjacent_pairs(I a, I b, F1&& tojoin, F2&& amalgamater){
@@ -83,7 +88,8 @@ I amalgamate_adjacent_pairs(I a, I b, F1&& tojoin, F2&& amalgamater){
 }
 
 //3 input version of std::merge - no care about order of equivalent elements, 
-//it makes sense not to compare with first1 all the time because it will tend to be the shortest.
+//it makes sense not to compare with first1 all the time because in our case
+//it will tend to be the shortest.
 //This implemention does repeat comparisons unnecessarily - but they are quick in our case.
 template<class InputIt1, class InputIt2, class InputIt3, class OutputIt>
 OutputIt merge3(InputIt1 first1, InputIt1 last1,
@@ -162,7 +168,8 @@ class LyndonWord{
 };
 
 //iterate over letters from left to right
-//Beware that if you copy an object of this type (except an end), only one of the copies is usable,
+//Beware that if you copy an object of this type (except an end),
+//only one of the copies is usable,
 //because they share the same working space.
 class LyndonWordIterator : public std::iterator<std::forward_iterator_tag, Letter>{
  public:
@@ -201,7 +208,8 @@ class LyndonWordIterator : public std::iterator<std::forward_iterator_tag, Lette
   std::vector<const LyndonWord*>* m_vec;
 };
 
-//Useful for debugging
+//Useful when debugging, for e.g. doing extra printing only in a certain case.
+//Returns true if the LyndonWord object a is the same string of letters as ss
 bool isLyndonWord(const LyndonWord* a, const std::string& ss){
   std::vector<const LyndonWord*> foo;
   LyndonWordIterator x(a, foo);
@@ -400,7 +408,8 @@ Coefficient productCoefficients (const Coefficient& a, const Coefficient& b){
                                   a->second = total;
                                   return std::fabs(total)>0.00000001;});
   out.erase(i,out.end());
-  //Todo: we could have a member Coefficient::m_size which was the important bit of m_details, and not erase vectors whose memory 
+  //Todo: we could have a member Coefficient::m_size which was the important bit
+  //of m_details, and not erase vectors whose memory 
   //we might want to reuse later. Same with Polynomial
   return o;
 }
@@ -440,7 +449,8 @@ void productCoefficients3 (Coefficient& a, const Coefficient& b, const Coefficie
   out.swap(a.m_details);
 }
 
-void sumCoefficients(Coefficient& lhs, Coefficient& rhs){//make the lhs be lhs+rhs, no care about rhs
+//make the lhs be lhs+rhs, no care about rhs
+void sumCoefficients(Coefficient& lhs, Coefficient& rhs){
   auto& a = lhs.m_details;
   auto& b = rhs.m_details;
 
@@ -512,7 +522,8 @@ void sumPolynomialLevels(WordPool& s, std::vector<std::pair<const LyndonWord*,Co
   auto& a = lhs;
   auto& b = rhs;
   size_t ss = a.size();
-  //if b has enough capacity, maybe we should detect and swap them here. similar in sumCoefficients.
+  //if b has enough capacity, maybe we should detect and swap them here.
+  //also similar in sumCoefficients.
   //or reserve double?
   a.reserve(a.size()+b.size());
   /*
@@ -542,8 +553,8 @@ std::unique_ptr<Polynomial>
 productLyndonWords(WordPool& s, const LyndonWord& a, const LyndonWord& b, 
                    int maxLength, bool check);
 
-//returns 0 or a new Polynomial, taking ownership
-//std::unique_ptr<Polynomial> productPolynomials(WordPool& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Polynomial> y, int maxLength){
+//returns 0 or a new Polynomial
+//Does not modify or take ownership of x and y
 std::unique_ptr<Polynomial> 
 productPolynomials(WordPool& s, const Polynomial* x, const Polynomial* y, int maxLength){
   if(!x || !y){
