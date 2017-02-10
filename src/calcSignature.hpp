@@ -562,6 +562,7 @@ namespace BackwardDerivativeSignature{
 
   //replace s with the signature of its path scaled by scales[.] in each dim
   //a coroutine would be great here?
+  //time complexity level*(d**level) for each level 
   void scaleSignature(Signature& s, const double* scales){
     const size_t m = s.m_data.size();
     const size_t d = s.m_data[0].size();
@@ -593,13 +594,14 @@ namespace BackwardDerivativeSignature{
       }
     }       
   }
+
+  //time complexity level*(d**level) for each level
   void scaleSignatureBackwards(const Signature& s, const double* scales,
                                const Signature& derivs,
                                Signature& d_s, vector<double>& d_scales){
     const size_t m = s.m_data.size();
     const size_t d = s.m_data[0].size();
     vector<size_t> ind(m);
-    vector<size_t> counts(d);//perhaps use a smaller type, so pow is clever
     vector<double> inverseScales(d); //inverseScales[i] is 1.0/scales[i]
     for (size_t j = 0; j < d; ++j)
       inverseScales[j] = 1.0/scales[j];
@@ -612,20 +614,16 @@ namespace BackwardDerivativeSignature{
       while(1){
         //...the task which begins here...
         double prod=1;
-        counts.assign(d,0);
         for(size_t i=0; i<level; ++i){
-          counts[ind.at(i)]++;
           prod *= scales[ind.at(i)];
         }
-        //s.m_data.at(level-1).at(out_idx++)*=prod;
         const double d_out = derivs.m_data[level-1][out_idx];
         const double s_in = s.m_data[level-1][out_idx];
         d_s.m_data[level-1][out_idx]=prod*d_out;
-        for(size_t i=0; i<d; ++i){
-          const auto count = counts[i];
-          if (count >= 1)
-             d_scales[i]+=s_in*prod*d_out*count*inverseScales[i];
-        } 
+        //The following calculation is a bit of a trick.
+        //It is much faster than doing the obvious thing if d>>m
+        for (size_t i = 0; i < level; ++i)
+          d_scales[ind[i]] += s_in*prod*d_out*inverseScales[ind[i]];
         out_idx++;
         //... and ends here.
         bool found = false;

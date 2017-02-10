@@ -123,7 +123,7 @@ def diff(a,b):
     return numpy.max(numpy.abs(a-b))
 
 class TestCase(unittest.TestCase):
-    if sys.hexversion<0x20700000:
+    if sys.hexversion<0x2070000:
         def assertLess(self,a,b,msg=None):
             self.assertTrue(a<b,msg)
 
@@ -217,8 +217,9 @@ class A(TestCase):
                                                      level,fixedPoint)
             diff1 = (bump1-base)-numpy.sum(calculated[0]*(bumpedJoinee-joinee))
             diff2 = (bump2-base)-numpy.sum(calculated[1]*(bumpedExtra-extra))
-            self.assertLess(diff1,0.00001,"diff1 as expected "+(" with fixed Dim" if fixed else ""))
-            self.assertLess(diff2,0.0001,"diff2 as expected "+(" with fixed Dim" if fixed else ""))
+            #print ("\n",bump1,bump2,base,diff1,diff2)
+            self.assertLess(numpy.abs(diff1),0.000001,"diff1 as expected "+(" with fixed Dim" if fixed else ""))
+            self.assertLess(numpy.abs(diff2),0.00001,"diff2 as expected "+(" with fixed Dim" if fixed else ""))
 
 #test that sigjacobian and sigbackprop compatible with sig
 class Deriv(TestCase):
@@ -320,9 +321,11 @@ class Scales(TestCase):
         calculated = iisignature.sigscalebackprop(derivsOfSum,sigs,scales,m)
         diff1 = (bump1-base)-numpy.sum(calculated[0]*(bumpedSigs-sigs))
         diff2 = (bump2-base)-numpy.sum(calculated[1]*(bumpedScales-scales))
+        #print(calculated[1].shape,bumpedScales.shape,scales.shape)
+        #print(calculated[1][0,0],bump2,base,bumpedScales[0,0],scales[0,0])
         #print (bump1,bump2,base,diff1,diff2)
-        self.assertLess(diff1,0.0000001)
-        self.assertLess(diff2,0.0000001)
+        self.assertLess(numpy.abs(diff1),0.0000001)
+        self.assertLess(numpy.abs(diff2),0.0000001)
         
 if __name__=="__main__":
     sys.path.append("..")
