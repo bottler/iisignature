@@ -451,7 +451,8 @@ static PyObject *
                                                   fixedLast,
                                                   out1+iPath*sigLength,
                                                   out2+iPath*d_given);
-  return PyTuple_Pack(2,o1,o2);
+  //PyTuple_Pack doesn't steal references
+  return Py_BuildValue("(NN)", o1, o2);
 }
 
 static PyObject *
@@ -559,7 +560,7 @@ static PyObject *
                                                   derivs.ptr()+iPath*sigLength,
                                                   out1+iPath*sigLength,
                                                   out2+iPath*d);
-  return PyTuple_Pack(2,o1,o2);
+  return Py_BuildValue("(NN)", o1, o2);
 }
 
 
