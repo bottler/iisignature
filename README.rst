@@ -12,7 +12,7 @@ Install with::
 
     pip install iisignature
 
-For the moment, don't install this package if you don't have numpy > 1.7 installed. On Windows, this package is not usable with Python 2.x. For Python 3.5 and 3.6 on Windows, there are precompiled wheels available, you may need to do `pip install wheel` to use them. On other platforms, you will need to be able to compile C++ extensions. The fastest, on-the-fly compiled versions of the log signature calculations are for Windows (32 and 64 bit) and 64 bit linux.
+For the moment, don't install this package if you don't have numpy > 1.7 installed. On Windows, this package is not usable with Python 2.x. For Python 3.5 and 3.6 on Windows, there are precompiled wheels available, you may need to do ``pip install wheel`` to use them. On other platforms, you will need to be able to compile C++ extensions. The fastest, on-the-fly compiled versions of the log signature calculations are for Windows (32 and 64 bit) and 64 bit linux.
 
 Authors
 -------

@@ -8,5 +8,5 @@ The files beginning with "demo" are just demonstrations of this functionality.
 
 If you have not installed iisignature but have the git checkout of the
 code, then you should be able to run the demo files once you have run
-`python setup.py build_ext --inplace` in the root of the tree,
-because they append `..` to the `PYTHONPATH`.
+``python setup.py build_ext --inplace`` in the root of the tree,
+because they append ``..`` to the ``PYTHONPATH``.
