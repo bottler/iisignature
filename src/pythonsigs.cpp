@@ -816,6 +816,8 @@ static PyObject* basis(PyObject *self, PyObject *args){
     return nullptr;
   auto& wordlist = lsf->m_basisWords;
   PyObject* o = PyTuple_New(wordlist.size());
+  if (!o)
+    return nullptr;
   for(size_t i=0; i<wordlist.size(); ++i){
     std::ostringstream oss;
     printLyndonWordBracketsDigits(*wordlist[i],oss);
@@ -823,6 +825,26 @@ static PyObject* basis(PyObject *self, PyObject *args){
     PyTuple_SET_ITEM(o,i,PyUnicode_FromString(s.c_str()));
   }
   return o;
+}
+
+static PyObject* info(PyObject *self, PyObject *args) {
+  PyObject* c;
+  if (!PyArg_ParseTuple(args, "O", &c))
+    return nullptr;
+  LogSigFunction* lsf = getLogSigFunction(c);
+  if (!lsf)
+    return nullptr;
+  std::string methods;
+  if (lsf->m_f)
+    methods += 'C';
+  if (!lsf->m_fd.m_formingT.empty())
+    methods += 'O';
+  bool canTakeLogOfSig = lsf->m_level < 2 || !lsf->m_simples.empty();
+  if (canTakeLogOfSig)
+    methods += 'S';
+  methods += 'X';
+  return Py_BuildValue("{sisiss}", "dimension", lsf->m_dim, "level",
+    lsf->m_level, "methods", methods.c_str());
 }
 
 static PyObject *
@@ -1017,6 +1039,8 @@ static PyMethodDef Methods[] = {
    "which are the basis elements of the log signature. s must have come from prepare."
    " This function is work in progress, especially for dimension greater than 8. "
    "An example of how to parse the output of this function can be seen in the tests."},
+  {"info", info, METH_VARARGS, "info(s) \n  Returns a dictionary of "
+   "information about the opaque object s. s must have come from prepare."},
   {"logsig", logsig, METH_VARARGS, "logsig(X, s, methods=None) \n "
    "Calculates the log signature of the path X. X must be a numpy NxD float32 "
    "or float64 array of points making up the path in R^d. s must have come from "
