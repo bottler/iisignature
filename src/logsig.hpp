@@ -336,6 +336,7 @@ void makeSparseLogSigMatrices(int dim, int level, LogSigFunction& lsf, Interrupt
         sim.m_source = p.first;
         lsf.m_simples[lev - 1].push_back(sim);
       }else{
+        interrupt();
         lsf.m_smallSVDs[lev - 1].push_back(LogSigFunction::SmallSVD{});
         LogSigFunction::SmallSVD& mtx = lsf.m_smallSVDs[lev-1].back();
         //sourceMap maps expanded (i.e. pos in level of sig) to contracted (i.e. pos in our block)

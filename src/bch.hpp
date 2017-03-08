@@ -303,6 +303,7 @@ class WordPool{
         all.insert(make_pair(i.first.second,0u));
     }
     std::vector<const LyndonWord*> all2;
+    all2.reserve(all.size());
     for(auto& i : all)
       all2.push_back(i.first);
     std::sort(all2.begin(), all2.end(), [this](const LyndonWord* l, const LyndonWord* r){
@@ -311,6 +312,7 @@ class WordPool{
       const LyndonWord* l = all2[i];
       all[l] = i;
     }
+    m_orderLookup.reserve(all.size());
     for(auto& i : all)
       m_orderLookup.push_back(i);
   } 

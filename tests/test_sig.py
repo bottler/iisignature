@@ -135,6 +135,8 @@ class A(TestCase):
         dim=3
         level = 4
         s = iisignature.prepare(dim,level,"cosx")
+        myinfo = {"level":level,"dimension":dim,"methods":"COSX"}
+        self.assertEqual(iisignature.info(s),myinfo)
         path = numpy.random.uniform(size=(10,dim))
         basis = iisignature.basis(s)
         logsig = iisignature.logsig(path,s)
