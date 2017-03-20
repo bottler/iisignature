@@ -1,10 +1,12 @@
 import keras.layers.recurrent
 from keras.engine import InputSpec
 from keras import backend as K
-from keras import initializers, activations
+from keras import initializations, activations
 import iisignature
 from iisignature_theano import SigJoin
 import math
+
+#THIS IS A VERSION OF iisignature_recurrent_keras FOR KERAS v1
 
 #Consider initializing so that state is constant initially or something.
 #-perhaps a highway
@@ -32,9 +34,9 @@ class RecurrentSig(keras.layers.recurrent.Recurrent):
     Note that this layer is just like a simple RNN if use_signatures 
     and output_signatures are both false.
 
-    kernel_initializer: the initialisation of the map from input to state
+    init: the initialisation of the map from input to state
 
-    recurrent_initializer: the initialisation of the matrix from state to state
+    inner_init: the initialisation of the matrix from state to state
 
     activation: the activation applied to the output values of the state.
     '''
@@ -44,20 +46,20 @@ class RecurrentSig(keras.layers.recurrent.Recurrent):
                  initial_time_lapse=0.1,
                  output_signatures = False,#whether the output includes the signatures
                  use_signatures = True, #whether each new state can depend on the signature
-                 kernel_initializer='glorot_uniform',
-                 recurrent_initializer='he_normal',#could be good to use 'orthogonal' if not use_signatures
+                 init='glorot_uniform',
+                 inner_init='he_normal',#could be good to use 'orthogonal' if not use_signatures
                  activation='tanh',#not applied to signature elements
                  **kwargs):
         self.sig_level = sig_level
         self.sigsize = iisignature.siglength(2,sig_level)
         self.n_units = n_units #like output_dim
-        self.units = n_units*(self.sigsize+1) if output_signatures else n_units
+        self.output_dim = n_units*(self.sigsize+1) if output_signatures else n_units
         self.train_time_lapse = train_time_lapse
         self.initial_time_lapse = initial_time_lapse
         self.output_signatures = output_signatures
         self.use_signatures = use_signatures
-        self.kernel_initializer = initializers.get(kernel_initializer)
-        self.recurrent_initializer = initializers.get(recurrent_initializer)
+        self.init = initializations.get(init)
+        self.inner_init = initializations.get(inner_init)
         self.activation = activations.get(activation)
         super(RecurrentSig, self).__init__(**kwargs)
         
@@ -65,12 +67,12 @@ class RecurrentSig(keras.layers.recurrent.Recurrent):
         self.input_spec = [InputSpec(shape=input_shape)]
         self.input_dim = input_shape[2]
         self.states = [None,None] #?
-        self.W = self.add_weight((self.input_dim, self.n_units),
-                                 name='W', initializer=self.kernel_initializer)
+        self.W = self.init((self.input_dim, self.n_units),
+                           name='{}_W'.format(self.name))
         saved_data_length = self.n_units * (
                                    1+self.sigsize if self.use_signatures else 1)
-        self.U = self.add_weight((saved_data_length, self.n_units),
-                                 name='U',initializer=self.recurrent_initializer)
+        self.U = self.inner_init((saved_data_length, self.n_units),
+                                 name='{}_U'.format(self.name))
         self.b = K.zeros((self.n_units,), name='{}_b'.format(self.name))
         
         self.trainable_weights = [self.W, self.U, self.b]
@@ -116,11 +118,11 @@ class RecurrentSig(keras.layers.recurrent.Recurrent):
                   'train_time_lapse': self.train_time_lapse,
                   'initial_time_lapse': self.initial_time_lapse,
                   'n_units': self.n_units,
-                  'units': self.units,
+                  'output_dim': self.output_dim,
                   'output_signatures' : self.output_signatures,
                   'use_signatures' : self.use_signatures,
-                  'kernel_initializer': initializers.serialize(self.kernel_initializer),
-                  'recurrent_initializer': initializers.serialize(self.recurrent_initializer),
+                  'init': self.init.__name__,
+                  'inner_init': self.inner_init.__name__,
                   'activation': self.activation.__name__}
         base_config = super(RecurrentSig, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))

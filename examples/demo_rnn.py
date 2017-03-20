@@ -1,9 +1,11 @@
 #A trivial demonstration of the RecurrentSig layer from iisignature_recurrent_keras.py
+#relies on keras 2
 
 import os
 #os.environ["THEANO_FLAGS"]="floatX=float32,device=cpu,optimizer=fast_compile"
 #os.environ["THEANO_FLAGS"]="floatX=float32,device=cpu,mode=DebugMode"
-#os.environ["THEANO_FLAGS"]="floatX=float32,device=gpu0,force_device=True"
+#os.environ["THEANO_FLAGS"]="floatX=float32,device=gpu0,force_device=True,cxx=g++-4.8,nvcc.flags=-D_FORCE_INLINES,nvcc.compiler_bindir=/usr/bin/g++-4.8"
+#os.environ["THEANO_FLAGS"]="floatX=float32,device=gpu0,force_device=True,cxx=g++-4.8,nvcc.flags=-D_FORCE_INLINES,nvcc.compiler_bindir=/usr/bin/g++-4.8,base_compiledir=/run/user/1001/theano"
 os.environ["THEANO_FLAGS"]="floatX=float32,device=cpu,force_device=True"
 #os.environ["THEANO_FLAGS"]="floatX=float32,device=cpu,force_device=True,mode=NanGuardMode,exception_verbosity=high,NanGuardMode.inf_is_error=False,NanGuardMode.big_is_error=False,NanGuardMode.action=warn,optimizer=fast_compile"
 
@@ -21,10 +23,10 @@ m=keras.models.Sequential()
 #a few possible networks here.
 #using relu with RecurrentSig sometimes gets Nans
 
-#m.add(RecurrentSig(5,sig_level=2,input_shape=(None,3),return_sequences=False, use_signatures = True, output_signatures = False, activation="tanh"))
+m.add(RecurrentSig(5,sig_level=2,input_shape=(None,3),return_sequences=False, use_signatures = True, output_signatures = False, activation="tanh"))
 
-m.add(RecurrentSig(5,input_shape=(5,3),return_sequences=True, use_signatures = True, output_signatures = False, activation="relu"))
-m.add(RecurrentSig(6,return_sequences=False,activation="relu"))
+#m.add(RecurrentSig(5,input_shape=(5,3),return_sequences=True, use_signatures = True, output_signatures = False, activation="relu"))
+#m.add(RecurrentSig(6,return_sequences=False,activation="relu"))
 
 #m.add(LSTM(5,input_shape=(5,3),return_sequences=False))
 
@@ -49,5 +51,5 @@ y=y[:2000]
 
 #a=numpy.random.uniform(size=(3,5,3))
 #print m.predict(a)
-m.fit(x,y,nb_epoch=10,shuffle=0)
+m.fit(x,y,epochs=10,shuffle=0)
 print (m.evaluate(testx,testy,verbose=0))
