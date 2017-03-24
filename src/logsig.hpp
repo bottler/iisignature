@@ -56,7 +56,8 @@ InputPos inputPosFromSingle(Input i){
 
 //makes a vector of uniquified values from in, with indices saying where each of the in elements is represented.
 //if "being within tol" isn't transitive on your set of numbers then results will be a bit arbitrary.
-void uniquifyDoubles(const std::vector<double>& in, std::vector<size_t>& out_indices, std::vector<double>& out_vals, double tol){
+void uniquifyDoubles(const std::vector<double>& in, std::vector<size_t>& out_indices,
+                    std::vector<double>& out_vals, double tol){
   using P = std::pair<double,std::vector<size_t>>;
   using I = std::vector<P>::iterator;
   std::vector<P> initial;
@@ -208,11 +209,11 @@ void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, s
 
 class LessLW{
 public:
-  LessLW(LogSigFunction& lsf):m_lsf(&lsf){}
+  LessLW(WordPool& wp):m_wp(&wp){}
   bool operator()(const LyndonWord* a, const LyndonWord* b) const{
-    return m_lsf->m_s.lexicographicLess(a,b);
+    return m_wp->lexicographicLess(a,b);
   }
-  LogSigFunction* m_lsf;
+  WordPool* m_wp;
 };
 
 //Given v, a sorted vector<pair<A,B> > which contains (a,x) for exactly one x,
@@ -246,48 +247,66 @@ std::vector<size_t> getLetterFrequencies(const LyndonWord* lw){
   return out;
 }
 
-void makeSparseLogSigMatrices(int dim, int level, LogSigFunction& lsf, Interrupt interrupt){
-  using P = std::pair<size_t,float>;
+//it would be nice to use a lambda and decltype here, but visual studio
+//doesn't allow swapping two lambdas of the same type, 
+//so the vector operations fail.
+//if x is a lyndon word, then mappingMatrix[len(x)-1][x] is the sparse vector which is its image in tensor
+//space - what we call rho(x)
+using MappingMatrix =
+  std::vector<std::map<const LyndonWord*, std::vector<std::pair<size_t, float> >, LessLW> >;
+
+MappingMatrix makeMappingMatrix(int dim, int level, WordPool &wp, 
+                                const std::vector<LyndonWord*> &basisWords,
+                                                const std::vector<size_t> &sigLevelSizes ) {
+  using P = std::pair<size_t, float>;
   using std::vector;
   //it would be nice to use a lambda and decltype here, but visual studio
   //doesn't allow swapping two lambdas of the same type, 
   //so the vector operations fail.
   //if x is a lyndon word, then m[len(x)-1][x] is the sparse vector which is its image in tensor
   //space - what we call rho(x)
-  std::vector<std::map<const LyndonWord*,std::vector<P>,LessLW> > m;
+  std::vector<std::map<const LyndonWord*, std::vector<P>, LessLW> > m;
   m.reserve(level);
-  for(int i=0; i<level; ++i)
-    m.emplace_back(LessLW(lsf));
+  for (int i = 0; i<level; ++i)
+    m.emplace_back(LessLW(wp));
+  for (LyndonWord* w : basisWords) {
+    if (w->isLetter()) {
+      m[0][w] = { std::make_pair(w->getLetter(),1.0f) };
+    }
+    else {
+      auto len1 = w->getLeft()->length();
+      auto len2 = w->getRight()->length();
+      auto& left = m[len1 - 1][w->getLeft()];
+      auto& right = m[len2 - 1][w->getRight()];
+      std::vector<P> v;
+      for (const auto& l : left) {
+        for (const auto& r : right) {
+          v.push_back(std::make_pair(sigLevelSizes[len2 - 1] * l.first + r.first, l.second*r.second));
+          v.push_back(std::make_pair(sigLevelSizes[len1 - 1] * r.first + l.first, -l.second*r.second));
+        }
+      }
+      std::sort(v.begin(), v.end());
+      v.erase(amalgamate_adjacent_pairs(v.begin(), v.end(),
+        [](const P& a, const P& b) {return a.first == b.first; },
+        [](P& a, P& b) {a.second += b.second; return a.second != 0; }),
+        v.end());
+      m[len1 + len2 - 1][w] = std::move(v);
+    }
+  }
+  return m;
+}
+
+void makeSparseLogSigMatrices(int dim, int level, LogSigFunction& lsf, Interrupt interrupt){
+  using P = std::pair<size_t,float>;
+  using std::vector;
   lsf.m_sigLevelSizes.assign(1, (size_t)dim);
   lsf.m_logLevelSizes.assign(1, (size_t)dim);
   for(int m=2; m<=level; ++m)
     lsf.m_sigLevelSizes.push_back(dim*lsf.m_sigLevelSizes.back());
-  for(LyndonWord* w : lsf.m_basisWords){
-    if(w->isLetter()){
-      m[0][w]={std::make_pair(w->getLetter(),1.0f)};
-    }else{
-      auto len1 = w->getLeft()->length();
-      auto len2 = w->getRight()->length();
-      auto& left = m[len1-1][w->getLeft()];
-      auto& right = m[len2-1][w->getRight()];
-      std::vector<P> v;
-      for (const auto& l : left){
-        for (const auto& r: right){
-          v.push_back(std::make_pair(lsf.m_sigLevelSizes[len2-1]*l.first+r.first,l.second*r.second));
-          v.push_back(std::make_pair(lsf.m_sigLevelSizes[len1-1]*r.first+l.first,-l.second*r.second));
-        }
-      }
-      std::sort(v.begin(),v.end());
-      v.erase(amalgamate_adjacent_pairs(v.begin(),v.end(),
-                                        [](const P& a, const P& b){return a.first==b.first;},
-                                        [](P& a, P& b){a.second+=b.second; return a.second!=0;}),
-              v.end());
-      m[len1+len2-1][w]=std::move(v);
-    }
-  }
+  auto m = makeMappingMatrix(dim, level, lsf.m_s, lsf.m_basisWords, lsf.m_sigLevelSizes);
   for (int lev = 2; lev <= level;++lev)
     lsf.m_logLevelSizes.push_back(m[lev - 1].size());
-  //m has now been created. We next write output based on it.
+  //We next write output based on m.
   //The idea is that the coefficient of the Lyndon word x in the log signature
   //is affected by the coefficient of the word y in the signature only if 
   //x and y are anagrams. So within each level, we group the Lyndon words

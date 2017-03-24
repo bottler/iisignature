@@ -3,6 +3,12 @@
   #include <cmath>
 #endif
 
+#if defined(_WINDOWS) && defined(_DEBUG)
+//Not having a debug build of numpy shouldn't stop
+//me being able to debug the other parts of the library
+ #define IISIGNATURE_NO_NUMPY
+#endif
+
 #include<utility>
 #include<vector>
 #include<utility>
@@ -12,8 +18,10 @@
 #include<sstream>
 #include<string>
 #include<Python.h>
+#ifndef IISIGNATURE_NO_NUMPY
 #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
 #include<numpy/arrayobject.h>
+#endif
 
 #include "calcSignature.hpp"
 #include "logSigLength.hpp"
@@ -112,6 +120,7 @@ logsiglength(PyObject *self, PyObject *args){
 #endif
 }
 
+#ifndef IISIGNATURE_NO_NUMPY
 //returns true on success
 //makes s2 be the signature of the path in data
 using CalcSignature::CalculatedSignature;
@@ -181,11 +190,18 @@ sig(PyObject *self, PyObject *args){
 
   CalculatedSignature s;
   setup_signals();
-  if(!calcSignature(s,a1,level))
-    return nullptr;
+  std::string exceptionMessage;
+  try{
+    if(!calcSignature(s,a1,level))
+      return nullptr;
+  }catch(std::exception& e){
+    exceptionMessage = e.what();
+  }
   if (PyErr_CheckSignals())
     return nullptr;
-  
+  if (!exceptionMessage.empty())
+    ERR(exceptionMessage.c_str());
+
   PyObject* o;
   long d = (long)s.m_data[0].size();
   if (format == 0) { //by default, output all to a single array
@@ -562,7 +578,7 @@ static PyObject *
                                                   out2+iPath*d);
   return Py_BuildValue("(NN)", o1, o2);
 }
-
+#endif // IISIGNATURE_NO_NUMPY
 
 const char* const logSigFunction_id = "iisignature.LogSigFunction";
 LogSigFunction* getLogSigFunction(PyObject* p){
@@ -629,6 +645,7 @@ bool getData(){
   return true;
 }
 
+#ifndef IISIGNATURE_NO_NUMPY
 //this class just provides access to the functions lstsq, pinv, and transpose from numpy
 class LeastSquares {
   PyObject* m_transpose;
@@ -711,6 +728,7 @@ public:
     return true;
   }
 };
+#endif // IISIGNATURE_NO_NUMPY
 
 //This function takes a dim1xdim2 matrix and an rhs and calls resultAction on a pointer
 //to the results of lstsq on it
@@ -786,6 +804,7 @@ prepare(PyObject *self, PyObject *args){
   if(!exceptionMessage.empty())
     ERR(exceptionMessage.c_str());
 
+#ifndef IISIGNATURE_NO_NUMPY
   LeastSquares ls;
   if (!ls.m_ok)
     return nullptr;
@@ -798,6 +817,7 @@ prepare(PyObject *self, PyObject *args){
       if(!ok)
         return nullptr;
     }
+#endif // IISIGNATURE_NO_NUMPY
 
 #ifdef NO_CAPSULES
   PyObject * out = PyCObject_FromVoidPtr(lsf.release(), killLogSigFunction);
@@ -847,6 +867,7 @@ static PyObject* info(PyObject *self, PyObject *args) {
     lsf->m_level, "methods", methods.c_str());
 }
 
+#ifndef IISIGNATURE_NO_NUMPY
 static PyObject *
 logsig(PyObject *self, PyObject *args){
   PyObject* a1, *a2;
@@ -983,6 +1004,7 @@ logsig(PyObject *self, PyObject *args){
   }
   ERR("We had not prepare()d for this request type");
 }
+#endif IISIGNATURE_NO_NUMPY
 
 #define METHOD_DESC "some combination of 'd' (the default), "\
   "'c' (the bch formula compiled on the fly), "\
@@ -993,6 +1015,7 @@ logsig(PyObject *self, PyObject *args){
   "which may be faster for high levels or long paths)"
 
 static PyMethodDef Methods[] = {
+#ifndef IISIGNATURE_NO_NUMPY
   {"sig",  sig, METH_VARARGS, "sig(X,m,format=1)\n Returns the signature of a path X "
    "up to level m. X must be a numpy NxD float32 or float64 array of points "
    "making up the path in R^d. The initial 1 in the zeroth level of the signature is excluded. "
@@ -1026,6 +1049,7 @@ static PyMethodDef Methods[] = {
   {"sigscalebackprop",sigScaleBackwards,METH_VARARGS, "sigscalebackprop(s,X,D,m) \n "
    "gives the derivatives of F with respect to X and D where s is the derivatives"
    " of F with respect to sigscale(X,D,m). The result is a tuple of two items."}, 
+#endif
   {"siglength", siglength, METH_VARARGS, "siglength(d,m) \n "
    "Returns the length of the signature (excluding the initial 1) of a d dimensional path up to level m"},
   {"logsiglength", logsiglength, METH_VARARGS, "logsiglength(d,m) \n "
@@ -1041,6 +1065,7 @@ static PyMethodDef Methods[] = {
    "An example of how to parse the output of this function can be seen in the tests."},
   {"info", info, METH_VARARGS, "info(s) \n  Returns a dictionary of "
    "information about the opaque object s. s must have come from prepare."},
+#ifndef IISIGNATURE_NO_NUMPY
   {"logsig", logsig, METH_VARARGS, "logsig(X, s, methods=None) \n "
    "Calculates the log signature of the path X. X must be a numpy NxD float32 "
    "or float64 array of points making up the path in R^d. s must have come from "
@@ -1048,6 +1073,7 @@ static PyMethodDef Methods[] = {
    "log signature up to level m. By default, the method used is the default out "
    "of those which have been prepared, "
    "but you can restrict it by setting methods to " METHOD_DESC "."},
+#endif
   {"version", version, METH_NOARGS, "return the iisignature version string"},
   {NULL, NULL, 0, NULL}        /* Sentinel */
 };
@@ -1071,7 +1097,9 @@ static PyMethodDef Methods[] = {
 
 PyMODINIT_FUNC
 PyInit_iisignature(void){
+#ifndef IISIGNATURE_NO_NUMPY
   import_array();
+#endif
   return PyModule_Create(&moduledef);
 }
 #else
