@@ -10,3 +10,11 @@ cachegrind.out.*
 # Python egg metadata, regenerated from source files by setuptools.
 /*.egg-info
 /*.egg
+
+#Visual studio stuff
+Release
+Debug
+x64
+*.vcxproj.user
+*.VC.db
+.vs
