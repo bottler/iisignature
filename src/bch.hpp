@@ -11,6 +11,14 @@
 
 #include "readBCHCoeffs.hpp"
 
+//If you uncomment this definition, calculations will be happen according to 
+//the same Hall basis as is used in CoRoPa, and not using the Lyndon word basis.
+//Note that in this case, some of the names and comments in this file will be wrong,
+// - a LyndonWord is not a Lyndon word but a basis element.
+//Everything will still basically work, tests pass etc, 
+//but the numbers will be different.
+//#define IISIGNATURE_MATCH_COROPA
+
 //using Interrupt = const std::function<void()>&;
 typedef void (*Interrupt)();
 
@@ -53,7 +61,7 @@ I amalgamate_adjacent(I a, I b, F1&& tojoin, F2&& amalgamater){
 
 //amalgamate_adjacent_pairs(v.begin(),v.end(),tojoin,amalgamater)
 //iterates over v and  if tojoin(*i,*(i+1)), replaces *i and *(i+1)
-//with the single element *i if amalgamater(*i,*(i+1)) and nothing otherwise
+//with (the single element *i if amalgamater(*i,*(i+1)) and nothing otherwise)
 //returns one past the last - removes everything made unnecessary
 
 //This is the same as the previous function for the case where we know already that
@@ -326,9 +334,23 @@ class WordPool{
     return a->second;
   }
   bool /*__attribute__ ((noinline))*/ manualLexicographicLess(const LyndonWord* l, const LyndonWord* r){
+#ifndef IISIGNATURE_MATCH_COROPA
     LyndonWordIterator lit(l,m_spaceForIterator1), rit(r,m_spaceForIterator2), end;
     //  return std::lexicographical_compare(std::ref(lit),std::ref(end),std::ref(rit),std::ref(end));
-    return std::lexicographical_compare(lit,end,rit,end);
+    return std::lexicographical_compare(lit, end, rit, end);
+#else
+    int ll = l->length(), lr = r->length();
+    if (ll == lr) {
+      if (ll == 1)
+        return l->getLetter() < r->getLetter();
+      if (manualLexicographicLess(l->getLeft(), r->getLeft()))
+        return true;
+      if (manualLexicographicLess(r->getLeft(), l->getLeft()))
+        return false;
+      return manualLexicographicLess(l->getRight(), r->getRight());
+    }
+    return ll < lr;
+#endif
   }
   bool lexicographicLess(const LyndonWord* l, const LyndonWord* r){
     if(!m_orderLookup.empty())
@@ -343,20 +365,39 @@ std::vector<std::vector<LyndonWord*>> makeListOfLyndonWords(WordPool& s, int d,i
   for(Letter i=0; i<d; ++i){
     words[0][i] = s.newLyndonWordFromLetter(i);
   }
-  for(int level=2; level<=m; ++level){
-    for(int leftlength = 1; leftlength<level; ++leftlength){
-      const int rightlength = level-leftlength;
-      for(LyndonWord* left : words[leftlength-1])
-        for(LyndonWord* right : words[rightlength-1])
-          if(s.lexicographicLess(left,right) && (left->isLetter() || left->getRight()==right || 
-                                               !s.lexicographicLess(left->getRight(),right)))
-            words[level-1].push_back(s.newLyndonWord(*left,*right));
+#ifndef IISIGNATURE_MATCH_COROPA
+  for (int level = 2; level <= m; ++level) {
+    for (int leftlength = 1; leftlength<level; ++leftlength) {
+      const int rightlength = level - leftlength;
+      for (LyndonWord* left : words[leftlength - 1])
+        for (LyndonWord* right : words[rightlength - 1])
+          if (s.lexicographicLess(left, right) && 
+              (left->isLetter() || left->getRight() == right ||
+                !s.lexicographicLess(left->getRight(), right)))
+            words[level - 1].push_back(s.newLyndonWord(*left, *right));
     }
   }
+#else
+  for (int level = 2; level <= m; ++level) {
+    for (int leftlength = 1; leftlength<=level/2; ++leftlength) {
+      const int rightlength = level - leftlength;
+      for (size_t il = 0; il < words[leftlength - 1].size(); ++il) {
+        LyndonWord* left = words[leftlength - 1][il];
+        for (size_t ir = leftlength < rightlength ? 0 : il + 1;
+          ir < words[rightlength - 1].size(); ++ir) {
+          LyndonWord* right = words[rightlength - 1][ir];
+          if (rightlength==1 || !s.lexicographicLess(left, right->getLeft()))
+            words[level - 1].push_back(s.newLyndonWord(*left, *right));
+        }
+      }
+    }
+  }
+#endif
   s.doneAdding();
   return words;
 }
 
+//An Input represents an indeterminate number
 class Input{
 public:
   int m_index;
@@ -609,10 +650,17 @@ productLyndonWords(WordPool& s, const LyndonWord& a, const LyndonWord& b, int ma
   auto candidate = s.concatenateIfAllowed(a,b);
   if(candidate)
     return polynomialOfWord(candidate);
+#ifdef IISIGNATURE_MATCH_COROPA
+  auto a1 = productPolynomials(s, productLyndonWords(s, a, *b.getLeft(), maxLength, true).get(),
+    polynomialOfWord(b.getRight()).get(), maxLength);
+  auto a2 = productPolynomials(s, productLyndonWords(s, *b.getRight(), a, maxLength, true).get(),
+    polynomialOfWord(b.getLeft()).get(), maxLength);
+#else
   auto a1 = productPolynomials(s,polynomialOfWord(a.getRight()).get(), 
                                productLyndonWords(s,b,*a.getLeft(),maxLength,true).get(),maxLength);
   auto a2 = productPolynomials(s,polynomialOfWord(a.getLeft()).get() ,
                                productLyndonWords(s,*a.getRight(),b,maxLength,true).get(),maxLength);
+#endif
   if(!a1)
     return a2;
   if(a2)
