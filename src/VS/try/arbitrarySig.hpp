@@ -93,17 +93,15 @@ namespace ArbitrarySig {
   }
 
   void printArbitrarySig(const int d, const int m) {
-    WordPool w;
+    WordPool w(LieBasis::Lyndon);
     vector<LyndonWord*> wds;
     auto list = makeListOfLyndonWords(w, d, m);
     auto logsig = std::make_unique<Polynomial>();
-    vector<std::pair<char, int>> labels;
     int idx = 0;
     for (auto& v : list) {
       logsig->m_data.push_back({});
       for (auto w : v) {
         char c = 'a' + idx;
-        labels.push_back(make_pair(c, idx));
         logsig->m_data.back().push_back(make_pair(w, basicCoeff(idx)));
         ++idx;
         wds.push_back(w);
@@ -121,7 +119,7 @@ namespace ArbitrarySig {
       auto& outlevel = tensorspace.m_data[level - 1];
       for (auto& p : logdata) {
         const auto& sparseMatrix = mapping.at(p.first);
-        for (auto pos : sparseMatrix) {
+        for (auto& pos : sparseMatrix) {
           auto& dest = outlevel[pos.first];
           if (dest.m_details.empty()) {
             dest = p.second;
@@ -149,6 +147,6 @@ namespace ArbitrarySig {
           y.second *= prod;
 
     }
-    //sig.print(std::cout);
+    sig.print(std::cout);
   }
 }

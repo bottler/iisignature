@@ -130,12 +130,11 @@ class TestCase(unittest.TestCase):
 #This test checks that basis, logsig and sig are compatible with each other by calculating a signature both using sig
 #and using logsig and checking they are equal 
 class A(TestCase):
-    def testa(self):
+    def consistency(self, coropa, dim, level):
         #numpy.random.seed(21)
-        dim=3
-        level = 4
-        s = iisignature.prepare(dim,level,"cosx")
-        myinfo = {"level":level,"dimension":dim,"methods":"COSX"}
+        s = iisignature.prepare(dim,level,"coshx" if coropa else "cosx")
+        myinfo = {"level":level,"dimension":dim,"methods":"COSX",
+                  "basis":("Standard Hall" if coropa else "Lyndon")}
         self.assertEqual(iisignature.info(s),myinfo)
         path = numpy.random.uniform(size=(10,dim))
         basis = iisignature.basis(s)
@@ -182,6 +181,12 @@ class A(TestCase):
         sigLogSig = iisignature.logsig(path,s,"s")
         diffs = numpy.max(numpy.abs(sigLogSig-calculatedLogSig))
         self.assertLess(diffs,0.00001)
+
+    def testConsistency(self):
+        self.consistency(False, 3, 6)
+
+    def testCoropa(self):
+        self.consistency(True, 2, 2)
 
     #test sigjoin is compatible with sig and also its deriv
     def testjoining(self):

@@ -29,7 +29,7 @@ void setupGlobal() {
 
 void trial() {
 	setupGlobal();
-	LogSigFunction lsf;
+	LogSigFunction lsf(LieBasis::Lyndon);
 	WantedMethods wm;
 	wm.m_expanded = wm.m_compiled_bch = wm.m_log_of_signature = wm.m_simple_bch = false;
 	wm.m_compiled_bch = true;
@@ -41,7 +41,7 @@ void trial() {
 
 void trySVD() {
 	setupGlobal();
-	LogSigFunction lsf;
+	LogSigFunction lsf(LieBasis::Lyndon);
 	WantedMethods wm;
 	wm.m_expanded =wm.m_compiled_bch= wm.m_log_of_signature = wm.m_simple_bch = false;
 	wm.m_log_of_signature = true;
@@ -113,7 +113,7 @@ double numberFromCoeff(const Coefficient& coeff) {
 //It is abundantly clear that this matrix is not symmetric
 //and therefore the dynkin map is not an *orthogonal* projection (in the obvious basis).
 void dynkinExperiment(const int d, const int m, bool p1, bool p2) {
-  WordPool w;
+  WordPool w(LieBasis::Lyndon);
   auto list = makeListOfLyndonWords(w, d, m);
   vector<LyndonWord*> wds;
   for (auto& v : list)
@@ -175,8 +175,9 @@ void dynkinExperiment(const int d, const int m, bool p1, bool p2) {
 }
 
 int main() {
+  trial();
   //printListOfLyndonWords(2, 5);
-  ArbitrarySig::printArbitrarySig(3, 6);
+  //ArbitrarySig::printArbitrarySig(3, 6);
   //dynkinExperiment(2, 4, 1, 0);
   //dynkinExperiment(2, 4, 0, 1);
   //dynkinExperiment(2, 4, 1, 1);

@@ -18,6 +18,7 @@
 //Everything will still basically work, tests pass etc, 
 //but the numbers will be different.
 //#define IISIGNATURE_MATCH_COROPA
+enum class LieBasis {Lyndon, StandardHall};
 
 //using Interrupt = const std::function<void()>&;
 typedef void (*Interrupt)();
@@ -280,6 +281,8 @@ class WordPool{
   static const int eachLength = 2000;
   static const int objectSize = (sizeof(LyndonWord)+sizeof(void*)-1)/sizeof(void*);
   int m_used = eachLength+2;//so we know we need to allocate at the start
+  const LieBasis m_basis;
+  WordPool(LieBasis basis) : m_basis(basis) {}
   LyndonWord* newLyndonWordFromLetter(Letter l){
     static_assert(2==objectSize, "bad objectSize");
     static_assert(eachLength%objectSize==0, "bad eachLength");
@@ -334,23 +337,24 @@ class WordPool{
     return a->second;
   }
   bool /*__attribute__ ((noinline))*/ manualLexicographicLess(const LyndonWord* l, const LyndonWord* r){
-#ifndef IISIGNATURE_MATCH_COROPA
-    LyndonWordIterator lit(l,m_spaceForIterator1), rit(r,m_spaceForIterator2), end;
-    //  return std::lexicographical_compare(std::ref(lit),std::ref(end),std::ref(rit),std::ref(end));
-    return std::lexicographical_compare(lit, end, rit, end);
-#else
-    int ll = l->length(), lr = r->length();
-    if (ll == lr) {
-      if (ll == 1)
-        return l->getLetter() < r->getLetter();
-      if (manualLexicographicLess(l->getLeft(), r->getLeft()))
-        return true;
-      if (manualLexicographicLess(r->getLeft(), l->getLeft()))
-        return false;
-      return manualLexicographicLess(l->getRight(), r->getRight());
+    if (m_basis == LieBasis::Lyndon) {
+      LyndonWordIterator lit(l, m_spaceForIterator1), rit(r, m_spaceForIterator2), end;
+      //  return std::lexicographical_compare(std::ref(lit),std::ref(end),std::ref(rit),std::ref(end));
+      return std::lexicographical_compare(lit, end, rit, end);
     }
-    return ll < lr;
-#endif
+    else {
+      int ll = l->length(), lr = r->length();
+      if (ll == lr) {
+        if (ll == 1)
+          return l->getLetter() < r->getLetter();
+        if (manualLexicographicLess(l->getLeft(), r->getLeft()))
+          return true;
+        if (manualLexicographicLess(r->getLeft(), l->getLeft()))
+          return false;
+        return manualLexicographicLess(l->getRight(), r->getRight());
+      }
+      return ll < lr;
+    }
   }
   bool lexicographicLess(const LyndonWord* l, const LyndonWord* r){
     if(!m_orderLookup.empty())
@@ -365,34 +369,33 @@ std::vector<std::vector<LyndonWord*>> makeListOfLyndonWords(WordPool& s, int d,i
   for(Letter i=0; i<d; ++i){
     words[0][i] = s.newLyndonWordFromLetter(i);
   }
-#ifndef IISIGNATURE_MATCH_COROPA
-  for (int level = 2; level <= m; ++level) {
-    for (int leftlength = 1; leftlength<level; ++leftlength) {
-      const int rightlength = level - leftlength;
-      for (LyndonWord* left : words[leftlength - 1])
-        for (LyndonWord* right : words[rightlength - 1])
-          if (s.lexicographicLess(left, right) && 
-              (left->isLetter() || left->getRight() == right ||
-                !s.lexicographicLess(left->getRight(), right)))
-            words[level - 1].push_back(s.newLyndonWord(*left, *right));
+  if(s.m_basis == LieBasis::Lyndon)
+    for (int level = 2; level <= m; ++level) {
+      for (int leftlength = 1; leftlength<level; ++leftlength) {
+        const int rightlength = level - leftlength;
+        for (LyndonWord* left : words[leftlength - 1])
+          for (LyndonWord* right : words[rightlength - 1])
+            if (s.lexicographicLess(left, right) && 
+                (left->isLetter() || left->getRight() == right ||
+                  !s.lexicographicLess(left->getRight(), right)))
+              words[level - 1].push_back(s.newLyndonWord(*left, *right));
+      }
     }
-  }
-#else
-  for (int level = 2; level <= m; ++level) {
-    for (int leftlength = 1; leftlength<=level/2; ++leftlength) {
-      const int rightlength = level - leftlength;
-      for (size_t il = 0; il < words[leftlength - 1].size(); ++il) {
-        LyndonWord* left = words[leftlength - 1][il];
-        for (size_t ir = leftlength < rightlength ? 0 : il + 1;
-          ir < words[rightlength - 1].size(); ++ir) {
-          LyndonWord* right = words[rightlength - 1][ir];
-          if (rightlength==1 || !s.lexicographicLess(left, right->getLeft()))
-            words[level - 1].push_back(s.newLyndonWord(*left, *right));
+  else
+    for (int level = 2; level <= m; ++level) {
+      for (int leftlength = 1; leftlength<=level/2; ++leftlength) {
+        const int rightlength = level - leftlength;
+        for (size_t il = 0; il < words[leftlength - 1].size(); ++il) {
+          LyndonWord* left = words[leftlength - 1][il];
+          for (size_t ir = leftlength < rightlength ? 0 : il + 1;
+            ir < words[rightlength - 1].size(); ++ir) {
+            LyndonWord* right = words[rightlength - 1][ir];
+            if (rightlength==1 || !s.lexicographicLess(left, right->getLeft()))
+              words[level - 1].push_back(s.newLyndonWord(*left, *right));
+          }
         }
       }
     }
-  }
-#endif
   s.doneAdding();
   return words;
 }
@@ -650,17 +653,19 @@ productLyndonWords(WordPool& s, const LyndonWord& a, const LyndonWord& b, int ma
   auto candidate = s.concatenateIfAllowed(a,b);
   if(candidate)
     return polynomialOfWord(candidate);
-#ifdef IISIGNATURE_MATCH_COROPA
-  auto a1 = productPolynomials(s, productLyndonWords(s, a, *b.getLeft(), maxLength, true).get(),
-    polynomialOfWord(b.getRight()).get(), maxLength);
-  auto a2 = productPolynomials(s, productLyndonWords(s, *b.getRight(), a, maxLength, true).get(),
-    polynomialOfWord(b.getLeft()).get(), maxLength);
-#else
-  auto a1 = productPolynomials(s,polynomialOfWord(a.getRight()).get(), 
-                               productLyndonWords(s,b,*a.getLeft(),maxLength,true).get(),maxLength);
-  auto a2 = productPolynomials(s,polynomialOfWord(a.getLeft()).get() ,
-                               productLyndonWords(s,*a.getRight(),b,maxLength,true).get(),maxLength);
-#endif
+  std::unique_ptr<Polynomial> a1, a2;
+  if (s.m_basis != LieBasis::Lyndon) {
+    a1 = std::move(productPolynomials(s, productLyndonWords(s, a, *b.getLeft(), maxLength, true).get(),
+      polynomialOfWord(b.getRight()).get(), maxLength));
+    a2 = std::move(productPolynomials(s, productLyndonWords(s, *b.getRight(), a, maxLength, true).get(),
+      polynomialOfWord(b.getLeft()).get(), maxLength));
+  }
+  else {
+    a1 = std::move(productPolynomials(s, polynomialOfWord(a.getRight()).get(),
+      productLyndonWords(s, b, *a.getLeft(), maxLength, true).get(), maxLength));
+    a2 = std::move(productPolynomials(s, polynomialOfWord(a.getLeft()).get(),
+      productLyndonWords(s, *a.getRight(), b, maxLength, true).get(), maxLength));
+  }
   if(!a1)
     return a2;
   if(a2)
@@ -669,7 +674,7 @@ productLyndonWords(WordPool& s, const LyndonWord& a, const LyndonWord& b, int ma
 }
 
 void printListOfLyndonWords(int d, int m){
-  WordPool s;
+  WordPool s(LieBasis::Lyndon);
   auto list = makeListOfLyndonWords(s,d,m);
   for(const auto& level : list){
     for (const LyndonWord* l : level){
@@ -738,7 +743,7 @@ Polynomial bch(WordPool& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Polyn
 }
 
 void calcFla(int d, int m, Interrupt interrupt){
-  WordPool s;
+  WordPool s(LieBasis::Lyndon);
   auto wordList = makeListOfLyndonWords(s,d,m);
   for(auto& l : wordList)
     std::sort(l.begin(),l.end(),[&s](LyndonWord* a, LyndonWord* b){

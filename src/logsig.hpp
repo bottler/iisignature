@@ -6,6 +6,7 @@
 #include<map>
 
 struct LogSigFunction{
+  LogSigFunction(LieBasis basis) : m_s(basis) {}
   int m_dim, m_level;
   WordPool m_s;
   std::vector<LyndonWord*> m_basisWords;
@@ -417,6 +418,8 @@ struct WantedMethods{
   bool m_simple_bch = true;
   bool m_log_of_signature = true;
   bool m_expanded = false;
+
+  bool m_want_matchCoropa = false;
 };
 
 //This function sets up the members of lsf. It occasionally calls interrupt
@@ -449,8 +452,9 @@ bool setWantedMethods(WantedMethods& w, int dim, int level, bool consumer, const
   w.m_compiled_bch = forceCompiled || npos!=input.find_first_of("cC");
   w.m_simple_bch=doEverything || (npos!=input.find_first_of("oO"));
   w.m_log_of_signature = forceLog || (npos!=input.find_first_of("sS"));
-  w.m_expanded=(npos!=input.find_first_of("xX"));
-  return npos!=input.find_first_not_of("cCdDoOsSxX ");
+  w.m_expanded = (npos != input.find_first_of("xX"));
+  w.m_want_matchCoropa = (npos != input.find_first_of("hH"));
+  return npos!=input.find_first_not_of("cCdDhHoOsSxX ");
 }
 
 const char* const methodError = "Invalid method string. Should be 'd' (default), 'c' (compiled), 'o' (simple BCH object, not compiled), 's' (by taking the log of the signature), or 'x' (to report the expanded log signature), or some combination - order ignored, or None.";

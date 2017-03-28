@@ -789,7 +789,8 @@ prepare(PyObject *self, PyObject *args){
     methodString = methods;
   if(setWantedMethods(wantedmethods,dim,level,false,methodString))
     ERR(methodError);
-  std::unique_ptr<LogSigFunction> lsf(new LogSigFunction);
+  auto basis = wantedmethods.m_want_matchCoropa ? LieBasis::StandardHall : LieBasis::Lyndon;
+  std::unique_ptr<LogSigFunction> lsf(new LogSigFunction(basis));
   std::string exceptionMessage;
   setup_signals();
   Py_BEGIN_ALLOW_THREADS
@@ -863,8 +864,10 @@ static PyObject* info(PyObject *self, PyObject *args) {
   if (canTakeLogOfSig)
     methods += 'S';
   methods += 'X';
-  return Py_BuildValue("{sisiss}", "dimension", lsf->m_dim, "level",
-    lsf->m_level, "methods", methods.c_str());
+  const char* basis = (lsf->m_s.m_basis == LieBasis::StandardHall) ? 
+                          "Standard Hall" : "Lyndon";
+  return Py_BuildValue("{sisissss}", "dimension", lsf->m_dim, "level",
+    lsf->m_level, "methods", methods.c_str(), "basis", basis);
 }
 
 #ifndef IISIGNATURE_NO_NUMPY
