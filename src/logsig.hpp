@@ -442,7 +442,7 @@ void makeLogSigFunction(int dim, int level, LogSigFunction& lsf, const WantedMet
 //interpret a string as a list of wanted methods, return true on error
 bool setWantedMethods(WantedMethods& w, int dim, int level, bool consumer, const std::string& input){
   const auto npos = std::string::npos;
-  bool noInput = npos == input.find_first_not_of(" ");
+  bool noInput = npos == input.find_first_of("cCdDoOsSxX"); //no method (DCOSX) is given
   bool doDefault= (noInput && !consumer) || npos!=input.find_first_of("dD");
   bool defaultIsCompiled = (dim==2 && level<10) || (dim>2 && dim<10 && level < 5);
   bool doEverything = noInput && consumer;

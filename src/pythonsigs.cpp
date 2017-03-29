@@ -1007,7 +1007,7 @@ logsig(PyObject *self, PyObject *args){
   }
   ERR("We had not prepare()d for this request type");
 }
-#endif IISIGNATURE_NO_NUMPY
+#endif //IISIGNATURE_NO_NUMPY
 
 #define METHOD_DESC "some combination of 'd' (the default), "\
   "'c' (the bch formula compiled on the fly), "\

@@ -11,13 +11,13 @@
 
 #include "readBCHCoeffs.hpp"
 
-//If you uncomment this definition, calculations will be happen according to 
+//If you use StandardHall, calculations will be happen according to 
 //the same Hall basis as is used in CoRoPa, and not using the Lyndon word basis.
 //Note that in this case, some of the names and comments in this file will be wrong,
 // - a LyndonWord is not a Lyndon word but a basis element.
 //Everything will still basically work, tests pass etc, 
 //but the numbers will be different.
-//#define IISIGNATURE_MATCH_COROPA
+
 enum class LieBasis {Lyndon, StandardHall};
 
 //using Interrupt = const std::function<void()>&;

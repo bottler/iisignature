@@ -187,7 +187,7 @@ struct Maker{
       m.push(0xf2, 0x0f, 0x59);
       if(d.m_formingT[i].first == d.m_formingT[i].second){
         //just square it
-        m.push(0xc0);
+        m.push(0xc0);//i.e. the ModR/M for xmm0 with itself
       }
       else
         xmmkWithRegOffset(m,d.m_formingT[i].second);
