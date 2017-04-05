@@ -351,7 +351,7 @@ void makeSparseLogSigMatrices(int dim, int level, LogSigFunction& lsf, Interrupt
         const LyndonWord* lw = i.second[0];
         sim.m_dest = lookupInFlatMap(lyndonWordToIndex,lw);
         //we can take any we want, so just take the zeroth
-        const P& p = m[lev - 1][lw][0];
+        const P& p = m[lev - 1].at(lw)[0];
         sim.m_factor = 1.0f / p.second;
         sim.m_source = p.first;
         lsf.m_simples[lev - 1].push_back(sim);
@@ -364,7 +364,7 @@ void makeSparseLogSigMatrices(int dim, int level, LogSigFunction& lsf, Interrupt
         std::map<size_t,size_t> sourceMap;
         for (auto& j : i.second) {
           mtx.m_dests.push_back(lookupInFlatMap(lyndonWordToIndex,j));
-          for (auto& k : m[lev - 1][j]){
+          for (auto& k : m[lev - 1].at(j)){
             sourceMap[k.first]=0;//this element will very often be already present
           }
         }
@@ -384,7 +384,7 @@ void makeSparseLogSigMatrices(int dim, int level, LogSigFunction& lsf, Interrupt
 #endif
           mtx.m_matrix.assign(mtx.m_dests.size()*mtx.m_sources.size(), 0);
           for (size_t j = 0; j < i.second.size(); ++j){
-            for (P& k : m[lev - 1][i.second[j]]) {
+            for (P& k : m[lev - 1].at(i.second[j])) {
               size_t rowBegin = sourceMap[k.first] * mtx.m_dests.size();
               mtx.m_matrix[rowBegin+j] = k.second;
             }
@@ -457,7 +457,11 @@ bool setWantedMethods(WantedMethods& w, int dim, int level, bool consumer, const
   return npos!=input.find_first_not_of("cCdDhHoOsSxX ");
 }
 
-const char* const methodError = "Invalid method string. Should be 'd' (default), 'c' (compiled), 'o' (simple BCH object, not compiled), 's' (by taking the log of the signature), or 'x' (to report the expanded log signature), or some combination - order ignored, or None.";
+const char* const methodError = "Invalid method string. Should be 'D' (default), 'C' (compiled), "
+                                "'O' (simple BCH object, not compiled), "
+                                "'S' (by taking the log of the signature), "
+                                "or 'X' (to report the expanded log signature), "
+                                "or some combination - order ignored, possibly with 'H', or None.";
 
 //rename LogSigFunction to LogSigData
 

@@ -5,7 +5,8 @@ This directory contains a Visual Studio 2017 Solution `try\try.sln`
 which contains a few example projects. Nothing here affects the 
 iisignature addin itself. Building this solution should not produce
 any files outside this directory, and nothing outside this directory
-refers to anything inside this directory.
+refers to anything inside this directory. The output directory of all 
+these projects is the try project's one.
 
 The buildso project
 -------------------
@@ -15,6 +16,10 @@ setuptools. Unlike the rest of this solution, this uses the 2015 toolset
 to match python 3.5 and 3.6. You will need to change the project settings so
 that they point to your installation(s) of python. On release mode this 
 means you have a normal visual studio experience of the addin.
+
+In order for the prepare() function to work, you need to copy the iisignature_data
+directory from the root of this tree to the relevant output directory
+(i.e. the one for the try project). Or, I guess, anywhere on your PYTHONPATH.
 
 The debug mode build of this project is only of limited use. It lets you debug 
 part of the functionality of iisignature. It will require you to 

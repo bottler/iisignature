@@ -655,16 +655,16 @@ productLyndonWords(WordPool& s, const LyndonWord& a, const LyndonWord& b, int ma
     return polynomialOfWord(candidate);
   std::unique_ptr<Polynomial> a1, a2;
   if (s.m_basis != LieBasis::Lyndon) {
-    a1 = std::move(productPolynomials(s, productLyndonWords(s, a, *b.getLeft(), maxLength, true).get(),
-      polynomialOfWord(b.getRight()).get(), maxLength));
-    a2 = std::move(productPolynomials(s, productLyndonWords(s, *b.getRight(), a, maxLength, true).get(),
-      polynomialOfWord(b.getLeft()).get(), maxLength));
+    a1 = productPolynomials(s, productLyndonWords(s, a, *b.getLeft(), maxLength, true).get(),
+      polynomialOfWord(b.getRight()).get(), maxLength);
+    a2 = productPolynomials(s, productLyndonWords(s, *b.getRight(), a, maxLength, true).get(),
+      polynomialOfWord(b.getLeft()).get(), maxLength);
   }
   else {
-    a1 = std::move(productPolynomials(s, polynomialOfWord(a.getRight()).get(),
-      productLyndonWords(s, b, *a.getLeft(), maxLength, true).get(), maxLength));
-    a2 = std::move(productPolynomials(s, polynomialOfWord(a.getLeft()).get(),
-      productLyndonWords(s, *a.getRight(), b, maxLength, true).get(), maxLength));
+    a1 = productPolynomials(s, polynomialOfWord(a.getRight()).get(),
+      productLyndonWords(s, b, *a.getLeft(), maxLength, true).get(), maxLength);
+    a2 = productPolynomials(s, polynomialOfWord(a.getLeft()).get(),
+      productLyndonWords(s, *a.getRight(), b, maxLength, true).get(), maxLength);
   }
   if(!a1)
     return a2;
