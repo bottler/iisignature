@@ -164,7 +164,7 @@ struct Maker{
       m.push(start);
     else if(i.second<16){
       m.push(0x40+start);
-      m.push(8*i.second);
+      m.push((unsigned char)(8*i.second));
       ++m_singles;
     }else{
       ++(i.second<32 ? m_nearlies : m_bads);

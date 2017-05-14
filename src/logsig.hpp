@@ -368,9 +368,9 @@ void makeSparseLogSigMatrices(int dim, int level, LogSigFunction& lsf, Interrupt
             sourceMap[k.first]=0;//this element will very often be already present
           }
         }
-        size_t index = 0;
+        size_t idx = 0;
         for (auto& j : sourceMap) {
-          j.second = index++;
+          j.second = idx++;
           mtx.m_sources.push_back(j.first);
         }
 #ifdef SHAREMAT

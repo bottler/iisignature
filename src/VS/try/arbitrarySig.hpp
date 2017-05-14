@@ -62,8 +62,8 @@ namespace ArbitrarySig {
         auto& bb = b.m_data[blevel - 1];
         auto dest = out.m_data[level - 1].begin();
         for (const Coefficient& c : aa) {
-          for (const Coefficient& d : bb) {
-            sumCoefficients(*(dest++), productCoefficients(d, c));
+          for (const Coefficient& cc : bb) {
+            sumCoefficients(*(dest++), productCoefficients(cc, c));
           }
         }
       }
@@ -84,7 +84,7 @@ namespace ArbitrarySig {
       for (int i = 0; i < m; ++i) {
         for (size_t j = 0; j < out.m_data[i].size(); ++j) {
           auto tempCopy = t.m_data[i][j];
-          sumCoefficients(out.m_data[i][j], tempCopy);
+          sumCoefficients(out.m_data[i][j], std::move(tempCopy));
         }
       }
       products.push_back(t);
@@ -100,11 +100,11 @@ namespace ArbitrarySig {
     int idx = 0;
     for (auto& v : list) {
       logsig->m_data.push_back({});
-      for (auto w : v) {
-        char c = 'a' + idx;
-        logsig->m_data.back().push_back(make_pair(w, basicCoeff(idx)));
+      for (auto wd : v) {
+        //char c = 'a' + idx;
+        logsig->m_data.back().push_back(make_pair(wd, basicCoeff(idx)));
         ++idx;
-        wds.push_back(w);
+        wds.push_back(wd);
       }
     }
     printPolynomial(*logsig, std::cout);
@@ -130,7 +130,7 @@ namespace ArbitrarySig {
             auto tempcopy = p.second;
             for (auto& x : tempcopy.m_details)
               x.second *= pos.second;
-            sumCoefficients(dest, tempcopy);
+            sumCoefficients(dest, std::move(tempcopy));
           }
         }
       }

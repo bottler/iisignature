@@ -496,7 +496,7 @@ void productCoefficients3 (Coefficient& a, const Coefficient& b, const Coefficie
 }
 
 //make the lhs be lhs+rhs, no care about rhs
-void sumCoefficients(Coefficient& lhs, Coefficient& rhs){
+void sumCoefficients(Coefficient& lhs, Coefficient&& rhs){
   auto& a = lhs.m_details;
   auto& b = rhs.m_details;
 
@@ -582,7 +582,7 @@ void sumPolynomialLevels(WordPool& s, std::vector<std::pair<const LyndonWord*,Co
                                     [](const Term& a, const Term& b){
                                       return a.first->isEqual(*b.first);},
                                     [](Term& a, Term& b){ 
-                                      sumCoefficients(a.second,b.second); 
+                                      sumCoefficients(a.second,std::move(b.second)); 
                                       return !a.second.m_details.empty();})
           ,a.end());
 }
@@ -733,8 +733,8 @@ Polynomial bch(WordPool& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Polyn
     const auto& row = bchTable.m_rows[i];
     auto& p = arr[i];
     for(auto& l : p->m_data)
-      for (auto&m : l)
-        for(auto& c : m.second.m_details)
+      for (auto&mm : l)
+        for(auto& c : mm.second.m_details)
           c.second *= row.m_coeff; //when m_coeff is zero, we're keeping this in
     sumPolynomials(s,out,*p);
     interrupt();
