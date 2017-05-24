@@ -1,11 +1,17 @@
 (*Mathematica code to find the signature of a 2d path given in parametric form*)
-(*If A is some structure of deeply nested lists, which all contain functions, then ApplyLowestLevel[A,x] is the same structure where each function has been replaced by the result of evaluating it at x. For example
-ApplyLowestLevel[{{Sqrt, {Cos}}, Sin}, 0] gives {{0,{1}},0} *)
+(*If A is some structure of deeply nested lists, which all contain functions,
+ then ApplyLowestLevel[A,x] is the same structure where each function
+ has been replaced by the result of evaluating it at x. For example
+ ApplyLowestLevel[{{Sqrt, {Cos}}, Sin}, 0] gives {{0,{1}},0} *)
 ApplyLowestLevel[ff_, x_] := Last@Outer[Apply[#2, #1] &, {{x}}, ff, 1, Infinity]
-(*If f is a list of functions then ParametricSignature1[f,u,m] is the value of the signature of the parametric curve on [0,u] given by f up to level m. The zeroth level is included. *)
+(*If f is a list of functions then ParametricSignature1[f,u,m] is
+the value of the signature of the parametric curve on [0,u]
+given by f up to level m. The zeroth level is included. *)
 ParametricSignature1[f_, u_, m_]:=ApplyLowestLevel[NestList[Outer[Function[x, Integrate[#[t] Derivative[1][#2][t], {t, 0, x}]]& , #, f]& , {1& }, m], u]
 (*For example*)
 ParametricSignature1[{1 - Cos[#1] &, 1 - Sin[#1] &}, Pi/2, 3]
-(*For the signature as a list of flat levels, use Map[Flatten, a] and for the signature as a single flat list, use Flatten[a], where a is the result of ParametricSignature1. *)
+(*For the signature as a list of flat levels, use Map[Flatten, a]
+ and for the signature as a single flat list,
+ use Flatten[a], where a is the result of ParametricSignature1. *)
 (*For a primitive quadratic bezier curve, ParametricSignature1[{#1^2 &, (1 - #1)^2 &}, 1, 5]*)
 (*This functionality is not restricted to 2d.*)
