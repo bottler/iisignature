@@ -3,6 +3,7 @@
 #include<thread>
 #include<iomanip>
 #include<chrono>
+#include<set>
 #include"logsig.hpp"
 #include "arbitrarySig.hpp"
 using namespace std;
@@ -113,12 +114,13 @@ double numberFromCoeff(const Coefficient& coeff) {
 //It is abundantly clear that this matrix is not symmetric
 //and therefore the dynkin map is not an *orthogonal* projection (in the obvious basis).
 void dynkinExperiment(const int d, const int m, bool p1, bool p2) {
+  using namespace IISignature_algebra;
   WordPool w(LieBasis::Lyndon);
   auto list = makeListOfLyndonWords(w, d, m);
   vector<LyndonWord*> wds;
   for (auto& v : list)
-    for (auto w : v)
-      wds.push_back(w);
+    for (auto wd : v)
+      wds.push_back(wd);
   vector<size_t> sigLevelSizes{ (size_t)d };
   for (int level = 2; level <= m; ++level)
     sigLevelSizes.push_back(d*sigLevelSizes.back());
@@ -148,24 +150,24 @@ void dynkinExperiment(const int d, const int m, bool p1, bool p2) {
       poly2.reset();
     if (poly)//poly)
       for (auto &l : poly->m_data)
-        for (auto& m : l) {
-          double co = numberFromCoeff(m.second);
-          for (auto p : map.at(m.first))
+        for (auto& ll : l) {
+          double co = numberFromCoeff(ll.second);
+          for (auto p : map.at(ll.first))
             fullMatrix[i][p.first] += co*p.second;
         }
     if (poly2)//poly2)
       for (auto &l : poly2->m_data)
-        for (auto& m : l) {
-          double co = numberFromCoeff(m.second);
-          for (auto p : map.at(m.first))
+        for (auto& ll : l) {
+          double co = numberFromCoeff(ll.second);
+          for (auto p : map.at(ll.first))
             fullMatrix[i][p.first] += co*p.second;
         }
   }
   int pos = 0;
   if(1)
   for (auto &v : fullMatrix) {
-    for (auto d : v)
-      std::cout << std::setw(2)<< d << " ";
+    for (auto dd : v)
+      std::cout << std::setw(2)<< dd << " ";
     if (1)
       for (int i = 0; i < m; ++i)
         std::cout << allSeqs[pos++];
@@ -174,8 +176,114 @@ void dynkinExperiment(const int d, const int m, bool p1, bool p2) {
   isSymmetric(fullMatrix);
 }
 
+std::vector<Letter> indexToWord(size_t index, int d, int m) {
+  std::vector<Letter> o;
+  for (int i = 0; i < m; ++i) {
+    Letter dig = index % d;
+    index = index / d;
+    o.push_back(dig);
+  }
+  std::reverse(o.begin(), o.end());
+  return o;
+}
+
+void printAMappingMatrix() {
+  vector<Letter> myletters{ 0,0,1,1,2,2 };
+  //vector<Letter> myletters{ 0,0,1,1,2,2,2 };
+  //vector<Letter> myletters{ 0,0,0,0,1,1,1,1 };
+  //vector<Letter> myletters{ 0,0,0,1,1,1,2,2,2 };
+  //vector<Letter> myletters{ 0,0,1,2 };
+  //vector<Letter> myletters{ 0,1,2};
+  if (!std::is_sorted(myletters.begin(), myletters.end()) || myletters.at(0)!=0)
+    throw "myletters must be sorted";
+  int m = (int)myletters.size();
+  int d = 1 + *std::max_element(myletters.begin(), myletters.end());
+  using namespace IISignature_algebra;
+//  WordPool w(LieBasis::Lyndon);
+  WordPool w(LieBasis::StandardHall);
+  bool printBrackets = LieBasis::StandardHall == w.m_basis;
+  auto list = makeListOfLyndonWords(w, d, m);
+  vector<LyndonWord*> wds;
+  for (auto& v : list)
+    for (auto wd : v)
+      wds.push_back(wd);
+  vector<size_t> sigLevelSizes{ (size_t)d };
+  for (int level = 2; level <= m; ++level)
+    sigLevelSizes.push_back(d*sigLevelSizes.back());
+  auto mappingMatrix = makeMappingMatrix(d, m, w, wds, sigLevelSizes);
+  LyndonWordToIndex lyndonWordToIndex;
+  LetterOrderToLW letterOrderToLW;
+  analyseMappingMatrixLevel(mappingMatrix, m, letterOrderToLW, lyndonWordToIndex);
+  auto v = lookupInFlatMap(letterOrderToLW, myletters);
+  std::set<size_t> usedTensorIndicesS;
+  for (auto wd : v) {
+    for (auto& i : mappingMatrix.back().at(wd))
+      usedTensorIndicesS.insert(i.first);
+    //printLyndonWordDigits(*wd, std::cout);
+    //std::cout << "\n";
+  }
+  //vector<size_t> usedTensorIndices(usedTensorIndicesS.begin(), usedTensorIndicesS.end());
+  std::map<size_t, size_t> bigIdx2SmallIdx;
+  {
+    size_t idx = 0;
+    for (auto i : usedTensorIndicesS)
+      bigIdx2SmallIdx[i] = idx++;
+  }
+  std::ofstream output("foo.txt");
+  vector<vector<Letter>> tensorLetters;
+  for (auto i : usedTensorIndicesS)
+    tensorLetters.push_back(indexToWord(i, d, m));
+  size_t initialSpaces = 1 + m;
+  if (printBrackets) {
+    initialSpaces += 3 * (m - 1);//two brackets and a comma
+  }
+  for (int i = 0; i < m; ++i) {
+    for (int j = 0; j < initialSpaces; ++j)
+      output << " ";
+    for (const auto& j : tensorLetters)
+      output << (char)('1'+j[i]);
+    output << "\n";
+  }
+  for (auto wd : v) {
+    vector<float> out(usedTensorIndicesS.size());
+    for (auto& i : mappingMatrix.back().at(wd))
+      out[bigIdx2SmallIdx.at(i.first)] = i.second;
+    if(!printBrackets)
+      printLyndonWordDigits(*wd, output);
+    else
+      printLyndonWordBracketsDigits(*wd, output);
+    output << " ";
+    vector<Letter> wd_letters;
+    wd->iterateOverLetters([&](Letter l) {wd_letters.push_back(l); });
+    //std::reverse(wd_letters.begin(), wd_letters.end());
+    size_t wd_idx = 0;
+    for (Letter l : wd_letters) {
+      wd_idx *= d;
+      wd_idx += l;
+    }
+    int wd_small_idx = -1;
+    if (w.m_basis==LieBasis::Lyndon)
+      wd_small_idx = (int)bigIdx2SmallIdx.at(wd_idx);
+      
+    for (size_t j = 0; j != out.size(); ++j) {
+      float i = out[j];
+      float nice = i < 0 ? -i : i;
+      nice = (nice <= 9) ? nice : 9;
+      //output << " ";
+      if (w.m_basis == LieBasis::Lyndon && wd_small_idx == j) {
+        std::cout << i << "\n";
+        output << (nice != 1 ? "*" : "#");
+      }
+      else
+        output << nice;
+    }
+    output << "\n";
+  }
+}
+
 int main() {
-  trial();
+  printAMappingMatrix();
+  //trial();
   //printListOfLyndonWords(2, 5);
   //ArbitrarySig::printArbitrarySig(3, 6);
   //dynkinExperiment(2, 4, 1, 0);

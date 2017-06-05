@@ -93,6 +93,7 @@ namespace ArbitrarySig {
   }
 
   void printArbitrarySig(const int d, const int m) {
+    using namespace IISignature_algebra;
     WordPool w(LieBasis::Lyndon);
     vector<LyndonWord*> wds;
     auto list = makeListOfLyndonWords(w, d, m);
