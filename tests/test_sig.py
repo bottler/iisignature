@@ -63,7 +63,7 @@ def exponentiateTensor(a):
     return [numpy.sum([p[i] for p in products],0) for i in range(level)]
 
 #input is a value in the tensor algebra given as lists of levels (from 1 to level), assumed 1 in level 0.
-#returns its exp - assumed 0 in level 0
+#returns its log - assumed 0 in level 0
 #log(1+x) = x -x^2/2 +x^3/3 -x^4/4 + ...
 def logTensor(a):
     out = [i.copy() for i in a]

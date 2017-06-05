@@ -8,12 +8,25 @@
 import theano, numpy
 import iisignature
 
+#Todo: you can use x.ndim in make_node to change behaviour based on shapes of the input.
+#could make these functions optionally batched
+
+#Turn on to throw an exception on nan
 nancheck = False
 def contains_nan(x):
     return numpy.isnan(x).any()
 
-#Todo: you can use x.ndim in make_node to change behaviour based on shapes of the input.
-#could make these functions optionally batched
+#Turn on to throw exceptions in some places when called on a non-contiguous array
+#At the moment, iisignature functions will do extra copying when this happens.
+#If it happens a lot, we could adapt the code.
+report_contig=False
+if report_contig:
+    def iscontig(arr):
+        return arr.flags["C_CONTIGUOUS"]
+    def contig_check(a):
+        for i,aa in enumerate(a):
+            if not iscontig(aa):
+                raise RuntimeError(str(i+1)+"th argument is not contiguous")
 
 #This is a theano Op which wraps iisignature.siglength .
 #It is used to implement shape inference of Sig.
@@ -90,6 +103,8 @@ class SigJoinGrad_op(theano.Op):
         y=inputs_storage[2]
         m=inputs_storage[3]
         fixed=inputs_storage[4]
+        if report_contig:
+            contig_check([s,x,y])
         o=iisignature.sigjoinbackprop(s,x,y,m,fixed)
         if(nancheck):
             if contains_nan(s):
@@ -154,6 +169,8 @@ class SigScaleGrad_op(theano.Op):
         x=inputs_storage[1]
         y=inputs_storage[2]
         m=inputs_storage[3]
+        if report_contig:
+            contig_check([s,x,y])
         o=iisignature.sigscalebackprop(s,x,y,m)
         if(nancheck):
             if contains_nan(s):

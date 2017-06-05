@@ -2,7 +2,7 @@
 #basis elements as a matrix for each level.
 #This allows you to find the L2 dot product of log signatures in tensor space without
 #ever expressing them in tensor space.
-#This might be useful if you have to calculate sucg a dot product very many times.
+#This might be useful if you have to calculate such a dot product very many times.
 #The demo() function provides an example.
 
 #Don't use for dimension bigger than 9, because it uses the basis() function
@@ -82,7 +82,8 @@ def demo():
 
     #2. print the dot product of the log signatures in tensor space
     #(The "x" means that the log signature is returned in tensor space.)
-    target = np.inner(*(iisignature.logsig(i,s,"x") for i in paths))
+    expandedLogSig1,expandedLogSig2=(iisignature.logsig(i,s,"x") for i in paths)
+    target = np.inner(expandedLogSig1,expandedLogSig2)
     print_ ("Target:", float(target))
 
     #3. use getMatrices to act on the log signatures expressed in a basis
