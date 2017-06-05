@@ -78,6 +78,13 @@ private:
   size_t m_size;
 };
 
+#if defined(__i386__) || defined(_M_IX86)
+ #define IISIGNATURE_32BIT
+#endif
+#if !defined(_WIN32) && !defined(IISIGNATURE_32BIT)
+ #define IISIGNATURE_LINUX_64BIT
+#endif
+
 //We have a function with type void(double* a, double* b, double* t). InputArr represents one of the arguments and the register it is in.
 enum class InputArr {A, B, T, C}; //C not a real arg, won't exist in FunctionData
 typedef std::pair<InputArr, int> InputPos;
@@ -136,7 +143,7 @@ void slowExplicitFunction(double* a, const double* b, const FunctionData& d){
 struct Maker{
 
   static unsigned char getRegNumber(InputArr array){
-#ifdef _WIN32
+#ifndef IISIGNATURE_LINUX_64BIT
     unsigned char start = array == InputArr::A ? 1 : //RCX/ECX
                           array == InputArr::B ? 2 : //RDX/EDX
                           array == InputArr::T ? 7 : //let's use RDI/EDI
@@ -251,8 +258,8 @@ struct Maker{
       }
       //does it make any difference whether we always use the same pair of registers?
       base_xmm = base_xmm+2;
-#ifdef _WIN32
-      if(base_xmm==6) //xmm6 and greater are nonvolatile on windows. For the moment, we just don't touch them.
+#if defined(_WIN32) && !defined(_M_IX86)
+      if(base_xmm==6) //xmm6 and greater are nonvolatile on windows64bit. For the moment, we just don't touch them.
         base_xmm = 0;
 #else
       if(base_xmm==8)
@@ -282,12 +289,12 @@ struct Maker{
   void make(Mem& m, const FunctionData& d)
   {
 
-#ifdef _WIN32
+#ifndef IISIGNATURE_LINUX_64BIT//def _WIN32
     //PUSH the value of the nonvolatile register we wanna use for constants to the stack
     m.push(0x50 + getRegNumber(InputArr::C));
     m.push(0x50 + getRegNumber(InputArr::T));
     //MOV the third argument, T, from where windows sticks it, to our preferred register
-#ifdef _M_IX86
+#ifdef IISIGNATURE_32BIT//_M_IX86
 	//0x44 means from SIB + 1byte displacement
 	//SIB of 0x24 means using ESP (not scaled?)
 	//mov the arg which was 4 bytes down when we were called on the stack into said register 
@@ -302,7 +309,7 @@ struct Maker{
 
     make_form_t(m,d);
     
-#ifdef _M_IX86
+#ifdef IISIGNATURE_32BIT// _M_IX86
 	m.push(0xb8 + getRegNumber(InputArr::C));
 	m.pushLittleEndian((uint32_t)d.m_constants.data());
 #else
@@ -315,13 +322,13 @@ struct Maker{
     make_main_multiplies(m,d);
     make_final_adds(m,d);
     
-#ifdef _WIN32
+#ifndef IISIGNATURE_LINUX_64BIT
     //POP the values of the nonvolatile registers we pushed
     m.push(0x58 + getRegNumber(InputArr::T));
     m.push(0x58 + getRegNumber(InputArr::C));
 #endif
-#ifdef _M_IX86
-	m.push(0xc2, 0x04, 0x00); //ret while also popping a pointer.
+#ifdef IISIGNATURE_32BIT//_M_IX86
+    m.push(0xc2, 0x04, 0x00); //ret while also popping a pointer.
 #else
     m.push(0xc3);//retq
 #endif
@@ -401,6 +408,8 @@ struct FunctionRunner{
   void go(double* a, const double* b){
 #ifdef _M_IX86
     typedef void (__fastcall *my_fn_type)(double*, const double*, double*);
+#elif defined(__i386__)
+    typedef void (*my_fn_type)(double*, const double*, double*)__attribute__((fastcall));
 #else
     typedef void (*my_fn_type)(double*, const double*, double*);
 #endif
