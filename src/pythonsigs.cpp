@@ -78,6 +78,16 @@ public:
   ~Deleter(){Py_DECREF(m_p);}
 };
 
+struct UseFloat{
+  constexpr static int typenum=NPY_FLOAT32;
+  using T = float;
+};
+
+struct UseDouble{
+  constexpr static int typenum=NPY_FLOAT64;
+  using T = double;
+};
+
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
 static PyObject *
@@ -632,13 +642,17 @@ bool getData(){
   PyObject* o = PyObject_CallFunctionObjArgs(get_data,ii,name,NULL);
   if(!o)
     return false;
+  if(o==Py_None)
+    ERRb("Cannot find iisignature_data module");
 #if PY_MAJOR_VERSION <3
   if(!PyString_CheckExact(o))
     ERRb("unexpected type from pkgutil.get_data");
   g_bchLyndon20_dat = PyString_AsString(o);
 #else
-  if(!PyBytes_CheckExact(o))
+  if(!PyBytes_CheckExact(o)){
+    //std::cerr<<PyBytes_AsString(PyObject_Bytes(o))<<"\n";
     ERRb("unexpected type from pkgutil.get_data");
+  }
   g_bchLyndon20_dat = PyBytes_AsString(o);
 #endif
   //deliberately leak a reference to o - we'll keep it forever.
@@ -902,6 +916,7 @@ logsig(PyObject *self, PyObject *args){
   vector<double> out(logsiglength);//why double
 
   FunctionRunner* f = lsf->m_f.get();
+  using OutT=UseDouble;
   if ((wantedmethods.m_compiled_bch && f!=nullptr) || 
       (wantedmethods.m_simple_bch && !lsf->m_fd.m_formingT.empty())){
     vector<double> displacement(d);
@@ -937,12 +952,12 @@ logsig(PyObject *self, PyObject *args){
       }
     }
     npy_intp dims[] = {(npy_intp)out.size()};
-    PyObject* o = PyArray_SimpleNew(1,dims,NPY_FLOAT32);
+    PyObject* o = PyArray_SimpleNew(1,dims,OutT::typenum);
     if (!o)
       return nullptr;
-    float* dest = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
+    auto dest = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
     for(double d : out)
-      *dest++ = (float) d;
+      *dest++ = (OutT::T) d;
     return o;
   }
   bool canTakeLogOfSig = lsf->m_level < 2 || !lsf->m_simples.empty();
@@ -958,11 +973,11 @@ logsig(PyObject *self, PyObject *args){
     if(wantedmethods.m_expanded){
       npy_intp siglength = (npy_intp) calcSigTotalLength(lsf->m_dim,lsf->m_level);
       npy_intp dims[] = {siglength};
-      PyObject* flattenedFullLogSigAsNumpyArray = PyArray_SimpleNew(1,dims,NPY_FLOAT32);
+      PyObject* flattenedFullLogSigAsNumpyArray = PyArray_SimpleNew(1,dims,OutT::typenum);
       if (!flattenedFullLogSigAsNumpyArray)
         return nullptr;
       auto asArray = reinterpret_cast<PyArrayObject*>(flattenedFullLogSigAsNumpyArray);
-      sig.writeOut(static_cast<float*>(PyArray_DATA(asArray)));
+      sig.writeOut(static_cast<OutT::T*>(PyArray_DATA(asArray)));
       return flattenedFullLogSigAsNumpyArray;
     }
     
