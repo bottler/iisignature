@@ -26,6 +26,7 @@
 #include "calcSignature.hpp"
 #include "logSigLength.hpp"
 #include "logsig.hpp"
+#include "rotationalInvariants.hpp"
 
 using std::vector;
 
@@ -78,6 +79,7 @@ public:
   ~Deleter(){Py_DECREF(m_p);}
 };
 
+#ifndef IISIGNATURE_NO_NUMPY
 struct UseFloat{
   constexpr static int typenum=NPY_FLOAT32;
   using T = float;
@@ -87,6 +89,7 @@ struct UseDouble{
   constexpr static int typenum=NPY_FLOAT64;
   using T = double;
 };
+#endif
 
 #define STRINGIFY(x) #x
 #define TOSTRING(x) STRINGIFY(x)
@@ -597,7 +600,7 @@ LogSigFunction* getLogSigFunction(PyObject* p){
     ERR("I have received an input which is not from iisignature.prepare()");
   return (LogSigFunction*) PyCObject_AsVoidPtr(p);
 #else
-  if(!PyCapsule_CheckExact(p))
+  if(!PyCapsule_IsValid(p,logSigFunction_id))
     ERR("I have received an input which is not from iisignature.prepare()");
   return (LogSigFunction*) PyCapsule_GetPointer(p,logSigFunction_id);
 #endif
@@ -1022,6 +1025,121 @@ logsig(PyObject *self, PyObject *args){
   }
   ERR("We had not prepare()d for this request type");
 }
+
+#endif
+
+const char* const rotInv_id = "iisignature.rotInv";
+RotationalInvariants::Prepared* getPreparedRotInv(PyObject* p) {
+#ifdef NO_CAPSULES
+  if (!PyCObject_Check(p))
+    ERR("I have received an input which is not from iisignature.preparerotinv2d()");
+  return (RotationalInvariants::Prepared*)PyCObject_AsVoidPtr(p);
+#else
+  if (!PyCapsule_IsValid(p,rotInv_id))
+    ERR("I have received an input which is not from iisignature.preparerotinv2d()");
+  return (RotationalInvariants::Prepared*)PyCapsule_GetPointer(p, rotInv_id);
+#endif
+}
+
+#ifndef NO_CAPSULES
+static void killRotInv(PyObject* p) {
+#else
+static void killRotInv(void* v) {
+  PyObject* p = (PyObject*)v;
+#endif
+  delete getPreparedRotInv(p);
+}
+
+static PyObject *
+rotinv2dlength(PyObject *self, PyObject *args) {
+  int level = 0;
+  if (!PyArg_ParseTuple(args, "i", &level))
+    return nullptr;
+  if (level < 2 || level > 63 || level % 2 != 0)
+    ERR("Level must be a small positive even number");
+  long ans = 0;
+  for (int lev = 2; lev <= level; lev += 2)
+    //length is (lev choose lev/2)
+    ans += (long)LogSigLength::centralBinomialCoefficient(lev);
+  //todo - cope with overrun here
+#if PY_MAJOR_VERSION >= 3
+  return PyLong_FromLong(ans);
+#else
+  return PyInt_FromLong(ans);
+#endif
+}
+
+static PyObject *
+preparerotinv2d(PyObject *self, PyObject *args) {
+  int level = 0;
+  if (!PyArg_ParseTuple(args, "i", &level))
+    return nullptr;
+  if (level < 2 || level > 63 || level % 2 != 0)
+    ERR("Level must be a small positive even number");
+  using T = RotationalInvariants::Prepared;
+  auto p = std::unique_ptr<T>(new T(level));
+#ifdef NO_CAPSULES
+  PyObject * out = PyCObject_FromVoidPtr(p.release(), killRotInv);
+#else
+  PyObject * out = PyCapsule_New(p.release(), rotInv_id, killRotInv);
+#endif
+  return out;
+}
+
+#ifndef IISIGNATURE_NO_NUMPY
+//iisignature.rotinv2d(numpy.random.uniform(size=(12,2)),4)
+static PyObject *
+rotinv2d(PyObject *self, PyObject *args) {
+  PyObject* a1, *a2;
+  if (!PyArg_ParseTuple(args, "OO", &a1, &a2))
+    return nullptr;
+  auto prepared = getPreparedRotInv(a2);
+  if (!prepared)
+    return nullptr;
+  int level = prepared->m_level;
+  if (!PyArray_Check(a1)) ERR("data must be a numpy array");
+  //PyArrayObject* a = reinterpret_cast<PyArrayObject*>(a1);
+  PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a1));
+  Deleter a_(reinterpret_cast<PyObject*>(a));
+  if (PyArray_NDIM(a) != 2) ERR("data must be 2d");
+  if (PyArray_TYPE(a) != NPY_FLOAT32 && PyArray_TYPE(a) != NPY_FLOAT64) ERR("data must be float32 or float64");
+  const int lengthOfPath = (int)PyArray_DIM(a, 0);
+  const int d = (int)PyArray_DIM(a, 1);
+  if (lengthOfPath < 1) ERR("Path has no length");
+  if (d != 2)
+    ERR(("Path has dimension " + std::to_string(d) + " but must have dimension 2.").c_str());
+  if (level < 2 || level > 63 || level % 2 != 0)
+    ERR("Level must be a small positive even number");
+
+  CalculatedSignature sig;
+  setup_signals();
+  if (!calcSignature(sig, a1, level))
+    return nullptr;
+  if (PyErr_CheckSignals())
+    return nullptr;
+
+  std::vector<double> out;
+  for (int lev = 2; lev <= level; lev += 2) {
+    auto invs = prepared->m_invariants[lev/2-1];
+    for (auto& i : invs) {
+      double d = 0;
+      for (auto& p : i) {
+        d += p.second*sig.m_data[lev - 1][(size_t)(p.first)];
+      }
+      out.push_back(d);
+    }
+  }
+
+  npy_intp dims[] = { (npy_intp)out.size() };
+  using OutT = UseDouble;
+  PyObject* o = PyArray_SimpleNew(1, dims, OutT::typenum);
+  if (!o)
+    return nullptr;
+  OutT::T* dest = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
+  for (double d : out)
+    *dest++ = (OutT::T)d;
+  return o;
+}
 #endif //IISIGNATURE_NO_NUMPY
 
 #define METHOD_DESC "some combination of 'd' (the default), "\
@@ -1072,9 +1190,14 @@ static PyMethodDef Methods[] = {
    "Returns the length of the signature (excluding the initial 1) of a d dimensional path up to level m"},
   {"logsiglength", logsiglength, METH_VARARGS, "logsiglength(d,m) \n "
    "Returns the length of the log signature of a d dimensional path up to level m"},
+  {"rotinv2dlength", rotinv2dlength, METH_VARARGS, "rotinv2dlength(m) \n "
+   "Returns the number of linear rotational invariants of a 2 dimensional path up to level m"},
+  {"preparerotinv2d", preparerotinv2d, METH_VARARGS, "preparerotinv2d(m) \n "
+   "This prepares the way to find linear rotational invariants of signatures up to level m "
+   " of2d paths. The returned object is used in rotinv2d."},
   {"prepare", prepare, METH_VARARGS, "prepare(d, m, methods=None) \n "
    "This prepares the way to calculate log signatures of d dimensional paths"
-   " up to level m. The returned object is used in the logsig and basis functions. \n"
+   " up to level m. The returned object is used in the logsig, basis and info functions. \n"
    " By default, all methods will be prepared, but you can restrict it "
    "by setting methods to " METHOD_DESC "."}, 
   {"basis", basis, METH_VARARGS, "basis(s) \n  Returns a tuple of strings "
@@ -1091,6 +1214,11 @@ static PyMethodDef Methods[] = {
    "log signature up to level m. By default, the method used is the default out "
    "of those which have been prepared, "
    "but you can restrict it by setting methods to " METHOD_DESC "."},
+  { "rotinv2d", rotinv2d, METH_VARARGS, "rotinv(X, m) \n "
+  "Calculates the linear rotational invariants of the signature of the path X. X must be a numpy Nx2 float32 "
+  "or float64 array of points making up the path in R^2. "
+  "The value is returned as a 1D numpy array "
+  "of invariants from the signature up to level m, which must be even."},
 #endif
   {"version", version, METH_NOARGS, "return the iisignature version string"},
   {NULL, NULL, 0, NULL}        /* Sentinel */

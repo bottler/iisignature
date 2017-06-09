@@ -91,6 +91,19 @@ constexpr Int sigLength(Int d, Int m){
   return (d*(power(d,m)-1))/(d-1);
 }
 
+//mn*(mn+1)*...*mx
+constexpr Int productRange(Int mn, Int mx) {
+  return (mx == mn) ? mn : mn*productRange(mn + 1, mx);
+}
+
+constexpr Int factorial(Int x) {
+  return (x == 0) ? 1 : productRange(1, x);
+}
+
+constexpr Int centralBinomialCoefficient(Int row) {
+  return productRange(1+row/2,row) / productRange(1,row/2);
+}
+
 }//namespace LogSigLength
 
 #endif

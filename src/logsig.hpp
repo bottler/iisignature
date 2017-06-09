@@ -261,7 +261,7 @@ namespace IISignature_algebra {
     std::map<const LyndonWord*, std::vector<std::pair<size_t, float> >, LessLW>;
   using MappingMatrix = std::vector<MappingMatrixLevel>;
 
-  MappingMatrix makeMappingMatrix(int dim, int level, WordPool &wp,
+  MappingMatrix makeMappingMatrix(int /*dim*/, int level, WordPool &wp,
     const std::vector<LyndonWord*> &basisWords,
     const std::vector<size_t> &sigLevelSizes) {
     using P = std::pair<size_t, float>;

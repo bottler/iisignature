@@ -1,7 +1,8 @@
 if __name__!="__main__":
     import iisignature
 
-import unittest, numpy, sys
+import unittest, numpy, sys, math
+numpy.set_printoptions(suppress=True,linewidth=150)
 
 #text, index -> (either number or [res, res]), newIndex
 def parseBracketedExpression(text,index):
@@ -333,6 +334,74 @@ class Scales(TestCase):
         #print (bump1,bump2,base,diff1,diff2)
         self.assertLess(numpy.abs(diff1),0.0000001)
         self.assertLess(numpy.abs(diff2),0.0000001)
+
+class RotInv2d(TestCase):
+    def testa(self):
+        m=6
+        nPaths=45
+        nAngles=30
+        numpy.random.seed(775)
+        s = iisignature.preparerotinv2d(m)
+        length = iisignature.rotinv2dlength(m)
+        self.assertLess(length,nAngles)#sanity check on the test itself
+        angles = numpy.random.uniform(0,math.pi*2,size=nAngles+1)
+        angles[0]=0
+        rotationMatrices=[numpy.array([[math.cos(i),math.sin(i)],[-math.sin(i),math.cos(i)]]) for i in angles]
+        paths = [numpy.random.uniform(size=(22,2)) for i in range(nPaths)]
+        samePathRotInvs=[iisignature.rotinv2d(numpy.dot(paths[0],mtx),s) for mtx in rotationMatrices]
+
+ #       for i,j in enumerate(samePathRotInvs):
+ #           samePathRotInvs[i]=j[:-1]#numpy.append(j[-1])
+
+        #check the length matches
+        self.assertEqual((length,),samePathRotInvs[0].shape)
+
+        #check that the invariants are invariant
+        for i in range (nAngles):
+            self.assertLess(diff(samePathRotInvs[0],samePathRotInvs[1+i]),0.000001)
+
+        #check that the invariants are not repeated
+        self.assertEqual(length,numpy.linalg.matrix_rank(numpy.column_stack(samePathRotInvs)))
+
+        #check that we are not missing invariants
+        sigOffsets=[]
+        for path in paths:
+            samePathSigs=[iisignature.sig(numpy.dot(path,mtx),m) for mtx in rotationMatrices[1:10]]
+            samePathSigsOffsets=[i-samePathSigs[0] for i in samePathSigs[1:]]
+            sigOffsets.extend(samePathSigsOffsets)
+        #print(numpy.linalg.svd(numpy.row_stack(sigOffsets))[1])
+        def split(a, dim, level):
+            start=0
+            out=[]
+            for m in range(1,level+1):
+                levelLength = dim**m
+                out.append(a[:,start:(start+levelLength)])
+                start=start + levelLength
+            assert(start==a.shape[1])
+            return out
+        allOffsets=numpy.row_stack(sigOffsets)
+        splits=split(allOffsets,2,m)
+        #print ([numpy.linalg.matrix_rank(i) for i in splits])
+        #print ([i.shape for i in splits])
+        #print(numpy.linalg.svd(splits[2]))
+
+        #sanity check on the test
+        self.assertLess(splits[-1].shape[1],splits[0].shape[0])
+        totalUnspannedDimensions=sum(i.shape[1]-numpy.linalg.matrix_rank(i) for i in splits)
+        self.assertEqual(totalUnspannedDimensions,length)
+
+        if 0: #This doesn't work - the rank of the whole thing is less than 
+        #sigLength-totalUnspannedDimensions, which suggests that there are inter-level dependencies,
+        #even though the shuffle product dependencies aren't linear. I don't know why this is.
+            sigLength = iisignature.siglength(2,m)
+            numNonInvariant=numpy.linalg.matrix_rank(numpy.row_stack(sigOffsets))
+
+            predictedNumberInvariant=sigLength-numNonInvariant
+            print(sigLength,length,numNonInvariant)
+            self.assertLess(sigLength,nAngles)
+            self.assertEqual(predictedNumberInvariant,length)
+
+
         
 if __name__=="__main__":
     sys.path.append("..")

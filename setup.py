@@ -2,7 +2,8 @@ from setuptools import setup, Extension
 import numpy, os
 
 version = "0.18"
-headers = ["bch","calcSignature","logsig","logSigLength","makeCompiledFunction","readBCHCoeffs"]
+headers = ["bch","calcSignature","logsig","logSigLength","makeCompiledFunction",
+            "rotationalInvariants","readBCHCoeffs"]
 
 args = []
 if os.name == 'posix':
