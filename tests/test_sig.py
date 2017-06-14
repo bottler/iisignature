@@ -335,60 +335,74 @@ class Scales(TestCase):
         self.assertLess(numpy.abs(diff1),0.0000001)
         self.assertLess(numpy.abs(diff2),0.0000001)
 
+#can run just this with
+#python setup.py test -s tests.test_sig.RotInv2d
 class RotInv2d(TestCase):
-    def testa(self):
+    def dotest(self,type):
         m=6
-        nPaths=45
-        nAngles=30
+        nPaths=95
+        nAngles=348
         numpy.random.seed(775)
-        s = iisignature.preparerotinv2d(m)
-        length = iisignature.rotinv2dlength(m)
-        self.assertLess(length,nAngles)#sanity check on the test itself
+        s = iisignature.rotinv2dprepare(m,type)
+        coeffs = iisignature.rotinv2dcoeffs(s)
         angles = numpy.random.uniform(0,math.pi*2,size=nAngles+1)
         angles[0]=0
         rotationMatrices=[numpy.array([[math.cos(i),math.sin(i)],[-math.sin(i),math.cos(i)]]) for i in angles]
-        paths = [numpy.random.uniform(size=(22,2)) for i in range(nPaths)]
+        paths = [numpy.random.uniform(-1,1,size=(32,2)) for i in range(nPaths)]
         samePathRotInvs=[iisignature.rotinv2d(numpy.dot(paths[0],mtx),s) for mtx in rotationMatrices]
 
- #       for i,j in enumerate(samePathRotInvs):
- #           samePathRotInvs[i]=j[:-1]#numpy.append(j[-1])
-
         #check the length matches
-        self.assertEqual((length,),samePathRotInvs[0].shape)
+        (length,)=samePathRotInvs[0].shape
+        self.assertEqual(length,sum(i.shape[0] for i in coeffs))
+        if type == "a":
+            self.assertEqual(length, iisignature.rotinv2dlength(m))
+        self.assertLess(length,nAngles)#sanity check on the test itself
 
         #check that the invariants are invariant
+        if 0:
+            print ("\n",numpy.column_stack(samePathRotInvs[0:7]))
         for i in range (nAngles):
-            self.assertLess(diff(samePathRotInvs[0],samePathRotInvs[1+i]),0.000001)
+            if 0 and diff(samePathRotInvs[0],samePathRotInvs[1+i])>0.01:
+                print(i)
+                print(samePathRotInvs[0]-samePathRotInvs[1+i])
+                print(diff(samePathRotInvs[0],samePathRotInvs[1+i]))
+            self.assertLess(diff(samePathRotInvs[0],samePathRotInvs[1+i]),0.01)
 
         #check that the invariants are not repeated
-        self.assertEqual(length,numpy.linalg.matrix_rank(numpy.column_stack(samePathRotInvs)))
+        if type!="k":
+            self.assertEqual(length,numpy.linalg.matrix_rank(numpy.column_stack(samePathRotInvs)))
 
         #check that we are not missing invariants
-        sigOffsets=[]
-        for path in paths:
-            samePathSigs=[iisignature.sig(numpy.dot(path,mtx),m) for mtx in rotationMatrices[1:10]]
-            samePathSigsOffsets=[i-samePathSigs[0] for i in samePathSigs[1:]]
-            sigOffsets.extend(samePathSigsOffsets)
-        #print(numpy.linalg.svd(numpy.row_stack(sigOffsets))[1])
-        def split(a, dim, level):
-            start=0
-            out=[]
-            for m in range(1,level+1):
-                levelLength = dim**m
-                out.append(a[:,start:(start+levelLength)])
-                start=start + levelLength
-            assert(start==a.shape[1])
-            return out
-        allOffsets=numpy.row_stack(sigOffsets)
-        splits=split(allOffsets,2,m)
-        #print ([numpy.linalg.matrix_rank(i) for i in splits])
-        #print ([i.shape for i in splits])
-        #print(numpy.linalg.svd(splits[2]))
+        if type=="a":
+            #print("\nrotinvlength=",length," siglength=",iisignature.siglength(2,m))
+            sigOffsets=[]
+            for path in paths:
+                samePathSigs=[iisignature.sig(numpy.dot(path,mtx),m) for mtx in rotationMatrices[1:70]]
+                samePathSigsOffsets=[i-samePathSigs[0] for i in samePathSigs[1:]]
+                sigOffsets.extend(samePathSigsOffsets)
+            #print(numpy.linalg.svd(numpy.row_stack(sigOffsets))[1])
+            def split(a, dim, level):
+                start=0
+                out=[]
+                for m in range(1,level+1):
+                    levelLength = dim**m
+                    out.append(a[:,start:(start+levelLength)])
+                    start=start + levelLength
+                assert(start==a.shape[1])
+                return out
+            allOffsets=numpy.row_stack(sigOffsets)
+            #print (allOffsets.shape)
+            splits=split(allOffsets,2,m)
+            #print()
+            rank_tolerance=0.01 # this is hackish
+            #print ([numpy.linalg.matrix_rank(i.astype("float64"),rank_tolerance) for i in splits])
+            #print ([i.shape for i in splits])
+            #print(numpy.linalg.svd(splits[-1])[1])
 
-        #sanity check on the test
-        self.assertLess(splits[-1].shape[1],splits[0].shape[0])
-        totalUnspannedDimensions=sum(i.shape[1]-numpy.linalg.matrix_rank(i) for i in splits)
-        self.assertEqual(totalUnspannedDimensions,length)
+            #sanity check on the test
+            self.assertLess(splits[-1].shape[1],splits[0].shape[0])
+            totalUnspannedDimensions=sum(i.shape[1]-numpy.linalg.matrix_rank(i,rank_tolerance) for i in splits)
+            self.assertEqual(totalUnspannedDimensions,length)
 
         if 0: #This doesn't work - the rank of the whole thing is less than 
         #sigLength-totalUnspannedDimensions, which suggests that there are inter-level dependencies,
@@ -400,6 +414,33 @@ class RotInv2d(TestCase):
             print(sigLength,length,numNonInvariant)
             self.assertLess(sigLength,nAngles)
             self.assertEqual(predictedNumberInvariant,length)
+    def test_a(self):
+        self.dotest("a")
+    def test_k(self):
+        self.dotest("k")
+    def test_s(self):
+        self.dotest("s")
+
+    def testConsistencyOfBases(self):
+        m=8
+        sa=iisignature.rotinv2dprepare(m,"a")
+        sk=iisignature.rotinv2dprepare(m,"k")
+        ca=iisignature.rotinv2dcoeffs(sa)[-1]
+        ck=iisignature.rotinv2dcoeffs(sk)[-1]
+        
+        #every row of ck should be in the span of the rows of ca
+        #i.e. every column of ck.T should be in the span of the columns of ca.T
+        #i.e. there's a matrix b s.t. ca.T b = ck.T
+        residuals=numpy.linalg.lstsq(ca.T,ck.T)[1]
+        self.assertLess(numpy.max(numpy.abs(residuals)),0.000001)
+
+        ss=iisignature.rotinv2dprepare(m,"s")
+        cs=iisignature.rotinv2dcoeffs(ss)[-1]
+        #every row of cs should be in the span of the rows of ca
+        residuals2=numpy.linalg.lstsq(ca.T,cs.T)[1]
+        self.assertLess(numpy.max(numpy.abs(residuals2)),0.000001)
+        
+
 
 
         

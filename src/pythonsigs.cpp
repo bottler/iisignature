@@ -69,6 +69,7 @@ void interrupt(){if(g_signal_given) throw std::runtime_error("INTERRUPTION");}
 
 #define ERR(X) {PyErr_SetString(PyExc_RuntimeError,X); return nullptr;}
 #define ERRb(X) {PyErr_SetString(PyExc_RuntimeError,X); return false;}
+#define ERRr(X) {PyErr_SetString(PyExc_RuntimeError,X); return;}
 
 class Deleter{
   PyObject* m_p;
@@ -663,12 +664,13 @@ bool getData(){
 }
 
 #ifndef IISIGNATURE_NO_NUMPY
-//this class just provides access to the functions lstsq, pinv, and transpose from numpy
+//this class just provides access to the functions lstsq, pinv, svd and transpose from numpy
 class LeastSquares {
   PyObject* m_transpose;
   PyObject* m_lstsq;
   PyObject* m_pinv;
-  std::unique_ptr<Deleter> m_t_, m_l_, m_p_; //we can do better than this
+  PyObject* m_svd;
+  std::unique_ptr<Deleter> m_t_, m_l_, m_p_, m_s_; //we can do better than this
 public:
   bool m_ok = false;
   LeastSquares() {
@@ -691,6 +693,10 @@ public:
     if (!m_pinv)
       return;
     m_p_.reset(new Deleter(m_pinv));
+    m_svd = PyObject_GetAttrString(linalg, "svd");
+    if (!m_svd)
+      return;
+    m_s_.reset(new Deleter(m_svd));
     m_ok = true;
   }
   PyObject* lstsqWithTranspose(PyObject *a1, PyObject *a2) const {
@@ -719,6 +725,76 @@ public:
     Py_INCREF(answer);
     return answer;
   }
+  //a numpy matrix of an existing vector. Const correctness is user's responsibility
+  template<class Type>
+  class MatrixOfVector {
+  public:
+    PyObject* m_mat;
+    MatrixOfVector(const vector<typename Type::T>& v, npy_intp r, npy_intp c) {
+      npy_intp dims[] = { r,c };
+      m_mat = PyArray_SimpleNewFromData(2, dims, Type::typenum, (void*)v.data());
+    }
+    MatrixOfVector(const MatrixOfVector&) = delete;
+    MatrixOfVector operator=(const MatrixOfVector&) = delete;
+    ~MatrixOfVector() { Py_DECREF(m_mat); }
+  };
+
+  //given an rxc matrix mat, find its rank and the first part of its SVD
+  //on failure, m_ok will be false.
+  class SVD {
+  public:
+    double* m_u;//is rxr
+    bool m_ok = false;
+    std::unique_ptr<Deleter> m_delete;
+    int m_rank = 0;
+    SVD(const vector<double>& mat, npy_intp r, npy_intp c, LeastSquares& ls) {
+      MatrixOfVector<UseDouble> mat_(mat, r, c);
+      if (mat.size() != r*c)
+        ERRr("bad use of SVD");
+#if 0
+      for (int rr = 0, i = 0; rr < r; ++rr) {
+        for (int cc = 0; cc < c; ++cc, ++i)
+          std::cout << mat[i] << ",";
+        std::cout << "\n";
+      }
+#endif
+      PyObject* svd = PyObject_CallFunctionObjArgs(ls.m_svd, mat_.m_mat, NULL);
+      if (!svd)
+        return;
+      m_delete.reset(new Deleter(svd));//a bit of a mess
+      PyObject* svs = PyTuple_GetItem(svd, 1);
+      PyArrayObject* svd0 = (PyArrayObject*)PyTuple_GetItem(svd, 0);
+      bool ok = PyArray_NDIM((PyArrayObject*)svs) == 1 &&
+        PyArray_TYPE((PyArrayObject*)svs) == NPY_FLOAT64 &&
+        PyArray_NDIM(svd0) == 2 &&
+        PyArray_TYPE(svd0) == NPY_FLOAT64 &&
+        PyArray_DIM(svd0, 0) == r &&
+        PyArray_DIM(svd0, 1) == r &&
+        PyArray_ISCARRAY_RO(svd0) &&
+        PyArray_ISCARRAY_RO((PyArrayObject*)svs)
+        ;
+      if (!ok)
+        ERRr("numpy svd returned something strange.");
+      npy_intp n_svs = PyArray_DIM((PyArrayObject*)svs, 0);
+#ifdef PRINT_SVS
+      std::cout << "\n";
+#endif
+      for (npy_intp i = 0; i < n_svs; ++i) {
+        double sv = *((double*)PyArray_GETPTR1((PyArrayObject*)svs, i));
+#ifdef PRINT_SVS
+        std::cout << sv<<",";
+#endif
+        if (sv > 0.000001)
+          ++m_rank;
+      }
+#ifdef PRINT_SVS
+      std::cout << std::endl;
+#endif
+      m_u=(double*)PyArray_DATA(svd0);
+      m_ok = true;
+    }
+  };
+
   //this replaces the r x c matrix matrix by its Moore-Penrose pseudoinverse, 
   //which is a c x r matrix 
   //returns true on success
@@ -742,6 +818,55 @@ public:
     float* ptr = static_cast<float*>(PyArray_DATA(outc));
     for (size_t i = 0; i < r*c; ++i)
       matrix[i] = ptr[i];
+    return true;
+  }
+
+  //inp is a dxm matrix and sub is a dxn matrix with n<m
+  //set out to a dx(roughly m-n) matrix whose columns are perp to colspan(sub) and each other
+  //s.t. colspan(out)=colspan(inp)
+  bool projectAwayFrom(const vector<double>& inp, const vector<double>& sub, npy_intp d, vector<double>& out) {
+    npy_intp m = inp.size() / d;
+    npy_intp n = sub.size() / d;
+
+    SVD svd(sub, d, n, *this);
+    if (!svd.m_ok)
+      return false;
+
+    double* s1 = svd.m_u;
+    int sub_rank = svd.m_rank;
+    //std::cout << "!"<< d << "," << m << "," << n << "," << sub_rank << std::endl;
+    //s1 is a dxd array. If s2 is s1 without its first sub_rank columns, 
+    //then s3=s2 s2^T is a projection matrix away from sub
+    vector<double> s3(d*d, 0);
+    for (int i = 0; i < d; ++i) {
+      for (int j = 0; j + sub_rank < d; ++j) {
+        for (int k = 0; k < d; ++k) {
+          s3.at(i*d + k) += s1[i*d + sub_rank + j] * s1[k*d + sub_rank + j];
+        }
+      }
+    }
+
+    vector<double> inp_projected(d*m,0);
+    for (int i = 0; i < m; ++i)
+      for (int j = 0; j < d; ++j)
+        for (int k = 0; k < d; ++k) {
+          //if (i*m + k >= inp.size())
+            //std::cout << "'" << inp.size()<<","<<s3.size()<<","<<inp_projected.size()
+            //  << "," << m << "," << d << "," << i << "," << j << "," << k << std::endl;
+          inp_projected.at(j*m + i) += inp.at(k*m + i) * s3.at(j*d + k);
+        }
+
+    SVD svd2(inp_projected, d, m, *this);
+    if (!svd2.m_ok)
+      return false;
+
+    int out_rank = svd2.m_rank;
+    out.assign(d*out_rank,0);
+    for (int i = 0; i < d; ++i)
+      for (int j = 0; j < out_rank; ++j) {
+        //std::cout << i << "," << j << "," << d << "," << out_rank << std::endl;
+        out.at(i*out_rank + j) = svd2.m_u[i*d + j];
+      }
     return true;
   }
 };
@@ -1032,11 +1157,11 @@ const char* const rotInv_id = "iisignature.rotInv";
 RotationalInvariants::Prepared* getPreparedRotInv(PyObject* p) {
 #ifdef NO_CAPSULES
   if (!PyCObject_Check(p))
-    ERR("I have received an input which is not from iisignature.preparerotinv2d()");
+    ERR("I have received an input which is not from iisignature.rotinv2dprepare()");
   return (RotationalInvariants::Prepared*)PyCObject_AsVoidPtr(p);
 #else
   if (!PyCapsule_IsValid(p,rotInv_id))
-    ERR("I have received an input which is not from iisignature.preparerotinv2d()");
+    ERR("I have received an input which is not from iisignature.rotinv2dprepare()");
   return (RotationalInvariants::Prepared*)PyCapsule_GetPointer(p, rotInv_id);
 #endif
 }
@@ -1070,14 +1195,41 @@ rotinv2dlength(PyObject *self, PyObject *args) {
 }
 
 static PyObject *
-preparerotinv2d(PyObject *self, PyObject *args) {
+rotinv2dprepare(PyObject *self, PyObject *args) {
   int level = 0;
-  if (!PyArg_ParseTuple(args, "i", &level))
+  const char* type = nullptr;
+  if (!PyArg_ParseTuple(args, "iz", &level, &type))
     return nullptr;
   if (level < 2 || level > 63 || level % 2 != 0)
     ERR("Level must be a small positive even number");
+  RotationalInvariants::InvariantType t;
+  if (type) {
+    if (RotationalInvariants::getWantedMethod(type, t))
+      ERR("Invalid type of rotational invariant")
+  }
+  else
+    t = RotationalInvariants::InvariantType::SVD;
+
   using T = RotationalInvariants::Prepared;
-  auto p = std::unique_ptr<T>(new T(level));
+  auto p = std::unique_ptr<T>(new T(level,t));
+#ifndef IISIGNATURE_NO_NUMPY
+  if (t == RotationalInvariants::InvariantType::SVD) {
+    LeastSquares ls;
+    if (!ls.m_ok)
+      return nullptr;
+    vector<double> tempa, tempb, tempc;
+    for (int lev = 4; lev <= level; lev += 2) {
+      size_t idx = lev / 2 - 1;
+      RotationalInvariants::invariantsToMatrix(p->m_invariants[idx], lev, tempa);
+      RotationalInvariants::invariantsToMatrix(p->m_knownInvariants[idx], lev, tempb);
+      if (!ls.projectAwayFrom(tempa, tempb, ((npy_intp)1) << lev, tempc))
+        return nullptr;
+      RotationalInvariants::invariantsFromMatrix(tempc, lev, p->m_invariants[idx]);
+    }
+  }
+#endif
+  if (t == RotationalInvariants::InvariantType::KNOWN)
+    p->m_invariants = p->m_knownInvariants;
 #ifdef NO_CAPSULES
   PyObject * out = PyCObject_FromVoidPtr(p.release(), killRotInv);
 #else
@@ -1120,7 +1272,7 @@ rotinv2d(PyObject *self, PyObject *args) {
 
   std::vector<double> out;
   for (int lev = 2; lev <= level; lev += 2) {
-    auto invs = prepared->m_invariants[lev/2-1];
+    auto invs = prepared->m_invariants[lev / 2 - 1];
     for (auto& i : invs) {
       double d = 0;
       for (auto& p : i) {
@@ -1139,6 +1291,37 @@ rotinv2d(PyObject *self, PyObject *args) {
   for (double d : out)
     *dest++ = (OutT::T)d;
   return o;
+}
+
+static PyObject *
+rotinv2dcoeffs(PyObject *self, PyObject *args) {
+  PyObject* a1;
+  if (!PyArg_ParseTuple(args, "O", &a1))
+    return nullptr;
+  auto prepared = getPreparedRotInv(a1);
+  if (!prepared)
+    return nullptr;
+  int level = prepared->m_level;
+
+  PyObject* out = PyTuple_New(level / 2);
+  using OutT=UseDouble;
+  for (int lev = 2; lev <= level; lev += 2) {
+    auto& source = prepared->m_invariants[lev/2-1];
+    size_t length = ((size_t)1u) << lev;
+    npy_intp dims[] = { (npy_intp)source.size(), (npy_intp)length };
+    PyObject* o = PyArray_SimpleNew(2, dims, OutT::typenum);
+    if (!o)
+      return nullptr; //but leak out...
+    OutT::T* dest = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
+    for (size_t i = 0; i < length*source.size(); ++i)
+      dest[i] = 0;
+    for(size_t i=0; i<source.size(); ++i)
+      for (const auto& p : source[i])
+        dest[i*length+p.first] = p.second;
+    PyTuple_SET_ITEM(out, lev / 2 - 1, o);
+  }
+  
+  return out;
 }
 #endif //IISIGNATURE_NO_NUMPY
 
@@ -1190,11 +1373,14 @@ static PyMethodDef Methods[] = {
    "Returns the length of the signature (excluding the initial 1) of a d dimensional path up to level m"},
   {"logsiglength", logsiglength, METH_VARARGS, "logsiglength(d,m) \n "
    "Returns the length of the log signature of a d dimensional path up to level m"},
-  {"rotinv2dlength", rotinv2dlength, METH_VARARGS, "rotinv2dlength(m) \n "
-   "Returns the number of linear rotational invariants of a 2 dimensional path up to level m"},
-  {"preparerotinv2d", preparerotinv2d, METH_VARARGS, "preparerotinv2d(m) \n "
+  {"rotinv2dlength", rotinv2dlength, METH_VARARGS, "rotinv2dlength(s) \n "
+   "Returns the number of linear rotational invariants which rotinv2d(X,s) will return. "
+   "s must be the result of a call to rotinv2dprepare."},
+  {"rotinv2dprepare", rotinv2dprepare, METH_VARARGS, "rotinv2dprepare(m, type) \n "
    "This prepares the way to find linear rotational invariants of signatures up to level m "
-   " of2d paths. The returned object is used in rotinv2d."},
+   " of 2d paths. m must be even. The returned object is used in rotinv2d. type should be "
+   "'a' to return all invariants, or 's' to use SVD to exclude those which are determined by "
+   "shuffle products of lower level invariants."},
   {"prepare", prepare, METH_VARARGS, "prepare(d, m, methods=None) \n "
    "This prepares the way to calculate log signatures of d dimensional paths"
    " up to level m. The returned object is used in the logsig, basis and info functions. \n"
@@ -1214,11 +1400,15 @@ static PyMethodDef Methods[] = {
    "log signature up to level m. By default, the method used is the default out "
    "of those which have been prepared, "
    "but you can restrict it by setting methods to " METHOD_DESC "."},
-  { "rotinv2d", rotinv2d, METH_VARARGS, "rotinv(X, m) \n "
+  { "rotinv2d", rotinv2d, METH_VARARGS, "rotinv(X,s) \n "
   "Calculates the linear rotational invariants of the signature of the path X. X must be a numpy Nx2 float32 "
   "or float64 array of points making up the path in R^2. "
   "The value is returned as a 1D numpy array "
-  "of invariants from the signature up to level m, which must be even."},
+  "of invariants from the signature. s must be the result of a call to rotinv2dprepare."},
+  { "rotinv2dcoeffs", rotinv2dcoeffs, METH_VARARGS, "rotinv2dcoeffs(s) \n "
+  "Returns the linear rotational invariants of the signature of the path X. X must be a numpy Nx2 float32 "
+  "or float64 array of points making up the path in R^2. s must be the result of a call to rotinv2dprepare."
+  "The value is returned as a list of 2D numpy arrays - (nInvariants x length) for each even level."},
 #endif
   {"version", version, METH_NOARGS, "return the iisignature version string"},
   {NULL, NULL, 0, NULL}        /* Sentinel */

@@ -11,11 +11,13 @@
 #include<vector>
 #include<cstdint>
 //#include<bitset>
+#include<string>
 
 namespace RotationalInvariants {
   using std::vector;
   using std::pair;
 
+  //Returns all the combinations of n 0s and n 1s which begin with 0
   vector<vector<unsigned char>> possibleHalves(int n) {
     vector<unsigned char> base(n + n, 0);
     std::fill(base.begin() + n, base.end(), (unsigned char) 1);
@@ -43,13 +45,13 @@ namespace RotationalInvariants {
   {
     bool start1 = false;
     Invariant real, imag;
-    real.reserve(((size_t) 1u) << expression.size());
-    imag.reserve(((size_t) 1u) << expression.size());
-    real.emplace_back( start1 ? 1 : 0, 1 );
+    real.reserve(((size_t)1u) << expression.size());
+    imag.reserve(((size_t)1u) << expression.size());
+    real.emplace_back(start1 ? 1 : 0, 1);
     for (unsigned char c : expression)
     {
-      auto realHalf = real.insert(real.end(),imag.begin(), imag.end());
-      auto imagHalf = imag.insert(imag.end(),real.begin(), realHalf);
+      auto realHalf = real.insert(real.end(), imag.begin(), imag.end());
+      auto imagHalf = imag.insert(imag.end(), real.begin(), realHalf);
       std::for_each(real.begin(), realHalf, [](pair<Idx, double>& p) {
         p.first *= 2;
       });
@@ -84,6 +86,146 @@ namespace RotationalInvariants {
     return all;
   }
 
+  //returns all the sequences which have m zeros and n ones
+  //Could be incorporated into calling function to save allocations
+  vector<vector<unsigned char>> possibleParts(int m, int n) {
+    vector<unsigned char> base(m + n, 0);
+    std::fill(base.begin() + m, base.end(), (unsigned char)1);
+    vector<vector<unsigned char>> out{ base };
+    while (std::next_permutation(base.begin(), base.end())) {
+      out.push_back(base);
+    }
+    return out;
+  }
+
+  //Computes the shuffle product of two invariants.
+  Invariant shuffle(const Invariant& a, int alevel, const Invariant& b, int blevel) {
+    int newlevel = alevel + blevel;
+    vector<double> all(((size_t)1u) <<newlevel, 0.0);
+    auto parts = possibleParts(alevel, blevel);
+    for (const auto& aa : a) {
+      for (const auto& bb : b) {
+        for (const auto& pattern : parts) {
+          Idx aIdx = aa.first;
+          Idx bIdx = bb.first;
+          size_t idx = 0;
+          size_t outBit = 1;
+          for (unsigned char takeB : pattern) {
+            if ((takeB!=0 ? bIdx : aIdx) % 2)
+              idx += outBit;
+            (takeB ? bIdx : aIdx) /= 2;
+            outBit *= 2;
+          }
+          all[idx] += aa.second * bb.second;
+        }
+      }
+    }
+    Invariant out;
+    for (size_t i = 0; i < all.size(); ++i) {
+      if (all[i] != 0)
+        out.emplace_back(i, all[i]);
+    }
+    return out;
+  }
+
+  enum class InvariantType {ALL, KNOWN, SVD};
+  //returns true on failure
+  bool getWantedMethod(const std::string& input, InvariantType& t) {
+    const auto npos = std::string::npos;
+    bool all = (npos != input.find_first_of("aA"));
+    bool known = (npos != input.find_first_of("kK"));
+    bool svd = (npos != input.find_first_of("sS"));
+    if (1!=(all ?1:0)+(svd?1:0)+(known?1:0))
+      return true;
+    t = (all ? InvariantType::ALL : svd ? InvariantType::SVD : InvariantType::KNOWN);
+    return false;
+  }
+
+/*
+  struct WantedMethod {
+    bool m_all = false;
+    bool m_svd = false;
+  };
+
+  //returns true on failure
+  bool getWantedMethod(const std::string& input, WantedMethod& wm) {
+    const auto npos = std::string::npos;
+    wm.m_all=(npos != input.find_first_of("aA"));
+    wm.m_svd=(npos != input.find_first_of("sS"));
+    return wm.m_all != wm.m_svd;
+  }
+*/
+
+  //make a matrix whose columns are the given invariants
+  void invariantsToMatrix(const vector<Invariant>& in, int level, vector<double>& out) {
+    size_t d = ((size_t)1u) << level;
+    out.assign(d*in.size(), 0);
+    for (size_t i = 0; i < in.size(); ++i) {
+      for (auto& p : in[i]) {
+        size_t idx = (size_t)p.first*in.size() + i;
+        if (idx >= out.size())
+          throw 3;
+        out[(size_t)p.first*in.size() + i] = p.second;
+      }
+    }
+  }
+  void invariantsFromMatrix(const vector<double>& in, int level, vector<Invariant>& out) {
+    size_t d = ((size_t)1u) << level;
+    size_t nInvariants = in.size() / d;
+    out.assign(nInvariants, {});
+    for (size_t i = 0; i < d; ++i) {
+      for (size_t j = 0; j < nInvariants; ++j) {
+        double elt = in[i*nInvariants + j];
+        if (elt != 0) //Yuck?
+          out[j].emplace_back(i, elt);
+      }
+    }
+  }
+
+  //class which contains all the invariants up to a given level, and,
+  //if required, all the invariants which are known as they are shuffle products 
+  //of other invariants.
+  class Prepared {
+  public:
+    vector<vector<Invariant>> m_invariants, m_knownInvariants;
+    int m_level;
+    size_t m_length;
+    InvariantType m_type;
+
+    Prepared(int level, InvariantType type)
+    : m_level(level), m_length(0), m_type(type)
+    {
+      m_invariants.assign(level / 2, {});
+      for (int lev = 2; lev <= level; lev += 2) {
+        m_invariants[lev / 2 - 1] = getInvariants(lev / 2);
+        m_length += m_invariants[lev / 2 - 1].size();
+      }
+      if (type != InvariantType::ALL) {
+        m_knownInvariants.assign(level / 2, {});
+        //First do all the combinations of different levels
+        for(int lowerLevel=2; lowerLevel<level; lowerLevel+=2)
+          for (int upperLevel = lowerLevel+2; 
+                upperLevel + lowerLevel <= level; upperLevel += 2) {
+            for(const auto& lower: m_invariants[lowerLevel/2 -1])
+              for (const auto& upper : m_invariants[upperLevel / 2 - 1]) {
+                m_knownInvariants[(upperLevel + lowerLevel) / 2 - 1].push_back(
+                  shuffle(lower, lowerLevel, upper, upperLevel)
+                );
+              }
+          }
+        //Then do all the combinations of elements from the same level
+        for (int lowerLevel = 2; lowerLevel + lowerLevel <= level; lowerLevel+=2) {
+          const auto& source = m_invariants[lowerLevel / 2 - 1];
+          for (size_t i = 0; i != source.size(); ++i)
+            for (size_t j = i; j < source.size(); ++j)
+              m_knownInvariants[(lowerLevel + lowerLevel) / 2 - 1].push_back(
+                shuffle(source[i], lowerLevel, source[j], lowerLevel)
+              );
+        }
+      }
+    }
+  };
+
 #if 0
   template<size_t digits>
   void printOneTerm(Invariant p) {
@@ -107,7 +249,7 @@ namespace RotationalInvariants {
     std::cout << "[";
     int level = 4;
     bool first1 = true;
-    for (auto& p : getInvariants(level/2)) {
+    for (auto& p : getInvariants(level / 2)) {
       vector<double> expanded(((size_t)1u) << level);
       for (auto& term : p)
         expanded[(size_t)(term.first)] = term.second;
@@ -128,24 +270,17 @@ namespace RotationalInvariants {
     }
     std::cout << "]\n";
   }
+
+  void demoShuffle() {
+    Invariant a{ { 2,1 } }; //10
+    Invariant b{ { 3,1 } }; //11
+    printOneTerm<2>(a);
+    printOneTerm<2>(b);
+    //"10 shuffle 11" is 1011+(2)1101+(3)1110
+    Invariant out = shuffle(a, 2, b, 2);
+    printOneTerm<4>(out);
+  }
 #endif
-
-  class Prepared {
-  public:
-    vector<vector<Invariant>> m_invariants;
-    int m_level;
-    size_t m_length;
-
-    Prepared(int level) 
-    : m_level(level), m_length(0)
-    {
-      m_invariants.assign(level / 2, {});
-      for (int lev = 2; lev <= level; lev += 2) {
-        m_invariants[lev / 2 - 1] = getInvariants(lev / 2);
-        m_length += m_invariants[lev / 2 - 1].size();
-      }
-    }
-  };
 }
 
 #endif
