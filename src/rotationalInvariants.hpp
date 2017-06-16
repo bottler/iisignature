@@ -72,18 +72,21 @@ namespace RotationalInvariants {
     return { real,imag };
   }
 
-  vector<Invariant> getInvariants(int n) {
+  pair<vector<Invariant>, vector<Invariant>> getInvariants(int n) {
     auto halves = possibleHalves(n);
-    vector<Invariant> all;
-    all.reserve(2 * halves.size());
+    vector<Invariant> evens, odds;
+    evens.reserve(halves.size());
+    odds.reserve(halves.size());
     for (auto& v : halves) {
       auto p = multiplyOutTerm(v);
-      all.push_back(std::move(p.first));
-      all.push_back(std::move(p.second));
+      evens.push_back(std::move(p.first));
+      odds.push_back(std::move(p.second));
     }
-    for (auto &invariant : all)
+    for (auto &invariant : evens)
       std::sort(invariant.begin(), invariant.end());
-    return all;
+    for (auto &invariant : odds)
+      std::sort(invariant.begin(), invariant.end());
+    return {evens, odds};
   }
 
   //returns all the sequences which have m zeros and n ones
@@ -187,40 +190,67 @@ namespace RotationalInvariants {
   //of other invariants.
   class Prepared {
   public:
+    //stored even then odd
     vector<vector<Invariant>> m_invariants, m_knownInvariants;
     int m_level;
-    size_t m_length;
     InvariantType m_type;
 
     Prepared(int level, InvariantType type)
-    : m_level(level), m_length(0), m_type(type)
+    : m_level(level), m_type(type)
     {
-      m_invariants.assign(level / 2, {});
+      m_invariants.assign(level, {});
       for (int lev = 2; lev <= level; lev += 2) {
-        m_invariants[lev / 2 - 1] = getInvariants(lev / 2);
-        m_length += m_invariants[lev / 2 - 1].size();
+        auto p = getInvariants(lev / 2);
+        m_invariants[lev - 2] = std::move(p.first);
+        m_invariants[lev - 1] = std::move(p.second);
       }
       if (type != InvariantType::ALL) {
-        m_knownInvariants.assign(level / 2, {});
+        m_knownInvariants.assign(level, {});
         //First do all the combinations of different levels
         for(int lowerLevel=2; lowerLevel<level; lowerLevel+=2)
           for (int upperLevel = lowerLevel+2; 
                 upperLevel + lowerLevel <= level; upperLevel += 2) {
-            for(const auto& lower: m_invariants[lowerLevel/2 -1])
-              for (const auto& upper : m_invariants[upperLevel / 2 - 1]) {
-                m_knownInvariants[(upperLevel + lowerLevel) / 2 - 1].push_back(
+            for(const auto& lower: m_invariants[lowerLevel - 1])
+              for (const auto& upper : m_invariants[upperLevel - 1]) {
+                m_knownInvariants[upperLevel + lowerLevel - 2].push_back(
                   shuffle(lower, lowerLevel, upper, upperLevel)
                 );
               }
-          }
+            for (const auto& lower : m_invariants[lowerLevel - 2])
+              for (const auto& upper : m_invariants[upperLevel - 2]) {
+                m_knownInvariants[upperLevel + lowerLevel - 2].push_back(
+                  shuffle(lower, lowerLevel, upper, upperLevel)
+                );
+              }
+            for (const auto& lower : m_invariants[lowerLevel - 2])
+              for (const auto& upper : m_invariants[upperLevel - 1]) {
+                m_knownInvariants[upperLevel + lowerLevel - 1].push_back(
+                  shuffle(lower, lowerLevel, upper, upperLevel)
+                );
+              }
+            for (const auto& lower : m_invariants[lowerLevel - 1])
+              for (const auto& upper : m_invariants[upperLevel - 2]) {
+                m_knownInvariants[upperLevel + lowerLevel - 1].push_back(
+                  shuffle(lower, lowerLevel, upper, upperLevel)
+                );
+              }
+        }
         //Then do all the combinations of elements from the same level
         for (int lowerLevel = 2; lowerLevel + lowerLevel <= level; lowerLevel+=2) {
-          const auto& source = m_invariants[lowerLevel / 2 - 1];
-          for (size_t i = 0; i != source.size(); ++i)
-            for (size_t j = i; j < source.size(); ++j)
-              m_knownInvariants[(lowerLevel + lowerLevel) / 2 - 1].push_back(
-                shuffle(source[i], lowerLevel, source[j], lowerLevel)
+          const auto& source1 = m_invariants[lowerLevel - 2];
+          const auto& source2 = m_invariants[lowerLevel - 1];
+          for (const auto& source : { source1, source2 })
+            for (size_t i = 0; i != source.size(); ++i)
+              for (size_t j = i; j < source.size(); ++j)
+                m_knownInvariants[(lowerLevel + lowerLevel) - 2].push_back(
+                  shuffle(source[i], lowerLevel, source[j], lowerLevel)
+                );
+          for (const auto& lower : source1)
+            for (const auto& upper : source2) {
+              m_knownInvariants[lowerLevel + lowerLevel - 1].push_back(
+                shuffle(lower, lowerLevel, upper, lowerLevel)
               );
+            }
         }
       }
     }

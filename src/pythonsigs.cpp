@@ -670,7 +670,8 @@ class LeastSquares {
   PyObject* m_lstsq;
   PyObject* m_pinv;
   PyObject* m_svd;
-  std::unique_ptr<Deleter> m_t_, m_l_, m_p_, m_s_; //we can do better than this
+  PyObject* m_qr;
+  std::unique_ptr<Deleter> m_t_, m_l_, m_p_, m_s_, m_q_; //we can do better than this
 public:
   bool m_ok = false;
   LeastSquares() {
@@ -697,6 +698,10 @@ public:
     if (!m_svd)
       return;
     m_s_.reset(new Deleter(m_svd));
+    m_qr = PyObject_GetAttrString(linalg, "qr");
+    if (!m_qr)
+      return;
+    m_q_.reset(new Deleter(m_qr));
     m_ok = true;
   }
   PyObject* lstsqWithTranspose(PyObject *a1, PyObject *a2) const {
@@ -741,15 +746,16 @@ public:
 
   //given an rxc matrix mat, find its rank and the first part of its SVD
   //on failure, m_ok will be false.
+  //expect r>c, so that we are interested in the span of the columns,
   class SVD {
   public:
     double* m_u;//is rxr
     bool m_ok = false;
     std::unique_ptr<Deleter> m_delete;
     int m_rank = 0;
-    SVD(const vector<double>& mat, npy_intp r, npy_intp c, LeastSquares& ls) {
+    SVD(const vector<double>& mat, npy_intp r, npy_intp c, bool full_matrices, LeastSquares& ls) {
       MatrixOfVector<UseDouble> mat_(mat, r, c);
-      if (mat.size() != r*c)
+      if (mat.size() != ((size_t)r*c))
         ERRr("bad use of SVD");
 #if 0
       for (int rr = 0, i = 0; rr < r; ++rr) {
@@ -758,7 +764,8 @@ public:
         std::cout << "\n";
       }
 #endif
-      PyObject* svd = PyObject_CallFunctionObjArgs(ls.m_svd, mat_.m_mat, NULL);
+      PyObject* svd = PyObject_CallFunctionObjArgs(ls.m_svd, mat_.m_mat, 
+        full_matrices ? Py_True : Py_False, NULL);
       if (!svd)
         return;
       m_delete.reset(new Deleter(svd));//a bit of a mess
@@ -769,7 +776,7 @@ public:
         PyArray_NDIM(svd0) == 2 &&
         PyArray_TYPE(svd0) == NPY_FLOAT64 &&
         PyArray_DIM(svd0, 0) == r &&
-        PyArray_DIM(svd0, 1) == r &&
+        PyArray_DIM(svd0, 1) == (full_matrices ? r : c) &&
         PyArray_ISCARRAY_RO(svd0) &&
         PyArray_ISCARRAY_RO((PyArrayObject*)svs)
         ;
@@ -791,6 +798,51 @@ public:
       std::cout << std::endl;
 #endif
       m_u=(double*)PyArray_DATA(svd0);
+      m_ok = true;
+    }
+  };
+
+  //given an rxc matrix mat, find its rank and the Q of its QR
+  //on failure, m_ok will be false.
+  //expect r>c, so that we are interested in the span of the columns.
+  class QR {
+  public:
+    double* m_q;//is rxr
+    bool m_ok = false;
+    std::unique_ptr<Deleter> m_delete;
+    int m_rank = 0;
+    QR(const vector<double>& mat, npy_intp r, npy_intp c, LeastSquares& ls) {
+      MatrixOfVector<UseDouble> mat_(mat, r, c);
+      if (mat.size() != ((size_t)r*c))
+        ERRr("bad use of QR");
+      PyObject* qr = PyObject_CallFunctionObjArgs(ls.m_qr, mat_.m_mat, NULL);
+      if (!qr)
+        return;
+      m_delete.reset(new Deleter(qr));//a bit of a mess
+      PyArrayObject* qr0 = (PyArrayObject*)PyTuple_GetItem(qr, 0);
+      bool ok = PyArray_NDIM(qr0) == 2 &&
+        PyArray_TYPE(qr0) == NPY_FLOAT64 &&
+        PyArray_DIM(qr0, 0) == r &&
+        PyArray_DIM(qr0, 1) == c &&
+        PyArray_ISCARRAY_RO(qr0)
+        ;
+      if (!ok)
+        ERRr("numpy qr returned something strange.");
+#ifdef PRINT_SVS
+      std::cout << "\n";
+#endif
+      for (npy_intp i = 0; i < c; ++i) {
+        double sv = *((double*)PyArray_GETPTR2((PyArrayObject*)qr0, i, i));
+#ifdef PRINT_SVS
+        std::cout << sv << ",";
+#endif
+        if (sv > 0.000001)
+          ++m_rank;
+      }
+#ifdef PRINT_SVS
+      std::cout << std::endl;
+#endif
+      m_q = (double*)PyArray_DATA(qr0);
       m_ok = true;
     }
   };
@@ -824,11 +876,13 @@ public:
   //inp is a dxm matrix and sub is a dxn matrix with n<m
   //set out to a dx(roughly m-n) matrix whose columns are perp to colspan(sub) and each other
   //s.t. colspan(out)=colspan(inp)
+  //This current method may be a big waste of time. We shouldn't need d^2 space.
+  //I wonder if qr would beat svd, but I think we'd still need two.
   bool projectAwayFrom(const vector<double>& inp, const vector<double>& sub, npy_intp d, vector<double>& out) {
     npy_intp m = inp.size() / d;
     npy_intp n = sub.size() / d;
 
-    SVD svd(sub, d, n, *this);
+    SVD svd(sub, d, n, true, *this);
     if (!svd.m_ok)
       return false;
 
@@ -856,7 +910,7 @@ public:
           inp_projected.at(j*m + i) += inp.at(k*m + i) * s3.at(j*d + k);
         }
 
-    SVD svd2(inp_projected, d, m, *this);
+    SVD svd2(inp_projected, d, m, false, *this); 
     if (!svd2.m_ok)
       return false;
 
@@ -865,7 +919,7 @@ public:
     for (int i = 0; i < d; ++i)
       for (int j = 0; j < out_rank; ++j) {
         //std::cout << i << "," << j << "," << d << "," << out_rank << std::endl;
-        out.at(i*out_rank + j) = svd2.m_u[i*d + j];
+        out.at(i*out_rank + j) = svd2.m_u[i*m + j];
       }
     return true;
   }
@@ -1177,6 +1231,7 @@ static void killRotInv(void* v) {
 
 static PyObject *
 rotinv2dlength(PyObject *self, PyObject *args) {
+/*
   int level = 0;
   if (!PyArg_ParseTuple(args, "i", &level))
     return nullptr;
@@ -1185,8 +1240,17 @@ rotinv2dlength(PyObject *self, PyObject *args) {
   long ans = 0;
   for (int lev = 2; lev <= level; lev += 2)
     //length is (lev choose lev/2)
-    ans += (long)LogSigLength::centralBinomialCoefficient(lev);
-  //todo - cope with overrun here
+    ans += (long)LogSigLength::centralBinomialCoefficient(lev);*/
+  PyObject* a1;
+  if (!PyArg_ParseTuple(args, "O", &a1))
+    return nullptr;
+  auto prepared = getPreparedRotInv(a1);
+  if (!prepared)
+    return nullptr;
+  long ans = 0;
+  for (const auto& i : prepared->m_invariants)
+    ans += (long)i.size();
+
 #if PY_MAJOR_VERSION >= 3
   return PyLong_FromLong(ans);
 #else
@@ -1219,12 +1283,14 @@ rotinv2dprepare(PyObject *self, PyObject *args) {
       return nullptr;
     vector<double> tempa, tempb, tempc;
     for (int lev = 4; lev <= level; lev += 2) {
-      size_t idx = lev / 2 - 1;
-      RotationalInvariants::invariantsToMatrix(p->m_invariants[idx], lev, tempa);
-      RotationalInvariants::invariantsToMatrix(p->m_knownInvariants[idx], lev, tempb);
-      if (!ls.projectAwayFrom(tempa, tempb, ((npy_intp)1) << lev, tempc))
-        return nullptr;
-      RotationalInvariants::invariantsFromMatrix(tempc, lev, p->m_invariants[idx]);
+      for (int parity : {0, 1}) {
+        size_t idx = lev - 2 + parity;
+        RotationalInvariants::invariantsToMatrix(p->m_invariants[idx], lev, tempa);
+        RotationalInvariants::invariantsToMatrix(p->m_knownInvariants[idx], lev, tempb);
+        if (!ls.projectAwayFrom(tempa, tempb, ((npy_intp)1) << lev, tempc))
+          return nullptr;
+        RotationalInvariants::invariantsFromMatrix(tempc, lev, p->m_invariants[idx]);
+      }
     }
   }
 #endif
@@ -1272,13 +1338,16 @@ rotinv2d(PyObject *self, PyObject *args) {
 
   std::vector<double> out;
   for (int lev = 2; lev <= level; lev += 2) {
-    auto invs = prepared->m_invariants[lev / 2 - 1];
-    for (auto& i : invs) {
-      double d = 0;
-      for (auto& p : i) {
-        d += p.second*sig.m_data[lev - 1][(size_t)(p.first)];
+    for (int parity : {0, 1}) {
+      size_t idx = lev - 2 + parity;
+      auto& invs = prepared->m_invariants[idx];
+      for (auto& i : invs) {
+        double d = 0;
+        for (auto& p : i) {
+          d += p.second*sig.m_data[lev - 1][(size_t)(p.first)];
+        }
+        out.push_back(d);
       }
-      out.push_back(d);
     }
   }
 
@@ -1306,18 +1375,23 @@ rotinv2dcoeffs(PyObject *self, PyObject *args) {
   PyObject* out = PyTuple_New(level / 2);
   using OutT=UseDouble;
   for (int lev = 2; lev <= level; lev += 2) {
-    auto& source = prepared->m_invariants[lev/2-1];
+    auto& source0 = prepared->m_invariants[lev - 2];
+    auto& source1 = prepared->m_invariants[lev - 1];
+    size_t sourceSize = source0.size() + source1.size();
     size_t length = ((size_t)1u) << lev;
-    npy_intp dims[] = { (npy_intp)source.size(), (npy_intp)length };
+    npy_intp dims[] = { (npy_intp)(sourceSize), (npy_intp)length };
     PyObject* o = PyArray_SimpleNew(2, dims, OutT::typenum);
     if (!o)
       return nullptr; //but leak out...
     OutT::T* dest = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
-    for (size_t i = 0; i < length*source.size(); ++i)
+    for (size_t i = 0; i < length*sourceSize; ++i)
       dest[i] = 0;
-    for(size_t i=0; i<source.size(); ++i)
-      for (const auto& p : source[i])
-        dest[i*length+p.first] = p.second;
+    for (size_t i = 0; i<source0.size(); ++i)
+      for (const auto& p : source0[i])
+        dest[i*length + p.first] = p.second;
+    for (size_t i = 0; i<source1.size(); ++i)
+      for (const auto& p : source1[i])
+        dest[(i+source0.size())*length + p.first] = p.second;
     PyTuple_SET_ITEM(out, lev / 2 - 1, o);
   }
   

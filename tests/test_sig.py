@@ -335,6 +335,12 @@ class Scales(TestCase):
         self.assertLess(numpy.abs(diff1),0.0000001)
         self.assertLess(numpy.abs(diff2),0.0000001)
 
+#sum (2i choose i) for i in 1 to n
+# which is the number of linear rotational invariants up to level 2n
+def sumCentralBinomialCoefficient(n):
+    f=math.factorial
+    return sum(f(2*i)/(f(i)**2) for i in range(1,n+1))
+
 #can run just this with
 #python setup.py test -s tests.test_sig.RotInv2d
 class RotInv2d(TestCase):
@@ -354,8 +360,10 @@ class RotInv2d(TestCase):
         #check the length matches
         (length,)=samePathRotInvs[0].shape
         self.assertEqual(length,sum(i.shape[0] for i in coeffs))
+        self.assertEqual(length,iisignature.rotinv2dlength(s))
         if type == "a":
-            self.assertEqual(length, iisignature.rotinv2dlength(m))
+            self.assertEqual(length,sumCentralBinomialCoefficient(m//2))
+
         self.assertLess(length,nAngles)#sanity check on the test itself
 
         #check that the invariants are invariant
@@ -439,6 +447,28 @@ class RotInv2d(TestCase):
         #every row of cs should be in the span of the rows of ca
         residuals2=numpy.linalg.lstsq(ca.T,cs.T)[1]
         self.assertLess(numpy.max(numpy.abs(residuals2)),0.000001)
+
+        #check that rows with nonzeros in evil columns are all before
+        #rows with nonzeros in odious columns
+        #print ((numpy.abs(ca)>0.00000001).astype("int8"))
+        for c,name in ((cs,"s"), (ck,"k"), (ca,"a")):
+            evilRows=[]
+            odiousRows=[]
+            for i in range(ca.shape[0]):
+                evil=0
+                odious=0
+                for j in range(ca.shape[1]):
+                    if numpy.abs(ca[i,j])>0.00001:
+                        if bin(j).count("1")%2:
+                            odious = odious+1
+                        else:
+                            evil=evil+1
+                if evil>0:
+                    evilRows.append(i)
+                if odious>0:
+                    odiousRows.append(i)
+            #print (evilRows, odiousRows)
+            self.assertLess(numpy.max(evil),numpy.min(odious),"bad order of rows in "+name)
         
 
 
