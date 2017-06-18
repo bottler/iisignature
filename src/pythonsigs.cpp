@@ -1287,9 +1287,9 @@ rotinv2dprepare(PyObject *self, PyObject *args) {
         size_t idx = lev - 2 + parity;
         RotationalInvariants::invariantsToMatrix(p->m_invariants[idx], lev, tempa);
         RotationalInvariants::invariantsToMatrix(p->m_knownInvariants[idx], lev, tempb);
-        if (!ls.projectAwayFrom(tempa, tempb, ((npy_intp)1) << lev, tempc))
+        if (!ls.projectAwayFrom(tempa, tempb, ((npy_intp)1) << (lev-1), tempc)) //lev instead of (lev-1) to unsquish
           return nullptr;
-        RotationalInvariants::invariantsFromMatrix(tempc, lev, p->m_invariants[idx]);
+        RotationalInvariants::invariantsFromMatrix(tempc, lev, parity, p->m_invariants[idx]);
       }
     }
   }

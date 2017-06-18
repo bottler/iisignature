@@ -10,7 +10,7 @@
 #include<utility>
 #include<vector>
 #include<cstdint>
-//#include<bitset>
+#include<bitset>
 #include<string>
 
 namespace RotationalInvariants {
@@ -160,27 +160,39 @@ namespace RotationalInvariants {
 */
 
   //make a matrix whose columns are the given invariants
+  //We know that in must either contain all odious or all evil indices, so we squish the matrix to only use
+  //half the indices - we basically ignore the last bit of every index.
   void invariantsToMatrix(const vector<Invariant>& in, int level, vector<double>& out) {
     size_t d = ((size_t)1u) << level;
+    d /= 2;//remove to unsquish
     out.assign(d*in.size(), 0);
     for (size_t i = 0; i < in.size(); ++i) {
       for (auto& p : in[i]) {
-        size_t idx = (size_t)p.first*in.size() + i;
-        if (idx >= out.size())
-          throw 3;
-        out[(size_t)p.first*in.size() + i] = p.second;
+        size_t idx = ((size_t)p.first/2)*in.size() + i; //remove the /2 to unsquish
+        out[idx] = p.second;
       }
     }
   }
-  void invariantsFromMatrix(const vector<double>& in, int level, vector<Invariant>& out) {
+  //Convert such a matrix back to invariants,
+  //odiously indexed if parity is 1, evilly indexed if parity is 0
+  void invariantsFromMatrix(const vector<double>& in, int level, int parity, vector<Invariant>& out) {
     size_t d = ((size_t)1u) << level;
+    d /= 2;//remove to unsquish
     size_t nInvariants = in.size() / d;
     out.assign(nInvariants, {});
     for (size_t i = 0; i < d; ++i) {
+      size_t ii = i;
+      if (1) {//(0) to unsquish
+        ii *= 2;
+        //If ii's bit count has the wrong parity, we stick a 1 on the end.
+        //speedup idea: use an intrinsic to count bits if available, or use a table.
+        if (parity != std::bitset<8 * sizeof(size_t)>(ii).count() % 2)
+          ++ii;
+      }
       for (size_t j = 0; j < nInvariants; ++j) {
         double elt = in[i*nInvariants + j];
-        if (elt != 0) //Yuck?
-          out[j].emplace_back(i, elt);
+        if (elt != 0) //With squishing, is this always true?
+          out[j].emplace_back(ii, elt);
       }
     }
   }
