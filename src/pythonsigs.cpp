@@ -807,7 +807,7 @@ public:
   //expect r>c, so that we are interested in the span of the columns.
   class QR {
   public:
-    double* m_q;//is rxr
+    double* m_q;//is rxc
     bool m_ok = false;
     std::unique_ptr<Deleter> m_delete;
     int m_rank = 0;
@@ -820,11 +820,17 @@ public:
         return;
       m_delete.reset(new Deleter(qr));//a bit of a mess
       PyArrayObject* qr0 = (PyArrayObject*)PyTuple_GetItem(qr, 0);
+      PyArrayObject* qr1 = (PyArrayObject*)PyTuple_GetItem(qr, 1);
       bool ok = PyArray_NDIM(qr0) == 2 &&
         PyArray_TYPE(qr0) == NPY_FLOAT64 &&
         PyArray_DIM(qr0, 0) == r &&
         PyArray_DIM(qr0, 1) == c &&
-        PyArray_ISCARRAY_RO(qr0)
+        PyArray_NDIM(qr1) == 2 &&
+        PyArray_TYPE(qr1) == NPY_FLOAT64 &&
+        PyArray_DIM(qr1, 0) == c &&
+        PyArray_DIM(qr1, 1) == c &&
+        PyArray_ISCARRAY_RO(qr0) &&
+        PyArray_ISCARRAY_RO(qr1)
         ;
       if (!ok)
         ERRr("numpy qr returned something strange.");
@@ -832,11 +838,11 @@ public:
       std::cout << "\n";
 #endif
       for (npy_intp i = 0; i < c; ++i) {
-        double sv = *((double*)PyArray_GETPTR2((PyArrayObject*)qr0, i, i));
+        double sv = *((double*)PyArray_GETPTR2((PyArrayObject*)qr1, i, i));
 #ifdef PRINT_SVS
         std::cout << sv << ",";
 #endif
-        if (sv > 0.000001)
+        if (sv > 0.000001 || sv < -0.000001)
           ++m_rank;
       }
 #ifdef PRINT_SVS
