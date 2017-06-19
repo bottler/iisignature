@@ -878,7 +878,7 @@ public:
   //s.t. colspan(out)=colspan(inp)
   //This current method may be a big waste of time. We shouldn't need d^2 space.
   //I wonder if qr would beat svd, but I think we'd still need two.
-  bool projectAwayFrom(const vector<double>& inp, const vector<double>& sub, npy_intp d, vector<double>& out) {
+  bool projectAwayFrom1(const vector<double>& inp, const vector<double>& sub, npy_intp d, vector<double>& out) {
     npy_intp m = inp.size() / d;
     npy_intp n = sub.size() / d;
 
@@ -888,27 +888,44 @@ public:
 
     double* s1 = svd.m_u;
     int sub_rank = svd.m_rank;
+    vector<double> inp_projected(d*m, 0);
     //std::cout << "!"<< d << "," << m << "," << n << "," << sub_rank << std::endl;
     //s1 is a dxd array. If s2 is s1 without its first sub_rank columns, 
     //then s3=s2 s2^T is a projection matrix away from sub
-    vector<double> s3(d*d, 0);
-    for (int i = 0; i < d; ++i) {
-      for (int j = 0; j + sub_rank < d; ++j) {
-        for (int k = 0; k < d; ++k) {
-          s3.at(i*d + k) += s1[i*d + sub_rank + j] * s1[k*d + sub_rank + j];
+    //we want inp_projected= s3.inp = s2 . (s2^T.inp) =: s2.s4
+    
+    if (0) {
+      vector<double> s3(d*d, 0);
+      for (int i = 0; i < d; ++i) {
+        for (int j = 0; j + sub_rank < d; ++j) {
+          for (int k = 0; k < d; ++k) {
+            s3.at(i*d + k) += s1[i*d + sub_rank + j] * s1[k*d + sub_rank + j];
+          }
         }
       }
-    }
 
-    vector<double> inp_projected(d*m,0);
-    for (int i = 0; i < m; ++i)
-      for (int j = 0; j < d; ++j)
-        for (int k = 0; k < d; ++k) {
-          //if (i*m + k >= inp.size())
-            //std::cout << "'" << inp.size()<<","<<s3.size()<<","<<inp_projected.size()
-            //  << "," << m << "," << d << "," << i << "," << j << "," << k << std::endl;
-          inp_projected.at(j*m + i) += inp.at(k*m + i) * s3.at(j*d + k);
-        }
+      for (int i = 0; i < m; ++i)
+        for (int j = 0; j < d; ++j)
+          for (int k = 0; k < d; ++k) {
+            //if (i*m + k >= inp.size())
+              //std::cout << "'" << inp.size()<<","<<s3.size()<<","<<inp_projected.size()
+              //  << "," << m << "," << d << "," << i << "," << j << "," << k << std::endl;
+            inp_projected.at(j*m + i) += inp.at(k*m + i) * s3.at(j*d + k);
+          }
+    }
+    else { // group s.t. second multiply happens first
+      npy_intp s4_rows = d - sub_rank;
+      vector<double> s4((d - sub_rank)*d);
+      for (npy_intp i = 0; i < d; ++i)
+        for (npy_intp j = 0; j < m; ++j)
+          for (npy_intp k = 0; k < s4_rows; ++k)
+            s4.at(k*s4_rows + j) += s1[i*d + sub_rank + k] * inp.at(i*m+j);
+      std::cout << "p4" << std::endl;
+      for (npy_intp i = 0; i < d; ++i)
+        for (npy_intp j = 0; j < m; ++j)
+          for (npy_intp k = 0; k < s4_rows; ++k)
+            inp_projected.at(i*m + j) += s1[i*d + sub_rank + k] * s4.at(k*s4_rows + j);
+    }
 
     SVD svd2(inp_projected, d, m, false, *this); 
     if (!svd2.m_ok)
@@ -916,6 +933,42 @@ public:
 
     int out_rank = svd2.m_rank;
     out.assign(d*out_rank,0);
+    for (npy_intp i = 0; i < d; ++i)
+      for (int j = 0; j < out_rank; ++j) {
+        //std::cout << i << "," << j << "," << d << "," << out_rank << std::endl;
+        out.at(i*out_rank + j) = svd2.m_u[i*m + j];
+      }
+    return true;
+  }
+
+  //inp is a dxm matrix and sub is a dxn matrix with n<m
+  //set out to a dx(roughly m-n) matrix whose columns are perp to colspan(sub) and each other
+  //s.t. colspan(out)=colspan(inp)
+  //This is like the previous only the projection matrix is not constructed.
+  //space d^2 is never needed.
+  bool projectAwayFrom2(const vector<double>& inp, const vector<double>& sub, npy_intp d, vector<double>& out) {
+    npy_intp m = inp.size() / d;
+    npy_intp n = sub.size() / d;
+
+    SVD svd(sub, d, n, false, *this);
+    if (!svd.m_ok)
+      return false;
+
+    vector<double> inp_projected = inp;
+    for (npy_intp i = 0; i < m; ++i)
+      for (npy_intp j = 0; j < svd.m_rank; ++j) {
+        double dot_product = 0;
+        for (npy_intp k = 0; k < d; ++k)
+          dot_product += inp.at(k*m + i)*svd.m_u[k*n + j];
+        for (npy_intp k = 0; k < d; ++k)
+          inp_projected[k*m + i] -= dot_product * svd.m_u[k*n + j];
+      }
+    SVD svd2(inp_projected, d, m, false, *this);
+    if (!svd2.m_ok)
+      return false;
+
+    int out_rank = svd2.m_rank;
+    out.assign(d*out_rank, 0);
     for (int i = 0; i < d; ++i)
       for (int j = 0; j < out_rank; ++j) {
         //std::cout << i << "," << j << "," << d << "," << out_rank << std::endl;
@@ -1287,7 +1340,7 @@ rotinv2dprepare(PyObject *self, PyObject *args) {
         size_t idx = lev - 2 + parity;
         RotationalInvariants::invariantsToMatrix(p->m_invariants[idx], lev, tempa);
         RotationalInvariants::invariantsToMatrix(p->m_knownInvariants[idx], lev, tempb);
-        if (!ls.projectAwayFrom(tempa, tempb, ((npy_intp)1) << (lev-1), tempc)) //lev instead of (lev-1) to unsquish
+        if (!ls.projectAwayFrom2(tempa, tempb, ((npy_intp)1) << (lev-1), tempc)) //lev instead of (lev-1) to unsquish
           return nullptr;
         RotationalInvariants::invariantsFromMatrix(tempc, lev, parity, p->m_invariants[idx]);
       }
