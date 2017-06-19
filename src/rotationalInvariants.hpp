@@ -186,7 +186,7 @@ namespace RotationalInvariants {
         ii *= 2;
         //If ii's bit count has the wrong parity, we stick a 1 on the end.
         //speedup idea: use an intrinsic to count bits if available, or use a table.
-        if (parity != std::bitset<8 * sizeof(size_t)>(ii).count() % 2)
+        if (((size_t)parity) != std::bitset<8 * sizeof(size_t)>(ii).count() % 2)
           ++ii;
       }
       for (size_t j = 0; j < nInvariants; ++j) {
