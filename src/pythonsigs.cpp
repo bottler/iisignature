@@ -138,13 +138,8 @@ logsiglength(PyObject *self, PyObject *args){
 //returns true on success
 //makes s2 be the signature of the path in data
 using CalcSignature::CalculatedSignature;
-static bool calcSignature(CalculatedSignature& s2, PyObject* data, int level){
-  if(!PyArray_Check(data)) ERRb("data must be a numpy array");
-  PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(data));
-  Deleter a_(reinterpret_cast<PyObject*>(a));
+static bool calcSignature(CalculatedSignature& s2, PyArrayObject* a, int level){
   if(PyArray_NDIM(a)!=2) ERRb("data must be 2d");
-  if(PyArray_TYPE(a)!=NPY_FLOAT32 && PyArray_TYPE(a)!=NPY_FLOAT64)
-    ERRb("data must be float32 or float64");
   const int lengthOfPath = (int)PyArray_DIM(a,0);
   const int d = (int)PyArray_DIM(a,1);
   if(lengthOfPath<1) ERRb("Path has no length");
@@ -201,12 +196,17 @@ sig(PyObject *self, PyObject *args){
   if (!PyArg_ParseTuple(args, "Oi|i", &a1, &level, &format))
     return nullptr;
   if(level<1) ERR("level must be positive");
+  //could have a shortcut here if a1 is a contiguous array of float32
+  PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  if (!aa) ERR("data must be (convertable to) a numpy array");
+  Deleter a_(aa);
+  PyArrayObject* a = (PyArrayObject*)aa;
 
   CalculatedSignature s;
   setup_signals();
   std::string exceptionMessage;
   try{
-    if(!calcSignature(s,a1,level))
+    if(!calcSignature(s,a,level))
       return nullptr;
   }catch(std::exception& e){
     exceptionMessage = e.what();
@@ -252,12 +252,11 @@ sigMultCount(PyObject *self, PyObject *args) {
   if (!PyArg_ParseTuple(args, "Oi|i", &data, &level, &format))
     return nullptr;
   if (level<1) ERR("level must be positive");
-  if (!PyArray_Check(data)) ERR("data must be a numpy array");
-  PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(data));
-  Deleter a_(reinterpret_cast<PyObject*>(a));
+  PyObject* aa = PyArray_ContiguousFromAny(data, NPY_FLOAT64, 0, 0);
+  if (!aa) ERR("data must be (convertable to) a numpy array");
+  Deleter a_(aa);
+  PyArrayObject* a = (PyArrayObject*)aa;
   if (PyArray_NDIM(a) != 2) ERR("data must be 2d");
-  if (PyArray_TYPE(a) != NPY_FLOAT32 && PyArray_TYPE(a) != NPY_FLOAT64)
-    ERR("data must be float32 or float64");
   const int lengthOfPath = (int)PyArray_DIM(a, 0);
   const int d = (int)PyArray_DIM(a, 1);
   if (lengthOfPath<1) ERR("Path has no length");
@@ -304,23 +303,21 @@ sigBackwards(PyObject *self, PyObject *args){
   if (!PyArg_ParseTuple(args, "OOi", &a2, &a1, &level))
     return nullptr;
   if(level<1) ERR("level must be positive");
-  if(!PyArray_Check(a1)) ERR("path must be a numpy array");
-  if(!PyArray_Check(a2)) ERR("derivs must be a numpy array");
-  PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a1));
-  Deleter a_(reinterpret_cast<PyObject*>(a));
+  PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  if (!aa) ERR("path must be (convertable to) a numpy array");
+  Deleter a_(aa);
+  PyArrayObject* a = (PyArrayObject*)aa;
+  PyObject* bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
+  if (!bb) ERR("derivs must be (convertable to) a numpy array");
+  Deleter b_(bb);
+  PyArrayObject* b = (PyArrayObject*)bb;
   if(PyArray_NDIM(a)!=2) ERR("path must be 2d");
-  if(PyArray_TYPE(a)!=NPY_FLOAT32 && PyArray_TYPE(a)!=NPY_FLOAT64)
-    ERR("path must be float32 or float64");
   const int lengthOfPath = (int)PyArray_DIM(a,0);
   const int d = (int)PyArray_DIM(a,1);
   if(lengthOfPath<1) ERR("Path has no length");
   if(d<1) ERR("Path must have positive dimension");
   size_t sigLength = calcSigTotalLength(d,level);
-  PyArrayObject* b = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a2));
-  Deleter b_(reinterpret_cast<PyObject*>(b));
   if(PyArray_NDIM(b)!=1) ERR("derivs must be 1d");
-  if(PyArray_TYPE(b)!=NPY_FLOAT32 && PyArray_TYPE(b)!=NPY_FLOAT64)
-    ERR("derivs must be float32 or float64");
   if(sigLength!=(size_t)PyArray_DIM(b,0))
     ERR(("derivs should have length "+std::to_string(sigLength)+
          " but it has length "+std::to_string(PyArray_DIM(b,0))).c_str());
@@ -347,12 +344,11 @@ sigJacobian(PyObject *self, PyObject *args){
   if (!PyArg_ParseTuple(args, "Oi", &a1, &level))
     return nullptr;
   if(level<1) ERR("level must be positive");
-  if(!PyArray_Check(a1)) ERR("data must be a numpy array");
-  PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a1));
-  Deleter a_(reinterpret_cast<PyObject*>(a));
+  PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  if (!aa) ERR("data must be (convertable to) a numpy array");
+  Deleter a_(aa);
+  PyArrayObject* a = (PyArrayObject*)aa;
   if(PyArray_NDIM(a)!=2) ERR("data must be 2d");
-  if(PyArray_TYPE(a)!=NPY_FLOAT32 && PyArray_TYPE(a)!=NPY_FLOAT64)
-    ERR("data must be float32 or float64");
   const int lengthOfPath = (int)PyArray_DIM(a,0);
   const int d = (int)PyArray_DIM(a,1);
   if(lengthOfPath<1) ERR("Path has no length");
@@ -380,18 +376,17 @@ sigJoin(PyObject *self, PyObject *args){
   if (!PyArg_ParseTuple(args, "OOi|d", &a1, &a2, &level, &fixedLast))
     return nullptr;
   if(level<1) ERR("level must be positive");
-  if(!PyArray_Check(a1)) ERR("sigs must be a numpy array");
-  if(!PyArray_Check(a2)) ERR("new data must be a numpy array");
-  PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a1));
-  Deleter a_(reinterpret_cast<PyObject*>(a));
-  PyArrayObject* b = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a2));
-  Deleter b_(reinterpret_cast<PyObject*>(b));
+  PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  if (!aa) ERR("sigs must be (convertable to) a numpy array");
+  Deleter a_(aa);
+  PyArrayObject* a = (PyArrayObject*)aa;
+  PyObject* bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
+  if (!bb) ERR("data must be (convertable to) a numpy array");
+  Deleter b_(bb);
+  PyArrayObject* b = (PyArrayObject*)bb;
+
   if(PyArray_NDIM(a)!=2) ERR("sigs must be 2d");
   if(PyArray_NDIM(b)!=2) ERR("data must be 2d");
-  if(PyArray_TYPE(a)!=NPY_FLOAT32 && PyArray_TYPE(a)!=NPY_FLOAT64)
-    ERR("sigs must be float32 or float64");
-  if(PyArray_TYPE(b)!=NPY_FLOAT32 && PyArray_TYPE(b)!=NPY_FLOAT64)
-    ERR("data must be float32 or float64");
   const int nPaths = (int)PyArray_DIM(a,0);
   if(nPaths!=(int)PyArray_DIM(b,0))
     ERR("different number of sigs and data");
@@ -426,24 +421,21 @@ static PyObject *
   if (!PyArg_ParseTuple(args, "OOOi|d", &a3, &a1, &a2, &level, &fixedLast))
     return nullptr;
   if(level<1) ERR("level must be positive");
-  if(!PyArray_Check(a1)) ERR("sigs must be a numpy array");
-  if(!PyArray_Check(a2)) ERR("new data must be a numpy array");
-  if(!PyArray_Check(a3)) ERR("derivs must be a numpy array");
-  PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a1));
-  Deleter a_(reinterpret_cast<PyObject*>(a));
-  PyArrayObject* b = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a2));
-  Deleter b_(reinterpret_cast<PyObject*>(b));
-  PyArrayObject* c = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a3));
-  Deleter c_(reinterpret_cast<PyObject*>(c));
+  PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  if (!aa) ERR("sigs must be (convertable to) a numpy array");
+  Deleter a_(aa);
+  PyArrayObject* a = (PyArrayObject*)aa;
+  PyObject* bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
+  if (!bb) ERR("new data must be (convertable to) a numpy array");
+  Deleter b_(bb);
+  PyArrayObject* b = (PyArrayObject*)bb;
+  PyObject* cc = PyArray_ContiguousFromAny(a3, NPY_FLOAT64, 0, 0);
+  if (!cc) ERR("derivs must be (convertable to) a numpy array");
+  Deleter c_(cc);
+  PyArrayObject* c = (PyArrayObject*)cc;
   if(PyArray_NDIM(a)!=2) ERR("sigs must be 2d");
-  if(PyArray_NDIM(b)!=2) ERR("data must be 2d");
+  if(PyArray_NDIM(b)!=2) ERR("new data must be 2d");
   if(PyArray_NDIM(c)!=2) ERR("derivs must be 2d");
-  if(PyArray_TYPE(a)!=NPY_FLOAT32 && PyArray_TYPE(a)!=NPY_FLOAT64)
-    ERR("sigs must be float32 or float64");
-  if(PyArray_TYPE(b)!=NPY_FLOAT32 && PyArray_TYPE(b)!=NPY_FLOAT64)
-    ERR("data must be float32 or float64");
-  if(PyArray_TYPE(c)!=NPY_FLOAT32 && PyArray_TYPE(c)!=NPY_FLOAT64)
-    ERR("derivs must be float32 or float64");
   const int nPaths = (int)PyArray_DIM(a,0);
   if(nPaths!=(int)PyArray_DIM(b,0))
     ERR("different number of sigs and data");
@@ -493,18 +485,16 @@ sigScale(PyObject *self, PyObject *args){
   if (!PyArg_ParseTuple(args, "OOi", &a1, &a2, &level))
     return nullptr;
   if(level<1) ERR("level must be positive");
-  if(!PyArray_Check(a1)) ERR("sigs must be a numpy array");
-  if(!PyArray_Check(a2)) ERR("scales must be a numpy array");
-  PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a1));
-  Deleter a_(reinterpret_cast<PyObject*>(a));
-  PyArrayObject* b = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a2));
-  Deleter b_(reinterpret_cast<PyObject*>(b));
+  PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  if (!aa) ERR("sigs must be (convertable to) a numpy array");
+  Deleter a_(aa);
+  PyArrayObject* a = (PyArrayObject*)aa;
+  PyObject* bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
+  if (!bb) ERR("scales must be (convertable to) a numpy array");
+  Deleter b_(bb);
+  PyArrayObject* b = (PyArrayObject*)bb;
   if(PyArray_NDIM(a)!=2) ERR("sigs must be 2d");
   if(PyArray_NDIM(b)!=2) ERR("scales must be 2d");
-  if(PyArray_TYPE(a)!=NPY_FLOAT32 && PyArray_TYPE(a)!=NPY_FLOAT64)
-    ERR("sigs must be float32 or float64");
-  if(PyArray_TYPE(b)!=NPY_FLOAT32 && PyArray_TYPE(b)!=NPY_FLOAT64)
-    ERR("scales must be float32 or float64");
   const int nPaths = (int)PyArray_DIM(a,0);
   if(nPaths!=(int)PyArray_DIM(b,0))
     ERR("different number of sigs and data");
@@ -537,24 +527,21 @@ static PyObject *
   if (!PyArg_ParseTuple(args, "OOOi", &a3, &a1, &a2, &level))
     return nullptr;
   if(level<1) ERR("level must be positive");
-  if(!PyArray_Check(a1)) ERR("sigs must be a numpy array");
-  if(!PyArray_Check(a2)) ERR("scales must be a numpy array");
-  if(!PyArray_Check(a3)) ERR("derivs must be a numpy array");
-  PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a1));
-  Deleter a_(reinterpret_cast<PyObject*>(a));
-  PyArrayObject* b = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a2));
-  Deleter b_(reinterpret_cast<PyObject*>(b));
-  PyArrayObject* c = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a3));
-  Deleter c_(reinterpret_cast<PyObject*>(c));
+  PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  if (!aa) ERR("sigs must be (convertable to) a numpy array");
+  Deleter a_(aa);
+  PyArrayObject* a = (PyArrayObject*)aa;
+  PyObject* bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
+  if (!bb) ERR("scales must be (convertable to) a numpy array");
+  Deleter b_(bb);
+  PyArrayObject* b = (PyArrayObject*)bb;
+  PyObject* cc = PyArray_ContiguousFromAny(a3, NPY_FLOAT64, 0, 0);
+  if (!cc) ERR("derivs must be (convertable to) a numpy array");
+  Deleter c_(cc);
+  PyArrayObject* c = (PyArrayObject*)cc;
   if(PyArray_NDIM(a)!=2) ERR("sigs must be 2d");
   if(PyArray_NDIM(b)!=2) ERR("scales must be 2d");
   if(PyArray_NDIM(c)!=2) ERR("derivs must be 2d");
-  if(PyArray_TYPE(a)!=NPY_FLOAT32 && PyArray_TYPE(a)!=NPY_FLOAT64)
-    ERR("sigs must be float32 or float64");
-  if(PyArray_TYPE(b)!=NPY_FLOAT32 && PyArray_TYPE(b)!=NPY_FLOAT64)
-    ERR("scales must be float32 or float64");
-  if(PyArray_TYPE(c)!=NPY_FLOAT32 && PyArray_TYPE(c)!=NPY_FLOAT64)
-    ERR("derivs must be float32 or float64");
   const int nPaths = (int)PyArray_DIM(a,0);
   if(nPaths!=(int)PyArray_DIM(b,0))
     ERR("different number of sigs and scales");
@@ -1141,12 +1128,11 @@ logsig(PyObject *self, PyObject *args){
     methodString = methods;
   if(setWantedMethods(wantedmethods,lsf->m_dim,lsf->m_level,true,methodString))
     ERR(methodError);
-  if(!PyArray_Check(a1)) ERR("data must be a numpy array");
-  //PyArrayObject* a = reinterpret_cast<PyArrayObject*>(a1);
-  PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a1));
-  Deleter a_(reinterpret_cast<PyObject*>(a));
+  PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  if (!aa) ERR("data must be (convertable to) a numpy array");
+  Deleter a_(aa);
+  PyArrayObject* a = (PyArrayObject*)aa;
   if(PyArray_NDIM(a)!=2) ERR("data must be 2d");
-  if(PyArray_TYPE(a)!=NPY_FLOAT32 && PyArray_TYPE(a)!=NPY_FLOAT64) ERR("data must be float32 or float64");
   const int lengthOfPath = (int)PyArray_DIM(a,0);
   const int d = (int)PyArray_DIM(a,1);
   if(lengthOfPath<1) ERR("Path has no length");
@@ -1163,34 +1149,18 @@ logsig(PyObject *self, PyObject *args){
     vector<double> displacement(d);
     const bool useCompiled = (f!=nullptr && wantedmethods.m_compiled_bch);
 
-    if(PyArray_TYPE(a)==NPY_FLOAT32){
-      float* data = static_cast<float*>(PyArray_DATA(a));
-      if(lengthOfPath>0){
-        for(int j=0; j<d; ++j)
-          out[j]=data[1*d+j]-data[0*d+j];
-      }
-      for(int i=2; i<lengthOfPath; ++i){
-        for(int j=0;j<d; ++j)
-          displacement[j]=data[i*d+j]-data[(i-1)*d+j];
-        if(useCompiled)
-          f->go(out.data(),displacement.data());
-        else
-          slowExplicitFunction(out.data(), displacement.data(), lsf->m_fd);
-      }
-    }else{
-      double* data = static_cast<double*>(PyArray_DATA(a));
-      if(lengthOfPath>0){
-        for(int j=0; j<d; ++j)
-          out[j]=data[1*d+j]-data[0*d+j];
-      }
-      for(int i=2; i<lengthOfPath; ++i){
-        for(int j=0;j<d; ++j)
-          displacement[j]=data[i*d+j]-data[(i-1)*d+j];
-        if(useCompiled)
-          f->go(out.data(),displacement.data());
-        else
-          slowExplicitFunction(out.data(), displacement.data(), lsf->m_fd);
-      }
+    double* data = static_cast<double*>(PyArray_DATA(a));
+    if(lengthOfPath>0){
+      for(int j=0; j<d; ++j)
+        out[j]=data[1*d+j]-data[0*d+j];
+    }
+    for(int i=2; i<lengthOfPath; ++i){
+      for(int j=0;j<d; ++j)
+        displacement[j]=data[i*d+j]-data[(i-1)*d+j];
+      if(useCompiled)
+        f->go(out.data(),displacement.data());
+      else
+        slowExplicitFunction(out.data(), displacement.data(), lsf->m_fd);
     }
     npy_intp dims[] = {(npy_intp)out.size()};
     PyObject* o = PyArray_SimpleNew(1,dims,OutT::typenum);
@@ -1206,7 +1176,7 @@ logsig(PyObject *self, PyObject *args){
      (wantedmethods.m_log_of_signature && canTakeLogOfSig)){
     CalculatedSignature sig;
     setup_signals();
-    if (!calcSignature(sig, a1, lsf->m_level))
+    if (!calcSignature(sig, a, lsf->m_level))
       return nullptr;
     if (PyErr_CheckSignals())
       return nullptr;
@@ -1374,12 +1344,11 @@ rotinv2d(PyObject *self, PyObject *args) {
   if (!prepared)
     return nullptr;
   int level = prepared->m_level;
-  if (!PyArray_Check(a1)) ERR("data must be a numpy array");
-  //PyArrayObject* a = reinterpret_cast<PyArrayObject*>(a1);
-  PyArrayObject* a = PyArray_GETCONTIGUOUS(reinterpret_cast<PyArrayObject*>(a1));
-  Deleter a_(reinterpret_cast<PyObject*>(a));
+  PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  if (!aa) ERR("data must be (convertable to) a numpy array");
+  Deleter a_(aa);
+  PyArrayObject* a = (PyArrayObject*)aa;
   if (PyArray_NDIM(a) != 2) ERR("data must be 2d");
-  if (PyArray_TYPE(a) != NPY_FLOAT32 && PyArray_TYPE(a) != NPY_FLOAT64) ERR("data must be float32 or float64");
   const int lengthOfPath = (int)PyArray_DIM(a, 0);
   const int d = (int)PyArray_DIM(a, 1);
   if (lengthOfPath < 1) ERR("Path has no length");
@@ -1390,7 +1359,7 @@ rotinv2d(PyObject *self, PyObject *args) {
 
   CalculatedSignature sig;
   setup_signals();
-  if (!calcSignature(sig, a1, level))
+  if (!calcSignature(sig, a, level))
     return nullptr;
   if (PyErr_CheckSignals())
     return nullptr;
