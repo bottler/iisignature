@@ -65,11 +65,11 @@ class RecurrentSig(keras.layers.recurrent.Recurrent):
         self.input_spec = [InputSpec(shape=input_shape)]
         self.input_dim = input_shape[2]
         self.states = [None,None] #?
-        self.W = self.add_weight(shape=(self.input_dim, self.n_units),
+        self.W = self.add_weight((self.input_dim, self.n_units),
                                  name='W', initializer=self.kernel_initializer)
         saved_data_length = self.n_units * (
                                    1+self.sigsize if self.use_signatures else 1)
-        self.U = self.add_weight(shape=(saved_data_length, self.n_units),
+        self.U = self.add_weight((saved_data_length, self.n_units),
                                  name='U',initializer=self.recurrent_initializer)
         self.b = K.zeros((self.n_units,), name='{}_b'.format(self.name))
         
@@ -100,7 +100,7 @@ class RecurrentSig(keras.layers.recurrent.Recurrent):
             output = activated_output_units
         return output,[sigs,raw_output]
 
-    def get_initial_state(self, x):
+    def get_initial_states(self, x):
         # x has shape (samples, timesteps, input_dim)
         # build all-zero tensors of shape (samples, whatever)
         initial_state = K.zeros_like(x)  
