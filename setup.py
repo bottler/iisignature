@@ -1,7 +1,7 @@
 from setuptools import setup, Extension
 import numpy, os
 
-version = "0.18"
+version = "0.19"
 headers = ["bch","calcSignature","logsig","logSigLength","makeCompiledFunction",
             "rotationalInvariants","readBCHCoeffs"]
 
