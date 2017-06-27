@@ -50,8 +50,18 @@ namespace RotationalInvariants {
     real.emplace_back(start1 ? 1 : 0, 1);
     for (unsigned char c : expression)
     {
+#if 0 
+      //Some unfortunate linux setups have new GCC but a std library so old that this
+      //version of insert is a void function
       auto realHalf = real.insert(real.end(), imag.begin(), imag.end());
       auto imagHalf = imag.insert(imag.end(), real.begin(), realHalf);
+#else
+      auto realSize = real.size(), imagSize = imag.size();
+      real.insert(real.end(), imag.begin(), imag.end());
+      auto realHalf = real.begin() + realSize;
+      imag.insert(imag.end(), real.begin(), realHalf);
+      auto imagHalf = imag.begin() + imagSize;
+#endif
       std::for_each(real.begin(), realHalf, [](pair<Idx, double>& p) {
         p.first *= 2;
       });
@@ -69,7 +79,7 @@ namespace RotationalInvariants {
           p.second *= -1;
       });
     }
-    return { real,imag };
+    return { std::move(real), std::move(imag) };
   }
 
   pair<vector<Invariant>, vector<Invariant>> getInvariants(int n) {
@@ -86,7 +96,7 @@ namespace RotationalInvariants {
       std::sort(invariant.begin(), invariant.end());
     for (auto &invariant : odds)
       std::sort(invariant.begin(), invariant.end());
-    return {evens, odds};
+    return {std::move(evens), std::move(odds)};
   }
 
   //returns all the sequences which have m zeros and n ones
@@ -114,6 +124,11 @@ namespace RotationalInvariants {
           size_t idx = 0;
           size_t outBit = 1;
           for (unsigned char takeB : pattern) {
+            //This bit is the bottleneck. Unsure if the commented implementation is faster.
+            //auto& i = (takeB != 0 ? bIdx : aIdx);
+            //if (i % 2)
+            //  idx += outBit;
+            //i /= 2;
             if ((takeB!=0 ? bIdx : aIdx) % 2)
               idx += outBit;
             (takeB ? bIdx : aIdx) /= 2;
