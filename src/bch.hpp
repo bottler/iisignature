@@ -304,8 +304,6 @@ class WordPool{
   LyndonWord* newLyndonWordFromLetter(Letter l){
 #ifndef STORE_STRING_IN_LW
     static_assert(2==objectSize, "bad objectSize");
-#else
-//    static_assert(9 == objectSize, "bad objectSize");
 #endif
     static_assert(eachLength%objectSize==0, "bad eachLength");
     return new(getSpace()) LyndonWord(l);

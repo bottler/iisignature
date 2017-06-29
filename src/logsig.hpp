@@ -5,7 +5,7 @@
 #include "logSigLength.hpp"
 #include<map>
 
-#define SHAREMAT
+//#define SHAREMAT
 
 struct LogSigFunction{
   LogSigFunction(LieBasis basis) : m_s(basis) {}
@@ -368,7 +368,6 @@ namespace IISignature_algebra {
     //If not, remember the potentialNewIndex and return true.
     bool need(const LyndonWord* w, size_t& matrixToUse, size_t potentialNewIndex) {
       vector<size_t> letterFreqs = getLetterFrequencies(w);
-      size_t dummy = 0;
       auto it_bool = m_freq2Idx.insert(std::make_pair(std::move(letterFreqs), potentialNewIndex));
       if (!it_bool.second) {
         matrixToUse = it_bool.first->second;
