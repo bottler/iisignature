@@ -5,6 +5,8 @@
 #include "logSigLength.hpp"
 #include<map>
 
+#define SHAREMAT
+
 struct LogSigFunction{
   LogSigFunction(LieBasis basis) : m_s(basis) {}
   int m_dim, m_level;
@@ -46,6 +48,23 @@ struct LogSigFunction{
   };
   std::vector<std::vector<SmallSVD>> m_smallSVDs;
 
+  //In the Lyndon basis, we have a triangularity property,
+  //SmallTriangle is the data for a small lower triangular part (block) of the mapping.
+  //m_sources is the indices of the relevant elements of the level of the sig
+  //m_dests is the indices of the relevant elements of the level of the logsig
+  //m_matrix has shape sources*dests, but m_sources and m_dests are actually the same length.
+  //m_sources[i] is the index of the word which is the same word as the Lyndon word m_dests[i]
+  //If i<j, then m_matrix(i,j) - i.e. m_matrix[i*m_dests.size()+j] - is zero
+  //If i==j, then m_matrix(i,j) - i.e. m_matrix[i*m_dests.size()+j] - is one
+  struct SmallTriangle{
+    std::vector<size_t> m_sources, m_dests;
+    std::vector<float> m_matrix;
+#ifdef SHAREMAT
+    //if m_matrix is empty, look at this element of our element of m_smallTriangles instead
+    size_t m_matrixToUse;
+#endif
+  };
+  std::vector<std::vector<SmallTriangle>> m_smallTriangles;
 };
 
 InputPos inputPosFromSingle(Input i){
@@ -56,7 +75,9 @@ InputPos inputPosFromSingle(Input i){
 }
 
 //makes a vector of uniquified values from in, with indices saying where each of the in elements is represented.
-//if "being within tol" isn't transitive on your set of numbers then results will be a bit arbitrary.
+//I.e. calculates out_vals and out_indices such that out_vals has no repetition and 
+//in[i] is approximately the same as out_vals[out_indices[i]].
+//If "being within tol" isn't transitive on your set of numbers then results will be a bit arbitrary.
 void uniquifyDoubles(const std::vector<double>& in, std::vector<size_t>& out_indices,
                     std::vector<double>& out_vals, double tol){
   using P = std::pair<double,std::vector<size_t>>;
@@ -228,26 +249,6 @@ lookupInFlatMap(const V& v, const A& a){
   return i->second;
 }
 
-std::vector<size_t> getLetterFrequencies(const LyndonWord* lw){
-  std::vector<Letter> letters;
-  lw->iterateOverLetters([&](Letter l){letters.push_back(l);});
-  std::sort(letters.begin(),letters.end());
-  Letter lastLetter=letters[0];
-  size_t n = 0;
-  std::vector<size_t> out;
-  for(Letter l : letters){
-    if(l==lastLetter)
-      ++n;
-    else{
-      out.push_back(n);
-      lastLetter=l;
-      n=1;
-    }
-  }
-  out.push_back(n);
-  return out;
-}
-
 namespace IISignature_algebra {
   using std::vector;
   using std::pair;
@@ -322,7 +323,10 @@ namespace IISignature_algebra {
       letterOrderToLW.push_back(Letters_LWs{ std::move(l),{ p } });
       lyndonWordToIndex.push_back(std::make_pair(p, index++));
     }
-    std::sort(letterOrderToLW.begin(), letterOrderToLW.end());
+    std::stable_sort(letterOrderToLW.begin(), letterOrderToLW.end(),
+      [](const Letters_LWs& a, const Letters_LWs& b) {
+      return a.first < b.first;
+    });
     std::sort(lyndonWordToIndex.begin(), lyndonWordToIndex.end());
     auto end = amalgamate_adjacent(letterOrderToLW.begin(), letterOrderToLW.end(),
       [](Letters_LWs& a, Letters_LWs& b) {return a.first == b.first; },
@@ -334,6 +338,45 @@ namespace IISignature_algebra {
       return true; });
     letterOrderToLW.erase(end, letterOrderToLW.end());
   }
+
+  std::vector<size_t> getLetterFrequencies(const LyndonWord* lw) {
+    std::vector<Letter> letters;
+    lw->iterateOverLetters([&](Letter l) {letters.push_back(l); });
+    std::sort(letters.begin(), letters.end());
+    Letter lastLetter = letters[0];
+    size_t n = 0;
+    std::vector<size_t> out;
+    for (Letter l : letters) {
+      if (l == lastLetter)
+        ++n;
+      else {
+        out.push_back(n);
+        lastLetter = l;
+        n = 1;
+      }
+    }
+    out.push_back(n);
+    return out;
+  }
+
+  class SharedMatrixDetector {
+    //list of alphabetical letter frequencies -> pos in m_smallSVDs[lev-1]
+    std::map<vector<size_t>, size_t> m_freq2Idx; 
+  public:
+    //If a calculation has already been done for a word with the same letters as w, 
+    //put its index in matrixToUse and return false.
+    //If not, remember the potentialNewIndex and return true.
+    bool need(const LyndonWord* w, size_t& matrixToUse, size_t potentialNewIndex) {
+      vector<size_t> letterFreqs = getLetterFrequencies(w);
+      size_t dummy = 0;
+      auto it_bool = m_freq2Idx.insert(std::make_pair(std::move(letterFreqs), potentialNewIndex));
+      if (!it_bool.second) {
+        matrixToUse = it_bool.first->second;
+        return false;
+      }
+      return true;
+    }
+  };
 
   void makeSparseLogSigMatrices(int dim, int level, LogSigFunction& lsf, Interrupt interrupt) {
     using P = std::pair<size_t, float>;
@@ -351,6 +394,8 @@ namespace IISignature_algebra {
     //x and y are anagrams. So within each level, we group the Lyndon words
     //by the alphabetical list of their letters.
     lsf.m_simples.resize(level);
+    const bool doTriangles = lsf.m_s.m_basis == LieBasis::Lyndon;
+    lsf.m_smallTriangles.resize(level);
     lsf.m_smallSVDs.resize(level);
     for (int lev = 2; lev <= level; ++lev) {
       interrupt();
@@ -359,7 +404,7 @@ namespace IISignature_algebra {
       analyseMappingMatrixLevel(m, lev, letterOrderToLW, lyndonWordToIndex);
       //Now, within lev, letterOrderToLW and lyndonWordToIndex have been created
 #ifdef SHAREMAT
-      std::map<vector<size_t>, size_t> freq2Idx; //list of alphabetical letter frequencies -> pos in m_smallSVDs[lev-1]
+      SharedMatrixDetector detector;
 #endif
       for (auto& i : letterOrderToLW) {
         if (1 == i.second.size()) {
@@ -371,6 +416,39 @@ namespace IISignature_algebra {
           sim.m_factor = 1.0f / p.second;
           sim.m_source = p.first;
           lsf.m_simples[lev - 1].push_back(sim);
+        }
+        else if (doTriangles) {
+          interrupt();
+          lsf.m_smallTriangles[lev - 1].push_back(LogSigFunction::SmallTriangle{});
+          LogSigFunction::SmallTriangle& mtx = lsf.m_smallTriangles[lev - 1].back();
+          size_t triangleSize = i.second.size();
+          vector<intptr_t> fullIdxToSourceIdx(lsf.m_sigLevelSizes[lev - 1], -1);
+          for (auto& j : i.second) {
+            mtx.m_dests.push_back(lookupInFlatMap(lyndonWordToIndex, j));
+            //The 0 in the next line is relying on the fact that a Lyndon word
+            //comes first in its own expansion - Reutenauer theorem 5.1.
+            //It also comes with coefficient 1, so the diagonal of mtx.m_matrix
+            //will always be 1.
+            size_t fullIdx = m[lev - 1].at(j).at(0).first;
+            mtx.m_sources.push_back(fullIdx);
+            fullIdxToSourceIdx.at(fullIdx) = mtx.m_sources.size()-1u;
+          }
+#ifdef SHAREMAT
+          if (detector.need(i.second[0], mtx.m_matrixToUse, lsf.m_smallTriangles[lev - 1].size() - 1))
+#endif
+          {
+            mtx.m_matrix.assign(triangleSize*triangleSize, 0);
+            //note that I can use mtx.m_sources to look up the index of each Lyndon word
+            for (size_t col = 0; col < triangleSize; ++col) {
+              auto lw = i.second[col];
+              for (auto& p : m[lev - 1][lw]) {
+                intptr_t row = fullIdxToSourceIdx.at(p.first);
+                if (row != -1) {
+                  mtx.m_matrix[((size_t)row)*triangleSize + col] = p.second;
+                }
+              }
+            }
+          }
         }
         else {
           interrupt();
@@ -391,14 +469,9 @@ namespace IISignature_algebra {
             mtx.m_sources.push_back(j.first);
           }
 #ifdef SHAREMAT
-          vector<size_t> letterFreqs = getLetterFrequencies(i.second[0]);
-          size_t dummy = 0;
-          auto it_bool = freq2Idx.insert(std::make_pair(std::move(letterFreqs), dummy));
-          if (!it_bool.second)
-            mtx.m_matrixToUse = it_bool.first->second;
-          else {
-            it_bool.first->second = lsf.m_smallSVDs[lev - 1].size() - 1;
+          if (detector.need(i.second[0], mtx.m_matrixToUse, lsf.m_smallSVDs[lev - 1].size() - 1))
 #endif
+          {
             mtx.m_matrix.assign(mtx.m_dests.size()*mtx.m_sources.size(), 0);
             for (size_t j = 0; j < i.second.size(); ++j) {
               for (P& k : m[lev - 1].at(i.second[j])) {
@@ -406,9 +479,7 @@ namespace IISignature_algebra {
                 mtx.m_matrix[rowBegin + j] = k.second;
               }
             }
-#ifdef SHAREMAT
           }
-#endif
         }
       }
 

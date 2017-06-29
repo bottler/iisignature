@@ -1201,6 +1201,23 @@ logsig(PyObject *self, PyObject *args){
       for (const auto& i : lsf->m_simples[l - 1]) {
         out[writeOffset + i.m_dest] = sig.m_data[l - 1][i.m_source] * i.m_factor;
       }
+      for (auto& i : lsf->m_smallTriangles[l - 1]) {
+        size_t triangleSize = i.m_dests.size();
+        auto mat =
+#ifdef SHAREMAT
+          i.m_matrix.empty() ?
+          lsf->m_smallTriangles[l - 1][i.m_matrixToUse].m_matrix.data() :
+#endif
+          i.m_matrix.data();
+        for (size_t dest = 0; dest < triangleSize; ++dest) {
+          double sum = 0;
+          for (size_t source = 0; source < dest; ++source) {
+            sum += mat[dest*triangleSize + source] * out[writeOffset + i.m_dests[source]];
+          }
+          double newVal = sig.m_data[l - 1][i.m_sources[dest]] - sum;
+          out[writeOffset + i.m_dests[dest]] = newVal;
+        }
+      }
       for (auto& i : lsf->m_smallSVDs[l-1]) {
         auto mat = 
 #ifdef SHAREMAT

@@ -11,6 +11,9 @@
 
 #include "readBCHCoeffs.hpp"
 
+//Uncomment this to store (the foliage of) each LyndonWord as a string to aid debugging.
+//#define STORE_STRING_IN_LW
+
 //If you use StandardHall, calculations will be happen according to 
 //the same Hall basis as is used in CoRoPa, and not using the Lyndon word basis.
 //Note that in this case, some of the names and comments in this file will be wrong,
@@ -142,9 +145,17 @@ using Letter = unsigned char;
 class LyndonWord{
   friend class LyndonWordIterator;
  public:
-  LyndonWord(Letter l): m_left(0), m_letter(l){}
+  LyndonWord(Letter l): m_left(0), m_letter(l)
+#ifdef STORE_STRING_IN_LW
+    ,m_s(1,'0'+l)
+#endif
+  {}
   LyndonWord(const LyndonWord& left, const LyndonWord& right)
-    :m_left(&left), m_right(&right){}
+    :m_left(&left), m_right(&right)
+#ifdef STORE_STRING_IN_LW
+    , m_s(left.m_s+right.m_s)
+#endif
+  {}
   bool isLetter() const {return !m_left;}
   Letter getLetter() const {return m_letter;}
   const LyndonWord* getLeft() const {return m_left;}
@@ -169,6 +180,9 @@ class LyndonWord{
     return false;
   }
  private:
+#ifdef STORE_STRING_IN_LW
+   std::string m_s;
+#endif
   const LyndonWord* m_left; //nullptr if we are a letter
   union{
     const LyndonWord* m_right;
@@ -278,13 +292,21 @@ class WordPool{
   std::map<std::pair<const LyndonWord*,const LyndonWord*>,LyndonWord*> m_products;
   std::vector<std::pair<const LyndonWord*, size_t> > m_orderLookup;
  public:
+#ifndef STORE_STRING_IN_LW
   static const int eachLength = 2000;
+#else
+   static const int eachLength = 2016;//a multiple of the object size on all configurations
+#endif
   static const int objectSize = (sizeof(LyndonWord)+sizeof(void*)-1)/sizeof(void*);
   int m_used = eachLength+2;//so we know we need to allocate at the start
   const LieBasis m_basis;
   WordPool(LieBasis basis) : m_basis(basis) {}
   LyndonWord* newLyndonWordFromLetter(Letter l){
+#ifndef STORE_STRING_IN_LW
     static_assert(2==objectSize, "bad objectSize");
+#else
+//    static_assert(9 == objectSize, "bad objectSize");
+#endif
     static_assert(eachLength%objectSize==0, "bad eachLength");
     return new(getSpace()) LyndonWord(l);
   }
@@ -336,6 +358,11 @@ class WordPool{
       throw std::runtime_error("??");
     return a->second;
   }
+  //Currently, we only have one comparison function for the LyndonWord object. It's here.
+  //In the LieBasis::Lyndon case, this function is lexicographic on the letters.
+  //In the StandardHall case, it isn't.
+  //Most of the uses of the ordering are just to choose an order to output or store in a container
+  //- no mathematical properties of the order are relied on, except for the small triangles calculation.
   bool /*__attribute__ ((noinline))*/ manualLexicographicLess(const LyndonWord* l, const LyndonWord* r){
     if (m_basis == LieBasis::Lyndon) {
       LyndonWordIterator lit(l, m_spaceForIterator1), rit(r, m_spaceForIterator2), end;
