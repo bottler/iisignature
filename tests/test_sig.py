@@ -478,11 +478,11 @@ class RotInv2d(TestCase):
         for c,name in ((cs,"s"), (ck,"k"), (ca,"a")):
             evilRows = []
             odiousRows = []
-            for i in range(ca.shape[0]):
+            for i in range(c.shape[0]):
                 evil = 0
                 odious = 0
-                for j in range(ca.shape[1]):
-                    if numpy.abs(ca[i,j]) > 0.00001:
+                for j in range(c.shape[1]):
+                    if numpy.abs(c[i,j]) > 0.00001:
                         if bin(j).count("1") % 2:
                             odious = odious + 1
                         else:
