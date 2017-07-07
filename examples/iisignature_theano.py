@@ -1,11 +1,11 @@
 #This module defines a theano op called Sig,
-# which just does iisignature.sig,
+# which just does iisignature.sig, in a possibly batched way,
 #one called SigJoin,
 # which just does iisignature.sigjoin.
 #and one called SigScale,
 # which just does iisignature.sigscale.
 
-import theano, numpy
+import theano, numpy as np
 import iisignature
 
 #Todo: you can use x.ndim in make_node to change behaviour based on shapes of the input.
@@ -14,7 +14,7 @@ import iisignature
 #Turn on to throw an exception on nan
 nancheck = False
 def contains_nan(x):
-    return numpy.isnan(x).any()
+    return np.isnan(x).any()
 
 #Turn on to throw exceptions in some places when called on a non-contiguous array
 #At the moment, iisignature functions will do extra copying when this happens.
@@ -26,7 +26,7 @@ if report_contig:
     def contig_check(a):
         for i,aa in enumerate(a):
             if not iscontig(aa):
-                raise RuntimeError(str(i+1)+"th argument is not contiguous")
+                raise RuntimeError(str(i+1)+"th argument is not contiguous")      
 
 #This is a theano Op which wraps iisignature.siglength .
 #It is used to implement shape inference of Sig.
@@ -38,7 +38,7 @@ class SigLength_op(theano.Op):
         return theano.Apply(self,[d,m],[theano.tensor.iscalar()])
     def perform(self,node,inp,out):
         #do I really need to create an array here?
-        out[0][0]=numpy.array(iisignature.siglength(inp[0],inp[1]),dtype="int32")
+        out[0][0]=np.array(iisignature.siglength(inp[0],inp[1]),dtype="int32")
     def infer_shape(self,node,shapes):
         return [[]]
 SigLength=SigLength_op()
@@ -55,29 +55,45 @@ class SigGrad_op(theano.Op):
         s=theano.tensor.as_tensor_variable(s)
         x=theano.tensor.as_tensor_variable(x)
         m=theano.tensor.as_tensor_variable(m)
+        outT=theano.tensor.TensorType("float32",[False]*x.ndim)()
         return theano.Apply(self,inputs=[s,x,m],
-                            outputs=[theano.tensor.fmatrix()])
+                            outputs=[outT])
     def perform(self,node,inputs_storage,out):
         s=inputs_storage[0]
         x=inputs_storage[1]
         m=inputs_storage[2]
-        out[0][0]=iisignature.sigbackprop(s,x,m)
+        if x.ndim==3:
+            n=x.shape[0]
+            o=np.zeros_like(x,dtype="float32")
+            for i in range(n):
+                o[i,:,:]=iisignature.sigbackprop(s[i,:],x[i,:,:],m)
+            out[0][0] = o
+        else:
+            out[0][0]=iisignature.sigbackprop(s,x,m)
 SigGrad=SigGrad_op()
 
 #This is a theano Op which wraps iisignature.sig .
 class Sig_op(theano.Op):
     __props__=()
     def infer_shape(self,node,shapes):
-        return [[SigLength(shapes[0][1],node.inputs[1])]]
+        return [shapes[0][:-2]+(SigLength(shapes[0][-1],node.inputs[1]),)]
     def make_node(self,x,m):
         x_=theano.tensor.as_tensor_variable(x)
         m=theano.tensor.as_tensor_variable(m)
+        outT=theano.tensor.TensorType("float32",[False]*(x.ndim-1))()
         return theano.Apply(self,inputs=[x_,m],
-                            outputs=[theano.tensor.fvector()])
+                            outputs=[outT])
     def perform(self,node,inputs_storage,outputs_storage):
-        x=inputs_storage[0] # pathLength x D
+        x=inputs_storage[0] # (batch x ) pathLength x D
         m=inputs_storage[1]
-        outputs_storage[0][0]=iisignature.sig(x,m)
+        if x.ndim==3:
+            n=x.shape[0]
+            out=np.zeros((n,iisignature.siglength(x.shape[2],m)),dtype="float32")
+            for i in range(n):
+                out[i,:]=iisignature.sig(x[i,:,:],m)
+            outputs_storage[0][0]=out
+        else:
+            outputs_storage[0][0]=iisignature.sig(x,m)
     def grad(self,inputs,g):
         return [SigGrad(g[0],inputs[0],inputs[1]),
                 theano.gradient.grad_undefined(self,1,inputs[1])]

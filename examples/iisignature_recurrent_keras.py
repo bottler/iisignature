@@ -3,7 +3,10 @@ from keras.engine import InputSpec
 from keras import backend as K
 from keras import initializers, activations
 import iisignature
-from iisignature_theano import SigJoin
+if K.backend() == "theano":
+    from iisignature_theano import SigJoin
+if K.backend() == "tensorflow":
+    from iisignature_tensorflow import SigJoin
 import math
 
 #Consider initializing so that state is constant initially or something.
