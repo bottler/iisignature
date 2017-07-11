@@ -657,7 +657,7 @@ class LeastSquares {
   PyObject* m_lstsq;
   PyObject* m_pinv;
   PyObject* m_svd;
-  PyObject* m_qr;
+  PyObject* m_qrScipy = nullptr;
   std::unique_ptr<Deleter> m_t_, m_l_, m_p_, m_s_, m_q_; //we can do better than this
 public:
   bool m_ok = false;
@@ -685,11 +685,23 @@ public:
     if (!m_svd)
       return;
     m_s_.reset(new Deleter(m_svd));
-    m_qr = PyObject_GetAttrString(linalg, "qr");
-    if (!m_qr)
-      return;
-    m_q_.reset(new Deleter(m_qr));
     m_ok = true;
+
+    //For some reason I don't understand, I have to use the higher level
+    //PyImport_Import to load scipy.linalg
+    auto pckg_name = PyUnicode_FromString("scipy.linalg");
+    Deleter pckg_name_(pckg_name);
+    PyObject* scipyLinalg = PyImport_Import(pckg_name);
+    if (!scipyLinalg) {
+      PyErr_Clear();
+      return;
+    }
+    Deleter scipyLinalg_(scipyLinalg);
+    m_qrScipy = PyObject_GetAttrString(scipyLinalg, "qr");
+    if (m_qrScipy)
+      m_q_.reset(new Deleter(m_qrScipy));
+    else
+      PyErr_Clear();
   }
   PyObject* lstsqWithTranspose(PyObject *a1, PyObject *a2) const {
     PyObject* a1t = PyObject_CallFunctionObjArgs(m_transpose, a1, NULL);
@@ -736,7 +748,7 @@ public:
   //expect r>c, so that we are interested in the span of the columns,
   class SVD {
   public:
-    double* m_u;//is rxr
+    double* m_u;//is rxr if full_matrices, else rxc
     bool m_ok = false;
     std::unique_ptr<Deleter> m_delete;
     int m_rank = 0;
@@ -791,7 +803,10 @@ public:
 
   //given an rxc matrix mat, find its rank and the Q of its QR
   //on failure, m_ok will be false.
-  //expect r>c, so that we are interested in the span of the columns.
+  //We have r>c, and we are interested in the span of the columns.
+  //So we need to use scipy's qr, which provides pivoting.
+  //The user of this class must have already checked 
+  //that m_qrScipy is not nullptr.
   class QR {
   public:
     double* m_q;//is rxc
@@ -802,13 +817,22 @@ public:
       MatrixOfVector<UseDouble> mat_(mat, r, c);
       if (mat.size() != ((size_t)r*c))
         ERRr("bad use of QR");
-      PyObject* qr = PyObject_CallFunctionObjArgs(ls.m_qr, mat_.m_mat, NULL);
+      PyObject* qr = PyObject_CallFunction(ls.m_qrScipy, "Oissi",mat_.m_mat, 0,NULL,"economic",1);
       if (!qr)
         return;
       m_delete.reset(new Deleter(qr));//a bit of a mess
+      bool ok1 = PyTuple_CheckExact(qr) &&
+        PyTuple_Size(qr) > 1 &&
+        PyArray_Check(PyTuple_GetItem(qr, 0)) &&
+        PyArray_Check(PyTuple_GetItem(qr, 1));
+      if(!ok1)
+        ERRr("scipy qr returned something very strange.");
       PyArrayObject* qr0 = (PyArrayObject*)PyTuple_GetItem(qr, 0);
       PyArrayObject* qr1 = (PyArrayObject*)PyTuple_GetItem(qr, 1);
-      bool ok = PyArray_NDIM(qr0) == 2 &&
+      //NB: It seems scipy returns qr0 as fortran, numpy's qr doesnt
+      bool fortran = PyArray_ISFARRAY_RO(qr0);
+      bool qr0contig = fortran; 
+      bool ok2 = PyArray_NDIM(qr0) == 2 &&
         PyArray_TYPE(qr0) == NPY_FLOAT64 &&
         PyArray_DIM(qr0, 0) == r &&
         PyArray_DIM(qr0, 1) == c &&
@@ -816,11 +840,9 @@ public:
         PyArray_TYPE(qr1) == NPY_FLOAT64 &&
         PyArray_DIM(qr1, 0) == c &&
         PyArray_DIM(qr1, 1) == c &&
-        PyArray_ISCARRAY_RO(qr0) &&
-        PyArray_ISCARRAY_RO(qr1)
-        ;
-      if (!ok)
-        ERRr("numpy qr returned something strange.");
+        qr0contig;
+      if (!ok2)
+        ERRr("scipy qr returned something strange.");
 #ifdef PRINT_SVS
       std::cout << "\n";
 #endif
@@ -939,7 +961,7 @@ public:
   //s.t. colspan(out)=colspan(inp)
   //This is like the previous only the projection matrix is not constructed.
   //space d^2 is never needed.
-  bool projectAwayFrom2(const vector<double>& inp, const vector<double>& sub, npy_intp d, vector<double>& out) {
+  bool projectAwayFromSVD(const vector<double>& inp, const vector<double>& sub, npy_intp d, vector<double>& out) {
     npy_intp m = inp.size() / d;
     npy_intp n = sub.size() / d;
 
@@ -956,6 +978,7 @@ public:
         for (npy_intp k = 0; k < d; ++k)
           inp_projected[k*m + i] -= dot_product * svd.m_u[k*n + j];
       }
+
     SVD svd2(inp_projected, d, m, false, *this);
     if (!svd2.m_ok)
       return false;
@@ -966,6 +989,42 @@ public:
       for (int j = 0; j < out_rank; ++j) {
         //std::cout << i << "," << j << "," << d << "," << out_rank << std::endl;
         out.at(i*out_rank + j) = svd2.m_u[i*m + j];
+      }
+    return true;
+  }
+  //Like projectAwayFromSVD only using QR instead of SVD
+  // - relies on scipy
+  bool projectAwayFromQR(const vector<double>& inp, const vector<double>& sub, npy_intp d, vector<double>& out) {
+    npy_intp m = inp.size() / d;
+    npy_intp n = sub.size() / d;
+
+    if (!m_qrScipy)
+      ERRb("scipy not available, QR method cannot be used");
+
+    QR qr1(sub, d, n, *this);
+    if (!qr1.m_ok)
+      return false;
+
+    vector<double> inp_projected = inp;
+    for (npy_intp i = 0; i < m; ++i)
+      for (npy_intp j = 0; j < qr1.m_rank; ++j) {
+        double dot_product = 0;
+        for (npy_intp k = 0; k < d; ++k)
+          dot_product += inp.at(k*m + i)*qr1.m_q[k + j*d];
+        for (npy_intp k = 0; k < d; ++k)
+          inp_projected[k*m + i] -= dot_product * qr1.m_q[k + j*d];
+      }
+
+    QR qr2(inp_projected, d, m, *this);
+    if (!qr2.m_ok)
+      return false;
+
+    int out_rank = qr2.m_rank;
+    out.assign(d*out_rank, 0);
+    for (int i = 0; i < d; ++i)
+      for (int j = 0; j < out_rank; ++j) {
+        //std::cout << i << "," << j << "," << d << "," << out_rank << std::endl;
+        out.at(i*out_rank + j) = qr2.m_q[i + j*d];
       }
     return true;
   }
@@ -1323,7 +1382,8 @@ rotinv2dprepare(PyObject *self, PyObject *args) {
   using T = RotationalInvariants::Prepared;
   auto p = std::unique_ptr<T>(new T(level,t));
 #ifndef IISIGNATURE_NO_NUMPY
-  if (t == RotationalInvariants::InvariantType::SVD) {
+  if (t == RotationalInvariants::InvariantType::SVD || 
+      t==RotationalInvariants::InvariantType::QR) {
     LeastSquares ls;
     if (!ls.m_ok)
       return nullptr;
@@ -1333,7 +1393,12 @@ rotinv2dprepare(PyObject *self, PyObject *args) {
         size_t idx = lev - 2 + parity;
         RotationalInvariants::invariantsToMatrix(p->m_invariants[idx], lev, tempa);
         RotationalInvariants::invariantsToMatrix(p->m_knownInvariants[idx], lev, tempb);
-        if (!ls.projectAwayFrom2(tempa, tempb, ((npy_intp)1) << (lev-1), tempc)) //lev instead of (lev-1) to unsquish
+        bool ok = false;
+        if (t == RotationalInvariants::InvariantType::QR)
+          ok = ls.projectAwayFromQR(tempa, tempb, ((npy_intp)1) << (lev - 1), tempc);
+        else
+          ok = ls.projectAwayFromSVD(tempa, tempb, ((npy_intp)1) << (lev - 1), tempc);
+        if (!ok) 
           return nullptr;
         RotationalInvariants::invariantsFromMatrix(tempc, lev, parity, p->m_invariants[idx]);
       }

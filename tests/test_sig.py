@@ -449,6 +449,8 @@ class RotInv2d(TestCase):
         self.dotest("a")
     def test_k(self):
         self.dotest("k")
+    def test_q(self):
+        self.dotest("q")
     def test_s(self):
         self.dotest("s")
 
@@ -466,23 +468,29 @@ class RotInv2d(TestCase):
         residuals = numpy.linalg.lstsq(ca.T,ck.T)[1]
         self.assertLess(numpy.max(numpy.abs(residuals)),0.000001)
 
-        ss = iisignature.rotinv2dprepare(m,"s")
+        sq = iisignature.rotinv2dprepare(m, "q")
+        cq = iisignature.rotinv2dcoeffs(sq)[-1]
+        ss = iisignature.rotinv2dprepare(m, "s")
         cs = iisignature.rotinv2dcoeffs(ss)[-1]
-        #every row of cs should be in the span of the rows of ca
-        residuals2 = numpy.linalg.lstsq(ca.T,cs.T)[1]
-        self.assertLess(numpy.max(numpy.abs(residuals2)),0.000001)
+        # every row of cs and cq should be in the span of the rows of ca
+        residuals2 = numpy.linalg.lstsq(ca.T, cs.T)[1]
+        self.assertLess(numpy.max(numpy.abs(residuals2)), 0.000001)
+        residuals2 = numpy.linalg.lstsq(ca.T, cq.T)[1]
+        self.assertLess(numpy.max(numpy.abs(residuals2)), 0.000001)
+
+        self.assertEqual(cq.shape, cs.shape)
 
         #check that rows with nonzeros in evil columns are all before
         #rows with nonzeros in odious columns
         #print ((numpy.abs(ca)>0.00000001).astype("int8"))
-        for c,name in ((cs,"s"), (ck,"k"), (ca,"a")):
+        for c, name in ((cs, "s"), (ck, "k"), (ca, "a"), (cq, "q")):
             evilRows = []
             odiousRows = []
             for i in range(c.shape[0]):
                 evil = 0
                 odious = 0
                 for j in range(c.shape[1]):
-                    if numpy.abs(c[i,j]) > 0.00001:
+                    if numpy.abs(c[i, j]) > 0.00001:
                         if bin(j).count("1") % 2:
                             odious = odious + 1
                         else:
@@ -497,7 +505,7 @@ class RotInv2d(TestCase):
 
 
 
-        
+
 if __name__ == "__main__":
     sys.path.append("..")
     import iisignature

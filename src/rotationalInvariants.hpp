@@ -146,16 +146,18 @@ namespace RotationalInvariants {
     return out;
   }
 
-  enum class InvariantType {ALL, KNOWN, SVD};
+  enum class InvariantType {ALL, KNOWN, SVD, QR};
   //returns true on failure
   bool getWantedMethod(const std::string& input, InvariantType& t) {
     const auto npos = std::string::npos;
     bool all = (npos != input.find_first_of("aA"));
     bool known = (npos != input.find_first_of("kK"));
     bool svd = (npos != input.find_first_of("sS"));
-    if (1!=(all ?1:0)+(svd?1:0)+(known?1:0))
+    bool qr = (npos != input.find_first_of("qQ"));
+    if (1!=(all ?1:0)+(svd?1:0)+(qr?1:0)+(known?1:0))
       return true;
-    t = (all ? InvariantType::ALL : svd ? InvariantType::SVD : InvariantType::KNOWN);
+    t = (all ? InvariantType::ALL : svd ? InvariantType::SVD : 
+          qr ? InvariantType::QR : InvariantType::KNOWN);
     return false;
   }
 
