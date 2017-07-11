@@ -6,6 +6,7 @@
 #include<set>
 #include"logsig.hpp"
 #include "arbitrarySig.hpp"
+#include "rotationalInvariants.hpp"
 using namespace std;
 
 void interrupt() {}
@@ -23,42 +24,43 @@ void interrupt1() {
 }
 
 void setupGlobal() {
-	ifstream f("c:\\play\\iisignature\\iisignature_data\\bchLyndon20.dat");
-	auto s = new std::string(istreambuf_iterator<char>(f), {});
-	g_bchLyndon20_dat = s->c_str();
+  ifstream f("c:\\play\\iisignature\\iisignature_data\\bchLyndon20.dat");
+  auto s = new std::string(istreambuf_iterator<char>(f), {});
+  g_bchLyndon20_dat = s->c_str();
 }
 
 void trial() {
-	setupGlobal();
-	LogSigFunction lsf(LieBasis::Lyndon);
-	WantedMethods wm;
-	wm.m_expanded = wm.m_compiled_bch = wm.m_log_of_signature = wm.m_simple_bch = false;
-	wm.m_compiled_bch = true;
-	makeLogSigFunction(2, 2, lsf, wm, interrupt);
-	vector<double> signature{ 3,3,3.0 };
-	vector<double> displacement{ 1,17.0 };
-	lsf.m_f->go(signature.data(), displacement.data());
+  setupGlobal();
+  LogSigFunction lsf(LieBasis::Lyndon);
+  WantedMethods wm;
+  wm.m_expanded = wm.m_compiled_bch = wm.m_log_of_signature = wm.m_simple_bch = false;
+  wm.m_compiled_bch = true;
+  makeLogSigFunction(2, 2, lsf, wm, interrupt);
+  vector<double> signature{ 3,3,3.0 };
+  vector<double> displacement{ 1,17.0 };
+  lsf.m_f->go(signature.data(), displacement.data());
 }
 
 void trySVD() {
-	setupGlobal();
-	LogSigFunction lsf(LieBasis::Lyndon);
-	WantedMethods wm;
-	wm.m_expanded =wm.m_compiled_bch= wm.m_log_of_signature = wm.m_simple_bch = false;
-	wm.m_log_of_signature = true;
-	makeLogSigFunction(103, 4, lsf, wm, interrupt1);
+  setupGlobal();
+  LogSigFunction lsf(LieBasis::Lyndon);
+  WantedMethods wm;
+  wm.m_expanded =wm.m_compiled_bch= wm.m_log_of_signature = wm.m_simple_bch = false;
+  wm.m_log_of_signature = true;
+  //makeLogSigFunction(103, 4, lsf, wm, interrupt1);
+  makeLogSigFunction(3, 5, lsf, wm, interrupt);
 }
 
 void __fastcall foo(double* a, const double* b, double* c);
 typedef void(__fastcall *F)(double*, const double*, double*);
 
 int main1() { 
-	trySVD();
-	//trial();
-	double a = 3, b = 4, v = 4;
-	foo(&a, &b, &v);
-	F ff = foo;
-	//cout << 3 << "\n";
+  trySVD();
+  //trial();
+  double a = 3, b = 4, v = 4;
+  foo(&a, &b, &v);
+  F ff = foo;
+  //cout << 3 << "\n";
   return 0;
 }
 
@@ -179,7 +181,7 @@ void dynkinExperiment(const int d, const int m, bool p1, bool p2) {
 std::vector<Letter> indexToWord(size_t index, int d, int m) {
   std::vector<Letter> o;
   for (int i = 0; i < m; ++i) {
-    Letter dig = index % d;
+    Letter dig = (Letter)(index % d);
     index = index / d;
     o.push_back(dig);
   }
@@ -194,14 +196,14 @@ void printAMappingMatrix() {
   //vector<Letter> myletters{ 0,0,0,1,1,1,2,2,2 };
   //vector<Letter> myletters{ 0,0,1,2 };
   //vector<Letter> myletters{ 0,1,2};
-  if (!std::is_sorted(myletters.begin(), myletters.end()) || myletters.at(0)!=0)
+  if (!std::is_sorted(myletters.begin(), myletters.end()) || myletters.at(0) != 0)
     throw "myletters must be sorted";
   int m = (int)myletters.size();
   int d = 1 + *std::max_element(myletters.begin(), myletters.end());
   using namespace IISignature_algebra;
-//  WordPool w(LieBasis::Lyndon);
+  //WordPool w(LieBasis::Lyndon);
   WordPool w(LieBasis::StandardHall);
-  bool printBrackets = LieBasis::StandardHall == w.m_basis;
+  bool printBrackets = 1;// LieBasis::StandardHall == w.m_basis;
   auto list = makeListOfLyndonWords(w, d, m);
   vector<LyndonWord*> wds;
   for (auto& v : list)
@@ -238,15 +240,16 @@ void printAMappingMatrix() {
     initialSpaces += 3 * (m - 1);//two brackets and a comma
   }
   for (int i = 0; i < m; ++i) {
-    for (int j = 0; j < initialSpaces; ++j)
+    for (size_t j = 0; j < initialSpaces; ++j)
       output << " ";
     for (const auto& j : tensorLetters)
-      output << (char)('1'+j[i]);
+      output << (char)('1' + j[i]);
     output << "\n";
   }
   for (auto wd : v) {
     vector<float> out(usedTensorIndicesS.size());
-    for (auto& i : mappingMatrix.back().at(wd))
+    auto& expanded = mappingMatrix.back().at(wd);
+    for (auto& i : expanded)
       out[bigIdx2SmallIdx.at(i.first)] = i.second;
     if(!printBrackets)
       printLyndonWordDigits(*wd, output);
@@ -270,7 +273,7 @@ void printAMappingMatrix() {
       float nice = i < 0 ? -i : i;
       nice = (nice <= 9) ? nice : 9;
       //output << " ";
-      if (w.m_basis == LieBasis::Lyndon && wd_small_idx == j) {
+      if (w.m_basis == LieBasis::Lyndon && wd_small_idx == (int)j) {
         std::cout << i << "\n";
         output << (nice != 1 ? "*" : "#");
       }
@@ -281,8 +284,48 @@ void printAMappingMatrix() {
   }
 }
 
+class SecondsCounter
+{
+  const std::chrono::steady_clock::time_point start;
+  double& output;
+public:
+  SecondsCounter(double& output) :start(std::chrono::steady_clock::now()), output(output) {}
+  ~SecondsCounter() { output = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count() / 1000.0; }
+};
+
+void timeRotInv() {
+  double out=0;
+  double sum = 0;
+  {
+    SecondsCounter s(out);
+    int level = 16;
+    for (int lev = 2; lev <= level; lev += 2) {
+      auto invs = RotationalInvariants::getInvariants(lev / 2);
+      sum += invs.first[1][0].first;
+    }
+  }
+  std::cout << "time taken (s): " << out << "\n";
+  std::cout << sum << "\n";//just to confound the optimizer
+}
+
+
+void timeRotInv2() {
+  double out = 0;
+  double sum = 0;
+  {
+    SecondsCounter s(out);
+    int level = 14;
+    RotationalInvariants::Prepared(level, RotationalInvariants::InvariantType::KNOWN);
+  }
+  std::cout << "time taken (s): " << out << "\n";
+  std::cout << sum << "\n";//just to confound the optimizer
+}
+
 int main() {
   printAMappingMatrix();
+  //RotationalInvariants::printAsMatrix();
+  //timeRotInv2();
+  //RotationalInvariants::demoShuffle();
   //trial();
   //printListOfLyndonWords(2, 5);
   //ArbitrarySig::printArbitrarySig(3, 6);

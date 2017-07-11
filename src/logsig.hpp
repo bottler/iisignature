@@ -108,13 +108,13 @@ void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, s
                             bool justWords, Interrupt interrupt){
   using std::vector;
   using std::make_pair;
-  if(level>20)
-    throw std::runtime_error("Coefficients only available up to level 20");
 
   auto wordList = makeListOfLyndonWords(s,dim,level);
   std::unique_ptr<Polynomial> lhs(new Polynomial);
   std::unique_ptr<Polynomial> rhs(new Polynomial);
   if(!justWords){
+    if (level>20)
+      throw std::runtime_error("Coefficients only available up to level 20");
     rhs->m_data.resize(1);
     for(int i=0; i<dim; ++i)
       rhs->m_data[0].push_back(std::make_pair(wordList[0][i],basicCoeff(-i-1))); //just the letters in order
