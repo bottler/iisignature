@@ -1077,13 +1077,13 @@ static PyObject* basis(PyObject *self, PyObject *args){
   LogSigFunction* lsf = getLogSigFunction(c);
   if(!lsf)
     return nullptr;
-  auto& wordlist = lsf->m_basisWords;
-  PyObject* o = PyTuple_New(wordlist.size());
+  auto& elementList = lsf->m_basisElements;
+  PyObject* o = PyTuple_New(elementList.size());
   if (!o)
     return nullptr;
-  for(size_t i=0; i<wordlist.size(); ++i){
+  for(size_t i=0; i<elementList.size(); ++i){
     std::ostringstream oss;
-    printLyndonWordBracketsDigits(*wordlist[i],oss);
+    printBasisEltBracketsDigits(*elementList[i],oss);
     std::string s = oss.str();
     PyTuple_SET_ITEM(o,i,PyUnicode_FromString(s.c_str()));
   }
@@ -1139,7 +1139,7 @@ logsig(PyObject *self, PyObject *args){
   if(d!=lsf->m_dim) 
     ERR(("Path has dimension "+std::to_string(d)+" but we prepared for dimension "
          +std::to_string(lsf->m_dim)).c_str());
-  size_t logsiglength = lsf->m_basisWords.size();
+  size_t logsiglength = lsf->m_basisElements.size();
   vector<double> out(logsiglength);//why double
 
   FunctionRunner* f = lsf->m_f.get();

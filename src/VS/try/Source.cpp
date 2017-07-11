@@ -117,16 +117,16 @@ double numberFromCoeff(const Coefficient& coeff) {
 //and therefore the dynkin map is not an *orthogonal* projection (in the obvious basis).
 void dynkinExperiment(const int d, const int m, bool p1, bool p2) {
   using namespace IISignature_algebra;
-  WordPool w(LieBasis::Lyndon);
-  auto list = makeListOfLyndonWords(w, d, m);
-  vector<LyndonWord*> wds;
+  BasisPool s(LieBasis::Lyndon);
+  auto list = makeListOfBasisElts(s, d, m);
+  vector<BasisElt*> elts;
   for (auto& v : list)
-    for (auto wd : v)
-      wds.push_back(wd);
+    for (auto elt : v)
+      elts.push_back(elt);
   vector<size_t> sigLevelSizes{ (size_t)d };
   for (int level = 2; level <= m; ++level)
     sigLevelSizes.push_back(d*sigLevelSizes.back());
-  auto mappingMatrix = makeMappingMatrix(d, m, w, wds, sigLevelSizes);
+  auto mappingMatrix = makeMappingMatrix(d, m, s, elts, sigLevelSizes);
   const auto& map = mappingMatrix[m - 1];
   vector<vector<double>> fullMatrix(sigLevelSizes.back());
   for (auto& v : fullMatrix)
@@ -137,13 +137,13 @@ void dynkinExperiment(const int d, const int m, bool p1, bool p2) {
   for (int i = 0; i < nWords; ++i)
   {
     int offset = i*m;
-    LyndonWord* firstLetter = letters[allSeqs[offset]];
-    auto poly = polynomialOfWord(firstLetter);
-    auto poly2 = polynomialOfWord(letters[allSeqs[offset + m - 1]]);
+    BasisElt* firstLetter = letters[allSeqs[offset]];
+    auto poly = polynomialOfBasisElt(firstLetter);
+    auto poly2 = polynomialOfBasisElt(letters[allSeqs[offset + m - 1]]);
     for (int j = 1; j < m; ++j) {
-      auto n = productPolynomials(w, &*poly, &*polynomialOfWord(letters[allSeqs[offset + j]]), 1 + j);
+      auto n = productPolynomials(s, &*poly, &*polynomialOfBasisElt(letters[allSeqs[offset + j]]), 1 + j);
       poly = move(n);
-      auto n2 = productPolynomials(w, &*polynomialOfWord(letters[allSeqs[offset + m-1-j]]), &*poly2, 1 + j);
+      auto n2 = productPolynomials(s, &*polynomialOfBasisElt(letters[allSeqs[offset + m-1-j]]), &*poly2, 1 + j);
       poly2 = move(n2);
     }
     if (!p1)
@@ -201,27 +201,27 @@ void printAMappingMatrix() {
   int m = (int)myletters.size();
   int d = 1 + *std::max_element(myletters.begin(), myletters.end());
   using namespace IISignature_algebra;
-  //WordPool w(LieBasis::Lyndon);
-  WordPool w(LieBasis::StandardHall);
-  bool printBrackets = 1;// LieBasis::StandardHall == w.m_basis;
-  auto list = makeListOfLyndonWords(w, d, m);
-  vector<LyndonWord*> wds;
+  //BasisPool s(LieBasis::Lyndon);
+  BasisPool s(LieBasis::StandardHall);
+  bool printBrackets = 1;// LieBasis::StandardHall == s.m_basis;
+  auto list = makeListOfBasisElts(s, d, m);
+  vector<BasisElt*> elts;
   for (auto& v : list)
-    for (auto wd : v)
-      wds.push_back(wd);
+    for (auto elt : v)
+      elts.push_back(elt);
   vector<size_t> sigLevelSizes{ (size_t)d };
   for (int level = 2; level <= m; ++level)
     sigLevelSizes.push_back(d*sigLevelSizes.back());
-  auto mappingMatrix = makeMappingMatrix(d, m, w, wds, sigLevelSizes);
-  LyndonWordToIndex lyndonWordToIndex;
-  LetterOrderToLW letterOrderToLW;
-  analyseMappingMatrixLevel(mappingMatrix, m, letterOrderToLW, lyndonWordToIndex);
-  auto v = lookupInFlatMap(letterOrderToLW, myletters);
+  auto mappingMatrix = makeMappingMatrix(d, m, s, elts, sigLevelSizes);
+  BasisEltToIndex basisEltToIndex;
+  LetterOrderToBE letterOrderToBE;
+  analyseMappingMatrixLevel(mappingMatrix, m, letterOrderToBE, basisEltToIndex);
+  auto v = lookupInFlatMap(letterOrderToBE, myletters);
   std::set<size_t> usedTensorIndicesS;
-  for (auto wd : v) {
-    for (auto& i : mappingMatrix.back().at(wd))
+  for (auto elt : v) {
+    for (auto& i : mappingMatrix.back().at(elt))
       usedTensorIndicesS.insert(i.first);
-    //printLyndonWordDigits(*wd, std::cout);
+    //printBasisEltDigits(*elt, std::cout);
     //std::cout << "\n";
   }
   //vector<size_t> usedTensorIndices(usedTensorIndicesS.begin(), usedTensorIndicesS.end());
@@ -246,34 +246,34 @@ void printAMappingMatrix() {
       output << (char)('1' + j[i]);
     output << "\n";
   }
-  for (auto wd : v) {
+  for (auto elt : v) {
     vector<float> out(usedTensorIndicesS.size());
-    auto& expanded = mappingMatrix.back().at(wd);
+    auto& expanded = mappingMatrix.back().at(elt);
     for (auto& i : expanded)
       out[bigIdx2SmallIdx.at(i.first)] = i.second;
     if(!printBrackets)
-      printLyndonWordDigits(*wd, output);
+      printBasisEltDigits(*elt, output);
     else
-      printLyndonWordBracketsDigits(*wd, output);
+      printBasisEltBracketsDigits(*elt, output);
     output << " ";
-    vector<Letter> wd_letters;
-    wd->iterateOverLetters([&](Letter l) {wd_letters.push_back(l); });
-    //std::reverse(wd_letters.begin(), wd_letters.end());
-    size_t wd_idx = 0;
-    for (Letter l : wd_letters) {
-      wd_idx *= d;
-      wd_idx += l;
+    vector<Letter> elt_letters;
+    elt->iterateOverLetters([&](Letter l) {elt_letters.push_back(l); });
+    //std::reverse(elt_letters.begin(), elt_letters.end());
+    size_t elt_idx = 0;
+    for (Letter l : elt_letters) {
+      elt_idx *= d;
+      elt_idx += l;
     }
-    int wd_small_idx = -1;
-    if (w.m_basis==LieBasis::Lyndon)
-      wd_small_idx = (int)bigIdx2SmallIdx.at(wd_idx);
+    int elt_small_idx = -1;
+    if (s.m_basis==LieBasis::Lyndon)
+      elt_small_idx = (int)bigIdx2SmallIdx.at(elt_idx);
       
     for (size_t j = 0; j != out.size(); ++j) {
       float i = out[j];
       float nice = i < 0 ? -i : i;
       nice = (nice <= 9) ? nice : 9;
       //output << " ";
-      if (w.m_basis == LieBasis::Lyndon && wd_small_idx == (int)j) {
+      if (s.m_basis == LieBasis::Lyndon && elt_small_idx == (int)j) {
         std::cout << i << "\n";
         output << (nice != 1 ? "*" : "#");
       }

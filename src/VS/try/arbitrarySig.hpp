@@ -94,25 +94,25 @@ namespace ArbitrarySig {
 
   void printArbitrarySig(const int d, const int m) {
     using namespace IISignature_algebra;
-    WordPool w(LieBasis::Lyndon);
-    vector<LyndonWord*> wds;
-    auto list = makeListOfLyndonWords(w, d, m);
+    BasisPool basisPool(LieBasis::Lyndon);
+    vector<BasisElt*> elts;
+    auto list = makeListOfBasisElts(basisPool, d, m);
     auto logsig = std::make_unique<Polynomial>();
     int idx = 0;
     for (auto& v : list) {
       logsig->m_data.push_back({});
-      for (auto wd : v) {
+      for (auto elt : v) {
         //char c = 'a' + idx;
-        logsig->m_data.back().push_back(make_pair(wd, basicCoeff(idx)));
+        logsig->m_data.back().push_back(make_pair(elt, basicCoeff(idx)));
         ++idx;
-        wds.push_back(wd);
+        elts.push_back(elt);
       }
     }
     printPolynomial(*logsig, std::cout);
     vector<size_t> sigLevelSizes{ (size_t)d };
     for (int level = 2; level <= m; ++level)
       sigLevelSizes.push_back(d*sigLevelSizes.back());
-    auto mappingMatrix = makeMappingMatrix(d, m, w, wds, sigLevelSizes);
+    auto mappingMatrix = makeMappingMatrix(d, m, basisPool, elts, sigLevelSizes);
     ArbitrarySignature tensorspace(d, m);
     for (int level = 1; level <= m; ++level) {
       auto& logdata = logsig->m_data[level - 1];

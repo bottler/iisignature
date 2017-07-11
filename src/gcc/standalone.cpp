@@ -9,10 +9,10 @@ using std::endl;
 void doNothing(){}
 
 void testFreq(){
-  LyndonWord lw4(4);
-  LyndonWord lw5(5);
-  LyndonWord lw6(6);
-  LyndonWord l (lw4,LyndonWord(lw4,LyndonWord(LyndonWord(lw6,lw4),LyndonWord(lw4,LyndonWord(lw5,lw6)))));
+  BasisElt lw4(4);
+  BasisElt lw5(5);
+  BasisElt lw6(6);
+  BasisElt l (lw4, BasisElt(lw4, BasisElt(BasisElt(lw6,lw4), BasisElt(lw4, BasisElt(lw5,lw6)))));
   auto f= getLetterFrequencies(&l);
   for(size_t i : f)
     std::cout <<i<<"\n";

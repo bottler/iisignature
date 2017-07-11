@@ -10,8 +10,8 @@
 struct LogSigFunction{
   LogSigFunction(LieBasis basis) : m_s(basis) {}
   int m_dim, m_level;
-  WordPool m_s;
-  std::vector<LyndonWord*> m_basisWords;
+  BasisPool m_s;
+  std::vector<BasisElt*> m_basisElements;
   FunctionData m_fd;
   std::unique_ptr<FunctionRunner> m_f;
 
@@ -104,12 +104,12 @@ void uniquifyDoubles(const std::vector<double>& in, std::vector<size_t>& out_ind
     });
 }
 
-void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, std::vector<LyndonWord*>& basisWords,
+void makeFunctionDataForBCH(int dim, int level, BasisPool& s, FunctionData& fd, std::vector<BasisElt*>& basisWords,
                             bool justWords, Interrupt interrupt){
   using std::vector;
   using std::make_pair;
 
-  auto wordList = makeListOfLyndonWords(s,dim,level);
+  auto eltList = makeListOfBasisElts(s,dim,level);
   std::unique_ptr<Polynomial> lhs(new Polynomial);
   std::unique_ptr<Polynomial> rhs(new Polynomial);
   if(!justWords){
@@ -117,19 +117,19 @@ void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, s
       throw std::runtime_error("Coefficients only available up to level 20");
     rhs->m_data.resize(1);
     for(int i=0; i<dim; ++i)
-      rhs->m_data[0].push_back(std::make_pair(wordList[0][i],basicCoeff(-i-1))); //just the letters in order
+      rhs->m_data[0].push_back(std::make_pair(eltList[0][i],basicCoeff(-i-1))); //just the letters in order
   }
-  for(auto& l : wordList)
-    std::sort(l.begin(),l.end(),[&s](LyndonWord* a, LyndonWord* b){
+  for(auto& l : eltList)
+    std::sort(l.begin(),l.end(),[&s](BasisElt* a, BasisElt* b){
       return s.lexicographicLess(a,b);});
   if(!justWords){
     lhs->m_data.resize(level);
     for(int l=1,i=1; l<=level; ++l)
-      for(auto w : wordList[l-1]){
+      for(auto w : eltList[l-1]){
         lhs->m_data[l-1].push_back(std::make_pair(w,basicCoeff(i++)));
     }
   }
-  for(auto& l : wordList)
+  for(auto& l : eltList)
     for(auto& k : l)
       basisWords.push_back(k);
   
@@ -229,13 +229,14 @@ void makeFunctionDataForBCH(int dim, int level, WordPool& s, FunctionData& fd, s
   }
 }
 
-class LessLW{
+//lexicographicLess made into a function object
+class LessBE{
 public:
-  LessLW(WordPool& wp):m_wp(&wp){}
-  bool operator()(const LyndonWord* a, const LyndonWord* b) const{
-    return m_wp->lexicographicLess(a,b);
+  LessBE(BasisPool& basisPool):m_basisPool(&basisPool){}
+  bool operator()(const BasisElt* a, const BasisElt* b) const{
+    return m_basisPool->lexicographicLess(a,b);
   }
-  WordPool* m_wp;
+  BasisPool* m_basisPool;
 };
 
 //Given v, a sorted vector<pair<A,B> > which contains (a,x) for exactly one x,
@@ -256,27 +257,26 @@ namespace IISignature_algebra {
   //it would be nice to use a lambda and decltype here, but visual studio
   //doesn't allow swapping two lambdas of the same type, 
   //so the vector operations fail.
-  //if x is a lyndon word, then mappingMatrix[len(x)-1][x] is the sparse vector which is its image in tensor
+  //if x is a basis element for level m, then mappingMatrix[m-1][x] is 
+  //the sparse vector which is its image in tensor
   //space - what we call rho(x)
   using MappingMatrixLevel =
-    std::map<const LyndonWord*, std::vector<std::pair<size_t, float> >, LessLW>;
+    std::map<const BasisElt*, std::vector<std::pair<size_t, float> >, LessBE>;
   using MappingMatrix = std::vector<MappingMatrixLevel>;
 
-  MappingMatrix makeMappingMatrix(int /*dim*/, int level, WordPool &wp,
-    const std::vector<LyndonWord*> &basisWords,
+  MappingMatrix makeMappingMatrix(int /*dim*/, int level, BasisPool &basisPool,
+    const std::vector<BasisElt*> &basisWords,
     const std::vector<size_t> &sigLevelSizes) {
     using P = std::pair<size_t, float>;
     using std::vector;
     //it would be nice to use a lambda and decltype here, but visual studio
     //doesn't allow swapping two lambdas of the same type, 
     //so the vector operations fail.
-    //if x is a lyndon word, then m[len(x)-1][x] is the sparse vector which is its image in tensor
-    //space - what we call rho(x)
-    std::vector<std::map<const LyndonWord*, std::vector<P>, LessLW> > m;
+    vector<std::map<const BasisElt*, vector<P>, LessBE> > m;
     m.reserve(level);
     for (int i = 0; i < level; ++i)
-      m.emplace_back(LessLW(wp));
-    for (LyndonWord* w : basisWords) {
+      m.emplace_back(LessBE(basisPool));
+    for (BasisElt* w : basisWords) {
       if (w->isLetter()) {
         m[0][w] = { std::make_pair(w->getLetter(),1.0f) };
       }
@@ -303,43 +303,43 @@ namespace IISignature_algebra {
     return m;
   }
 
-  //Given a MappingMatrix (contains the information for  the mapping LW -> tensor space
-  //fill letterOrderToLW (maps a sorted list of letters to the LWs which have it)
-  //and lyndonWordToIndex (maps an LW to its index)
+  //Given a MappingMatrix (contains the information for the mapping BasisElt -> tensor space
+  //fill letterOrderToBE (maps a sorted list of letters to the BEs which have it)
+  //and basisEltToIndex (maps a BE to its index)
   //based on level lev
-  using Letters_LWs = std::pair<vector<Letter>, vector< const LyndonWord*>>;
-  using LetterOrderToLW = std::vector<Letters_LWs>;
-  using LyndonWordToIndex = std::vector<std::pair<const LyndonWord*, size_t>>;
+  using Letters_BEs = std::pair<vector<Letter>, vector< const BasisElt*>>;
+  using LetterOrderToBE = std::vector<Letters_BEs>;
+  using BasisEltToIndex = std::vector<std::pair<const BasisElt*, size_t>>;
   void analyseMappingMatrixLevel(const MappingMatrix& m, int lev,
-    LetterOrderToLW& letterOrderToLW, LyndonWordToIndex& lyndonWordToIndex) {
-    letterOrderToLW.reserve(m.size());
+    LetterOrderToBE& letterOrderToBE, BasisEltToIndex& basisEltToIndex) {
+    letterOrderToBE.reserve(m.size());
     size_t index = 0;
     for (auto& a : m[lev - 1]) {
-      const LyndonWord* p = a.first;
+      const BasisElt* p = a.first;
       std::vector<Letter> l;
       l.reserve(lev);
       p->iterateOverLetters([&l](Letter x) {l.push_back(x); });
       std::sort(l.begin(), l.end());
-      letterOrderToLW.push_back(Letters_LWs{ std::move(l),{ p } });
-      lyndonWordToIndex.push_back(std::make_pair(p, index++));
+      letterOrderToBE.push_back(Letters_BEs{ std::move(l),{ p } });
+      basisEltToIndex.push_back(std::make_pair(p, index++));
     }
-    std::stable_sort(letterOrderToLW.begin(), letterOrderToLW.end(),
-      [](const Letters_LWs& a, const Letters_LWs& b) {
+    std::stable_sort(letterOrderToBE.begin(), letterOrderToBE.end(),
+      [](const Letters_BEs& a, const Letters_BEs& b) {
       return a.first < b.first;
     });
-    std::sort(lyndonWordToIndex.begin(), lyndonWordToIndex.end());
-    auto end = amalgamate_adjacent(letterOrderToLW.begin(), letterOrderToLW.end(),
-      [](Letters_LWs& a, Letters_LWs& b) {return a.first == b.first; },
-      [](vector<Letters_LWs>::iterator a, vector<Letters_LWs>::iterator b) {
+    std::sort(basisEltToIndex.begin(), basisEltToIndex.end());
+    auto end = amalgamate_adjacent(letterOrderToBE.begin(), letterOrderToBE.end(),
+      [](Letters_BEs& a, Letters_BEs& b) {return a.first == b.first; },
+      [](vector<Letters_BEs>::iterator a, vector<Letters_BEs>::iterator b) {
       auto aa = a;
       ++aa;
-      std::for_each(aa, b, [a](Letters_LWs& pp) {
+      std::for_each(aa, b, [a](Letters_BEs& pp) {
         a->second.push_back(pp.second[0]); });
       return true; });
-    letterOrderToLW.erase(end, letterOrderToLW.end());
+    letterOrderToBE.erase(end, letterOrderToBE.end());
   }
 
-  std::vector<size_t> getLetterFrequencies(const LyndonWord* lw) {
+  std::vector<size_t> getLetterFrequencies(const BasisElt* lw) {
     std::vector<Letter> letters;
     lw->iterateOverLetters([&](Letter l) {letters.push_back(l); });
     std::sort(letters.begin(), letters.end());
@@ -363,10 +363,10 @@ namespace IISignature_algebra {
     //list of alphabetical letter frequencies -> pos in m_smallSVDs[lev-1]
     std::map<vector<size_t>, size_t> m_freq2Idx; 
   public:
-    //If a calculation has already been done for a word with the same letters as w, 
+    //If a calculation has already been done for a basis element with the same letters as w, 
     //put its index in matrixToUse and return false.
     //If not, remember the potentialNewIndex and return true.
-    bool need(const LyndonWord* w, size_t& matrixToUse, size_t potentialNewIndex) {
+    bool need(const BasisElt* w, size_t& matrixToUse, size_t potentialNewIndex) {
       vector<size_t> letterFreqs = getLetterFrequencies(w);
       auto it_bool = m_freq2Idx.insert(std::make_pair(std::move(letterFreqs), potentialNewIndex));
       if (!it_bool.second) {
@@ -384,13 +384,13 @@ namespace IISignature_algebra {
     lsf.m_logLevelSizes.assign(1, (size_t)dim);
     for (int m = 2; m <= level; ++m)
       lsf.m_sigLevelSizes.push_back(dim*lsf.m_sigLevelSizes.back());
-    auto m = makeMappingMatrix(dim, level, lsf.m_s, lsf.m_basisWords, lsf.m_sigLevelSizes);
+    auto m = makeMappingMatrix(dim, level, lsf.m_s, lsf.m_basisElements, lsf.m_sigLevelSizes);
     for (int lev = 2; lev <= level; ++lev)
       lsf.m_logLevelSizes.push_back(m[lev - 1].size());
     //We next write output based on m.
-    //The idea is that the coefficient of the Lyndon word x in the log signature
+    //The idea is that the coefficient of the basis element x in the log signature
     //is affected by the coefficient of the word y in the signature only if 
-    //x and y are anagrams. So within each level, we group the Lyndon words
+    //y and the foliage of x are anagrams. So within each level, we group the basis elements
     //by the alphabetical list of their letters.
     lsf.m_simples.resize(level);
     const bool doTriangles = lsf.m_s.m_basis == LieBasis::Lyndon;
@@ -398,18 +398,18 @@ namespace IISignature_algebra {
     lsf.m_smallSVDs.resize(level);
     for (int lev = 2; lev <= level; ++lev) {
       interrupt();
-      LetterOrderToLW letterOrderToLW;
-      LyndonWordToIndex lyndonWordToIndex;
-      analyseMappingMatrixLevel(m, lev, letterOrderToLW, lyndonWordToIndex);
-      //Now, within lev, letterOrderToLW and lyndonWordToIndex have been created
+      LetterOrderToBE letterOrderToBE;
+      BasisEltToIndex basisEltToIndex;
+      analyseMappingMatrixLevel(m, lev, letterOrderToBE, basisEltToIndex);
+      //Now, within lev, letterOrderToBE and basisEltToIndex have been created
 #ifdef SHAREMAT
       SharedMatrixDetector detector;
 #endif
-      for (auto& i : letterOrderToLW) {
+      for (auto& i : letterOrderToBE) {
         if (1 == i.second.size()) {
           LogSigFunction::Simple sim;
-          const LyndonWord* lw = i.second[0];
-          sim.m_dest = lookupInFlatMap(lyndonWordToIndex, lw);
+          const BasisElt* lw = i.second[0];
+          sim.m_dest = lookupInFlatMap(basisEltToIndex, lw);
           //we can take any we want, so just take the zeroth
           const P& p = m[lev - 1].at(lw)[0];
           sim.m_factor = 1.0f / p.second;
@@ -423,7 +423,7 @@ namespace IISignature_algebra {
           size_t triangleSize = i.second.size();
           vector<intptr_t> fullIdxToSourceIdx(lsf.m_sigLevelSizes[lev - 1], -1);
           for (auto& j : i.second) {
-            mtx.m_dests.push_back(lookupInFlatMap(lyndonWordToIndex, j));
+            mtx.m_dests.push_back(lookupInFlatMap(basisEltToIndex, j));
             //The 0 in the next line is relying on the fact that a Lyndon word
             //comes first in its own expansion - Reutenauer theorem 5.1.
             //It also comes with coefficient 1, so the diagonal of mtx.m_matrix
@@ -457,7 +457,7 @@ namespace IISignature_algebra {
           //map seems to perform better here than a vector<std::pair<size_t,size_t>>
           std::map<size_t, size_t> sourceMap;
           for (auto& j : i.second) {
-            mtx.m_dests.push_back(lookupInFlatMap(lyndonWordToIndex, j));
+            mtx.m_dests.push_back(lookupInFlatMap(basisEltToIndex, j));
             for (auto& k : m[lev - 1].at(j)) {
               sourceMap[k.first] = 0;//this element will very often be already present
             }
@@ -483,11 +483,11 @@ namespace IISignature_algebra {
       }
 
       /*
-      for (auto& i : letterOrderToLW) {
+      for (auto& i : letterOrderToBE) {
         std::cout << i.second.size() << ",";
       }
       std::cout << std::endl;
-      for (auto& i : letterOrderToLW) {
+      for (auto& i : letterOrderToBE) {
         if (i.second.size() > 130) {
           std::cout << i.second.size() << ",";
           for (Letter l : i.first) {
@@ -516,7 +516,7 @@ void makeLogSigFunction(int dim, int level, LogSigFunction& lsf, const WantedMet
   lsf.m_dim = dim;
   lsf.m_level = level;
   const bool needBCH = wm.m_compiled_bch || wm.m_simple_bch;
-  makeFunctionDataForBCH(dim,level,lsf.m_s,lsf.m_fd, lsf.m_basisWords,!needBCH, interrupt);
+  makeFunctionDataForBCH(dim,level,lsf.m_s,lsf.m_fd, lsf.m_basisElements,!needBCH, interrupt);
   interrupt();
   if(wm.m_compiled_bch)
     lsf.m_f.reset(new FunctionRunner(lsf.m_fd));
