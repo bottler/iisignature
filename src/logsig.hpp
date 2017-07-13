@@ -1,6 +1,7 @@
 #ifndef LOGSIG_HPP
 #define LOGSIG_HPP
 #include "bch.hpp"
+#include "calcSignature.hpp"
 #include "makeCompiledFunction.hpp"
 #include "logSigLength.hpp"
 #include<map>
@@ -14,6 +15,8 @@ struct LogSigFunction{
   std::vector<BasisElt*> m_basisElements;
   FunctionData m_fd;
   std::unique_ptr<FunctionRunner> m_f;
+
+  bool canTakeLogOfSig() const { return m_level < 2 || !m_simples.empty(); }
 
   //Everything after here is used for the linear algebra calculation of sig -> logsig.
   std::vector<size_t> m_sigLevelSizes;
@@ -498,6 +501,56 @@ namespace IISignature_algebra {
       }
       */
     }
+  }
+}
+
+void projectExpandedLogSigToBasis(double* out, const LogSigFunction* lsf, 
+    const CalcSignature::CalculatedSignature& sig) {
+  size_t writeOffset = 0;
+  std::vector<float> rhs;
+  for (float f : sig.m_data[0])
+    out[writeOffset++] = f;
+  for (int l = 2; l <= lsf->m_level; ++l) {
+    const size_t loglevelLength = lsf->m_logLevelSizes[l - 1];
+    for (const auto& i : lsf->m_simples[l - 1]) {
+      out[writeOffset + i.m_dest] = sig.m_data[l - 1][i.m_source] * i.m_factor;
+    }
+    for (auto& i : lsf->m_smallTriangles[l - 1]) {
+      size_t triangleSize = i.m_dests.size();
+      auto mat =
+#ifdef SHAREMAT
+        i.m_matrix.empty() ?
+        lsf->m_smallTriangles[l - 1][i.m_matrixToUse].m_matrix.data() :
+#endif
+        i.m_matrix.data();
+      for (size_t dest = 0; dest < triangleSize; ++dest) {
+        double sum = 0;
+        for (size_t source = 0; source < dest; ++source) {
+          sum += mat[dest*triangleSize + source] * out[writeOffset + i.m_dests[source]];
+        }
+        double newVal = sig.m_data[l - 1][i.m_sources[dest]] - sum;
+        out[writeOffset + i.m_dests[dest]] = newVal;
+      }
+    }
+    for (auto& i : lsf->m_smallSVDs[l - 1]) {
+      auto mat =
+#ifdef SHAREMAT
+        i.m_matrix.empty() ?
+        lsf->m_smallSVDs[l - 1][i.m_matrixToUse].m_matrix.data() :
+#endif
+        i.m_matrix.data();
+      size_t nSources = i.m_sources.size();
+      rhs.resize(nSources);
+      for (size_t j = 0; j < nSources; ++j)
+        rhs[j] = sig.m_data[l - 1][i.m_sources[j]];
+      for (size_t j = 0; j < i.m_dests.size(); ++j) {
+        double val = 0;
+        for (size_t k = 0; k < nSources; ++k)
+          val += mat[nSources*j + k] * rhs[k];
+        out[writeOffset + i.m_dests[j]] = val;
+      }
+    }
+    writeOffset += loglevelLength;
   }
 }
 

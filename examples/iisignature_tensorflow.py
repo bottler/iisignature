@@ -12,14 +12,8 @@ import numpy as np
 _zero=np.array(0.0,dtype="float32")
 
 def _sigGradImp(g,x,m):
-    if x.ndim==3:
-        n=x.shape[0]
-        out=np.zeros_like(x,dtype="float32")
-        for i in range(n):
-            out[i,:,:]=iisignature.sigbackprop(g[i,:],x[i,:,:],m)
-        return out,_zero
     o=iisignature.sigbackprop(g,x,m)
-    return o
+    return o, _zero
 
 def _sigScaleGradImp(g,x,y,m):
     o= iisignature.sigscalebackprop(g,x,y,m)
@@ -42,12 +36,6 @@ def _sigJoinGrad(op, grad):
                       [tf.float32]*3, name="SigJoinGrad")
 
 def _sigImp(x,m):
-    if x.ndim==3:
-        n=x.shape[0]
-        out=np.zeros((n,iisignature.siglength(x.shape[2],m)),dtype="float32")
-        for i in range(n):
-            out[i,:]=iisignature.sig(x[i,:,:],m)
-        return out
     return iisignature.sig(x,m)
 
 def _sigScaleImp(x,y,m):

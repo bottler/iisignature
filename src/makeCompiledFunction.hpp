@@ -94,7 +94,7 @@ struct FunctionData{
   //std::vector<double,boost::alignment::aligned_allocator<double,64>> m_constants;
   struct LineData {int m_lhs_offset, m_rhs_offset, m_const_offset; bool m_negative;};
   std::vector<LineData> m_lines;
-  size_t m_length_of_b; //to add on at end
+  size_t m_length_of_b = 0; //to add on at end
 };
 
 //The following function is the function which Maker creates (except this function takes d as a parameter, and that function takes t as a parameter).

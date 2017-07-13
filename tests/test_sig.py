@@ -5,7 +5,9 @@ import unittest
 import numpy
 import sys
 import math
+import time
 numpy.set_printoptions(suppress=True,linewidth=150)
+output_timings = False
 
 #text, index -> (either number or [res, res]), newIndex
 def parseBracketedExpression(text,index):
@@ -137,6 +139,16 @@ class TestCase(unittest.TestCase):
     if sys.hexversion < 0x2070000:
         def assertLess(self,a,b,msg=None):
             self.assertTrue(a < b,msg)
+
+    if output_timings:
+        @classmethod
+        def setUpClass(cls):
+            cls.startTime = time.time()
+
+        @classmethod
+        def tearDownClass(cls):
+            print ("\n%s.%s: %.3f" % (cls.__module__, cls.__name__, time.time() - cls.startTime))
+
 
 #This test checks that basis, logsig and sig are compatible with each other by
 #calculating a signature both using sig
@@ -351,6 +363,66 @@ class Scales(TestCase):
         #print (bump1,bump2,base,diff1,diff2)
         self.assertLess(numpy.abs(diff1),0.0000001)
         self.assertLess(numpy.abs(diff2),0.0000001)
+
+class Batching(TestCase):
+    def test_batch(self):
+        numpy.random.seed(734)
+        d=2
+        m=2
+        n=15
+        paths = [numpy.random.uniform(-1,1,size=(6,d)) for i in range(n)]
+        pathArray15=numpy.stack(paths)
+        pathArray1315=numpy.reshape(pathArray15,(1,3,1,5,6,d))
+        sigs = [iisignature.sig(i,m) for i in paths]
+        sigArray=numpy.stack(sigs)
+        sigArray15=iisignature.sig(pathArray15,m)
+        sigArray1315=iisignature.sig(pathArray1315,m)
+        siglength=iisignature.siglength(d,m)
+        self.assertEqual(sigArray1315.shape,(1,3,1,5,siglength))
+        self.assertTrue(numpy.allclose(sigArray1315.reshape(n,siglength),sigs))
+        self.assertEqual(sigArray15.shape,(15,siglength))
+        self.assertTrue(numpy.allclose(sigArray15,sigs))
+
+        backsigs=[iisignature.sigbackprop(i,j,m) for i,j in zip(sigs,paths)]
+        backsigArray = numpy.stack(backsigs)
+        backsigs1315=iisignature.sigbackprop(sigArray1315,pathArray1315,m)
+        self.assertEqual(backsigs1315.shape,(1,3,1,5,6,d))
+        self.assertTrue(numpy.allclose(backsigs1315.reshape(n,6,2),backsigArray))
+
+        data=[numpy.random.uniform(size=(d,)) for i in range(n)]
+        dataArray1315=numpy.stack(data).reshape((1,3,1,5,d))
+        joined=[iisignature.sigjoin(i,j,m) for i,j in zip(sigs,data)]
+        joined1315=iisignature.sigjoin(sigArray1315,dataArray1315,m)
+        self.assertEqual(joined1315.shape,(1,3,1,5,siglength))
+        self.assertTrue(numpy.allclose(joined1315.reshape(n,-1),numpy.stack(joined)))
+        backjoined=[iisignature.sigjoinbackprop(i,j,k,m) for i,j,k in zip(joined,sigs,data)]
+        backjoinedArrays=[numpy.stack([i[j] for i in backjoined]) for j in range(2)]
+        backjoined1315=iisignature.sigjoinbackprop(joined1315,sigArray1315,dataArray1315,m)
+        self.assertEqual(backjoined1315[0].shape,sigArray1315.shape)
+        self.assertEqual(backjoined1315[1].shape,dataArray1315.shape)
+        self.assertTrue(numpy.allclose(backjoined1315[0].reshape(n,-1),backjoinedArrays[0]))
+        self.assertTrue(numpy.allclose(backjoined1315[1].reshape(n,-1),backjoinedArrays[1]))
+
+        scaled=[iisignature.sigscale(i,j,m) for i,j in zip(sigs,data)]
+        scaled1315=iisignature.sigscale(sigArray1315,dataArray1315,m)
+        self.assertEqual(scaled1315.shape,(1,3,1,5,siglength))
+        self.assertTrue(numpy.allclose(scaled1315.reshape(n,-1),numpy.stack(scaled)))
+        backscaled=[iisignature.sigscalebackprop(i,j,k,m) for i,j,k in zip(scaled,sigs,data)]
+        backscaledArrays=[numpy.stack([i[j] for i in backscaled]) for j in range(2)]
+        backscaled1315=iisignature.sigscalebackprop(scaled1315,sigArray1315,dataArray1315,m)
+        self.assertEqual(backscaled1315[0].shape,sigArray1315.shape)
+        self.assertEqual(backscaled1315[1].shape,dataArray1315.shape)
+        self.assertTrue(numpy.allclose(backscaled1315[0].reshape(n,-1),backscaledArrays[0]))
+        self.assertTrue(numpy.allclose(backscaled1315[1].reshape(n,-1),backscaledArrays[1]))
+
+        s=iisignature.prepare(d,m,"cosx")
+        for type in ("c","o","s","x"):
+            logsigs = [iisignature.logsig(i,s,type) for i in paths]
+            logsigArray=numpy.stack(logsigs)
+            logsigArray1315=iisignature.logsig(pathArray1315,s,type)
+            self.assertEqual(logsigArray1315.shape,(1,3,1,5,logsigs[0].shape[0]),type)
+            self.assertTrue(numpy.allclose(logsigArray1315.reshape(n,-1),logsigArray),type)
+
 
 #sum (2i choose i) for i in 1 to n
 # which is the number of linear rotational invariants up to level 2n

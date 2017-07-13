@@ -47,6 +47,10 @@ template<> class numpyTypeImpl<NPY_FLOAT64>{public: typedef double Type;};
 template<int i> using numpyNumToType = typename numpyTypeImpl<i>::Type;
 */
 
+#define ERR(X) {PyErr_SetString(PyExc_RuntimeError,X); return nullptr;}
+#define ERRb(X) {PyErr_SetString(PyExc_RuntimeError,X); return false;}
+#define ERRr(X) {PyErr_SetString(PyExc_RuntimeError,X); return;}
+
 //INTERRUPTS - the following seems to be fine even on windows
 #include <signal.h>
 volatile bool g_signals_setup=false; 
@@ -65,11 +69,52 @@ void setup_signals(){
 }
 bool interrupt_wanted(){return g_signal_given;}
 void interrupt(){if(g_signal_given) throw std::runtime_error("INTERRUPTION");}
-//end of Interrupts stuff
 
-#define ERR(X) {PyErr_SetString(PyExc_RuntimeError,X); return nullptr;}
-#define ERRb(X) {PyErr_SetString(PyExc_RuntimeError,X); return false;}
-#define ERRr(X) {PyErr_SetString(PyExc_RuntimeError,X); return;}
+//The following 3 functions just do t, which returns true if it succeeded,
+// returning true if t succeeded.
+//Calling a function which might interrupt must be done inside one.
+template<typename T>
+bool do_interruptible(T&& t) {
+  bool ok = false;
+  setup_signals();
+  std::string exceptionMessage;
+  try {
+    ok = t();
+  }
+  catch (std::exception& e) {
+    exceptionMessage = e.what();
+  }
+  if (PyErr_CheckSignals())
+    return false;
+  if (!exceptionMessage.empty())
+    ERRb(exceptionMessage.c_str());
+  return ok;
+}
+template<typename T>
+bool do_dummy(T&& t) {//useful for timing experiments, 
+  return t();
+}
+template<typename T>
+bool do_interruptible_releasing_lock(T&& t) {
+  bool ok = false;
+  setup_signals();
+  std::string exceptionMessage;
+  Py_BEGIN_ALLOW_THREADS
+  try {
+    ok = t();
+  }
+  catch (std::exception& e) {
+    exceptionMessage = e.what();
+  }
+  Py_END_ALLOW_THREADS
+  if (PyErr_CheckSignals())
+    return false;
+  if (!exceptionMessage.empty())
+    ERRb(exceptionMessage.c_str());
+  return ok;
+}
+
+//end of Interrupts stuff
 
 class Deleter{
   PyObject* m_p;
@@ -78,6 +123,19 @@ public:
   Deleter(const Deleter&)=delete;
   Deleter operator=(const Deleter&) = delete;
   ~Deleter(){Py_DECREF(m_p);}
+};
+
+//This only deletes in its destructor
+class ReleasableDeleter {
+  PyObject* m_p;
+public:
+  ReleasableDeleter(PyObject* p) :m_p(p) {};
+  ReleasableDeleter() : m_p(nullptr) {};
+  void releaseAndSet(PyObject* p) { m_p = p; }
+  void release() { m_p = nullptr; }
+  ReleasableDeleter(const ReleasableDeleter&) = delete;
+  ReleasableDeleter operator=(const ReleasableDeleter&) = delete;
+  ~ReleasableDeleter() { Py_XDECREF(m_p); }
 };
 
 #ifndef IISIGNATURE_NO_NUMPY
@@ -90,6 +148,20 @@ struct UseDouble{
   constexpr static int typenum=NPY_FLOAT64;
   using T = double;
 };
+
+//Returns a new numpy array with the type typenum,
+//with ndims dimensions. The first (ndims-1) dimensions are the same
+//as those of arr, and the last dimension is newLastDim.
+//We save an allocation by reusing the shape member of arr,
+//so ndims must not exceed the number of dimensions of arr.
+PyObject* simpleNew_ownLastDim(int ndims, PyArrayObject* arr, size_t newLastDim, int typenum) {
+  npy_intp* shape = PyArray_DIMS(arr);
+  npy_intp orig = shape[ndims - 1];
+  shape[ndims - 1] = (npy_intp) newLastDim;
+  PyObject* o = PyArray_SimpleNew(ndims, shape, typenum);
+  shape[ndims - 1] = orig;
+  return o;
+}
 #endif
 
 #define STRINGIFY(x) #x
@@ -137,95 +209,86 @@ logsiglength(PyObject *self, PyObject *args){
 #ifndef IISIGNATURE_NO_NUMPY
 //returns true on success
 //makes s2 be the signature of the path in data
+//data is (lengthOfPath x d)
 using CalcSignature::CalculatedSignature;
-static bool calcSignature(CalculatedSignature& s2, PyArrayObject* a, int level){
-  if(PyArray_NDIM(a)!=2) ERRb("data must be 2d");
-  const int lengthOfPath = (int)PyArray_DIM(a,0);
-  const int d = (int)PyArray_DIM(a,1);
-  if(lengthOfPath<1) ERRb("Path has no length");
-  if(d<1) ERRb("Path must have positive dimension");
+static bool calcSignature(CalculatedSignature& s2, double* data, int lengthOfPath, int d, int level){
   CalculatedSignature s1;
 
   if(lengthOfPath==1){
     s2.sigOfNothing(d,level);
   }
 
-  if(PyArray_TYPE(a)==NPY_FLOAT32){
-    vector<float> displacement(d);
-    float* data = static_cast<float*>(PyArray_DATA(a));
-    for(int i=1; i<lengthOfPath; ++i){
-      for(int j=0;j<d; ++j)
-        displacement[j]=data[i*d+j]-data[(i-1)*d+j];
-      s1.sigOfSegment(d,level,&displacement[0]);
+  vector<double> displacement(d);
+  for(int i=1; i<lengthOfPath; ++i){
+    for(int j=0;j<d; ++j)
+      displacement[j]=data[i*d+j]-data[(i-1)*d+j];
+    s1.sigOfSegment(d,level,&displacement[0]);
+    if (interrupt_wanted())
+      return false;
+    if(i==1)
+      s2.swap(s1);
+    else {
+      s2.concatenateWith(d, level, s1);
       if (interrupt_wanted())
         return false;
-      if(i==1)
-        s2.swap(s1);
-      else{
-        s2.concatenateWith(d,level,s1);
-        if (interrupt_wanted())
-          return false;
-      }
-    }
-  }else{
-    vector<double> displacement(d);
-    double* data = static_cast<double*>(PyArray_DATA(a));
-    for(int i=1; i<lengthOfPath; ++i){
-      for(int j=0;j<d; ++j)
-        displacement[j]=data[i*d+j]-data[(i-1)*d+j];
-      s1.sigOfSegment(d,level,&displacement[0]);
-      if (interrupt_wanted())
-        return false;
-      if(i==1)
-        s2.swap(s1);
-      else {
-        s2.concatenateWith(d, level, s1);
-        if (interrupt_wanted())
-          return false;
-      }
     }
   }
   return true;
 }
 
 static PyObject *
-sig(PyObject *self, PyObject *args){
+sig(PyObject *self, PyObject *args) {
   PyObject* a1;
-  int level=0;
+  int level = 0;
   int format = 0;
   if (!PyArg_ParseTuple(args, "Oi|i", &a1, &level, &format))
     return nullptr;
-  if(level<1) ERR("level must be positive");
+  if (level < 1) ERR("level must be positive");
   //could have a shortcut here if a1 is a contiguous array of float32
   PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa) ERR("data must be (convertable to) a numpy array");
   Deleter a_(aa);
   PyArrayObject* a = (PyArrayObject*)aa;
-
-  CalculatedSignature s;
-  setup_signals();
-  std::string exceptionMessage;
-  try{
-    if(!calcSignature(s,a,level))
-      return nullptr;
-  }catch(std::exception& e){
-    exceptionMessage = e.what();
+  int ndims = PyArray_NDIM(a);
+  if (ndims < 2) ERR("data must be 2d");
+  const int lengthOfPath = (int)PyArray_DIM(a, ndims - 2);
+  const int d = (int)PyArray_DIM(a, ndims - 1);
+  if (lengthOfPath < 1) ERR("Path has no length");
+  if (d < 1) ERR("Path must have positive dimension");
+  int nPaths = 1;
+  for (int i = 0; i + 2 < ndims; ++i) {
+    npy_intp x = PyArray_DIM(a, i);
+    nPaths *= (int)x;
   }
-  if (PyErr_CheckSignals())
-    return nullptr;
-  if (!exceptionMessage.empty())
-    ERR(exceptionMessage.c_str());
-
-  PyObject* o;
-  long d = (long)s.m_data[0].size();
-  if (format == 0) { //by default, output all to a single array
-    npy_intp dims[] = { (npy_intp)calcSigTotalLength(d,level) };
-    o = PyArray_SimpleNew(1, dims, NPY_FLOAT32);
+  size_t eachInputSize = (size_t)(lengthOfPath * d);
+  size_t eachOutputSize = (size_t)calcSigTotalLength(d, level);
+  PyObject* o = nullptr;
+  float* out_data = nullptr;
+  if (format == 0) {
+    o = simpleNew_ownLastDim(ndims - 1, a, eachOutputSize, NPY_FLOAT32);
     if (!o)
       return nullptr;
-    s.writeOut(static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o))));
+    out_data = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
   }
-  else if (format == 1){
+  else if (format != 1) 
+    ERR("Invalid format requested");
+  ReleasableDeleter o_(o);
+  double* in_data = (double*)PyArray_DATA(a);
+
+  CalculatedSignature s;
+  bool ok = do_interruptible([&]{
+    for (int path = 0; path < nPaths; ++path) {
+      if (!calcSignature(s, in_data + path*eachInputSize, lengthOfPath, d, level))
+        return false;
+      if (format == 0)
+        s.writeOut(out_data + path * eachOutputSize);
+    }
+    return true;
+  });
+  if (!ok)
+    return nullptr;
+
+  if (format == 1){
     o = PyTuple_New(level);
     for (int m = 0; m < level; ++m) {
       npy_intp dims[] = { (npy_intp)calcSigLevelLength(d,m+1) };
@@ -238,10 +301,8 @@ sig(PyObject *self, PyObject *args){
       PyTuple_SET_ITEM(o, m, p);
     }
   }
-  else
-    ERR("Invalid format requested");
- 
- return    o;
+  o_.release();
+  return o;
 }
 
 static PyObject *
@@ -311,29 +372,40 @@ sigBackwards(PyObject *self, PyObject *args){
   if (!bb) ERR("derivs must be (convertable to) a numpy array");
   Deleter b_(bb);
   PyArrayObject* b = (PyArrayObject*)bb;
-  if(PyArray_NDIM(a)!=2) ERR("path must be 2d");
-  const int lengthOfPath = (int)PyArray_DIM(a,0);
-  const int d = (int)PyArray_DIM(a,1);
-  if(lengthOfPath<1) ERR("Path has no length");
-  if(d<1) ERR("Path must have positive dimension");
-  size_t sigLength = calcSigTotalLength(d,level);
-  if(PyArray_NDIM(b)!=1) ERR("derivs must be 1d");
-  if(sigLength!=(size_t)PyArray_DIM(b,0))
-    ERR(("derivs should have length "+std::to_string(sigLength)+
-         " but it has length "+std::to_string(PyArray_DIM(b,0))).c_str());
+
+  int ndims = PyArray_NDIM(a);
+  if (ndims < 2) ERR("path must be 2d");
+  const int lengthOfPath = (int)PyArray_DIM(a, ndims - 2);
+  const int d = (int)PyArray_DIM(a, ndims - 1);
+  if (lengthOfPath < 1) ERR("Path has no length");
+  if (d < 1) ERR("Path must have positive dimension");
+  size_t sigLength = calcSigTotalLength(d, level);
+  if (PyArray_NDIM(b) != ndims-1) ERR("derivs has the wrong number of dimensions");
+  if (sigLength != (size_t)PyArray_DIM(b, ndims-2))
+    ERR(("derivs should have length " + std::to_string(sigLength) +
+      " but it has length " + std::to_string(PyArray_DIM(b, ndims-2))).c_str());
+  int nPaths = 1;
+  for (int i = 0; i + 2 < ndims; ++i) {
+    npy_intp x = PyArray_DIM(a, i);
+    if (PyArray_DIM(b, i) != x)
+      ERR("mismatched dimensions between paths and derivatives");
+    nPaths *= (int)x;
+  }
+  size_t eachInputSize = (size_t)(lengthOfPath * d);
+  size_t eachOutputSize = (size_t)calcSigTotalLength(d, level);
 
   ReadArrayAsDoubles input, derivs;
   if(input.read(a,lengthOfPath*d) || derivs.read(b,sigLength))
     ERR("Out of memory");
-  npy_intp dims[] = {(npy_intp) lengthOfPath, (npy_intp) d};
-  PyObject* o = PyArray_SimpleNew(2,dims,NPY_FLOAT32);
+  PyObject* o = PyArray_SimpleNew(ndims, PyArray_DIMS(a), NPY_FLOAT32);
   if(!o)
     return nullptr;
   float* out = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
-  for(int i=0; i<lengthOfPath*d; ++i)
+  for(int i=0; i<lengthOfPath*d*nPaths; ++i)
     out[i]=0.0f;
-  BackwardDerivativeSignature::sigBackwards(d,level,lengthOfPath,
-    input.ptr(),derivs.ptr(),out);  
+  for(int path =0; path<nPaths; ++path)
+    BackwardDerivativeSignature::sigBackwards(d,level,lengthOfPath,
+      input.ptr()+path*eachInputSize,derivs.ptr()+path*eachOutputSize,out+path*eachInputSize);  
   return o;
 }
 
@@ -385,23 +457,29 @@ sigJoin(PyObject *self, PyObject *args){
   Deleter b_(bb);
   PyArrayObject* b = (PyArrayObject*)bb;
 
-  if(PyArray_NDIM(a)!=2) ERR("sigs must be 2d");
-  if(PyArray_NDIM(b)!=2) ERR("data must be 2d");
-  const int nPaths = (int)PyArray_DIM(a,0);
-  if(nPaths!=(int)PyArray_DIM(b,0))
-    ERR("different number of sigs and data");
-  const int d_given = (int)PyArray_DIM(b,1);
-  if(d_given<1) ERR("Path must have positive dimension");
-  const int d_out = std::isnan(fixedLast) ? d_given : d_given+1;
-  size_t sigLength = calcSigTotalLength(d_out,level);
-  if(sigLength != (size_t) PyArray_DIM(a,1))
+  int ndims = PyArray_NDIM(a);
+  if (ndims < 1) ERR("no signatures provided");
+  if (PyArray_NDIM(b) != ndims) ERR("sigs and data must have the same number of dimensions");
+  const int d_given = (int)PyArray_DIM(b, ndims-1);
+  if (d_given<1) ERR("Path must have positive dimension");
+  const int d_out = std::isnan(fixedLast) ? d_given : d_given + 1;
+  size_t sigLength = calcSigTotalLength(d_out, level);
+  if (sigLength != (size_t)PyArray_DIM(a, ndims-1))
     ERR("signatures have unexpected length");
+
+  int nPaths = 1;
+  for (int i = 0; i + 1 < ndims; ++i) {
+    npy_intp x = PyArray_DIM(a, i);
+    if (PyArray_DIM(b, i) != x)
+      ERR("mismatched dimensions between sigs and data");
+    nPaths *= (int)x;
+  }
+
   ReadArrayAsDoubles sig, displacement;
   if(sig.read(a,nPaths*sigLength)||displacement.read(b,nPaths*d_given))
     ERR("Out of memory");
 
-  npy_intp dims[] = {(npy_intp) nPaths, (npy_intp)sigLength};
-  PyObject* o = PyArray_SimpleNew(2,dims,NPY_FLOAT32);
+  PyObject* o = PyArray_SimpleNew(ndims, PyArray_DIMS(a),NPY_FLOAT32);
   if(!o)
     return nullptr;
   float* out = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
@@ -433,36 +511,40 @@ static PyObject *
   if (!cc) ERR("derivs must be (convertable to) a numpy array");
   Deleter c_(cc);
   PyArrayObject* c = (PyArrayObject*)cc;
-  if(PyArray_NDIM(a)!=2) ERR("sigs must be 2d");
-  if(PyArray_NDIM(b)!=2) ERR("new data must be 2d");
-  if(PyArray_NDIM(c)!=2) ERR("derivs must be 2d");
-  const int nPaths = (int)PyArray_DIM(a,0);
-  if(nPaths!=(int)PyArray_DIM(b,0))
-    ERR("different number of sigs and data");
-  if(nPaths!=(int)PyArray_DIM(c,0))
-    ERR("different number of sigs and derivs");
-  const int d_given = (int)PyArray_DIM(b,1);
-  if(d_given<1) ERR("Path must have positive dimension");
-  const int d_out = std::isnan(fixedLast) ? d_given : d_given+1;
-  size_t sigLength = calcSigTotalLength(d_out,level);
-  if(sigLength != (size_t) PyArray_DIM(a,1))
+
+  int ndims = PyArray_NDIM(a);
+  if (ndims < 1) ERR("no signatures provided");
+  if (PyArray_NDIM(b) != ndims) ERR("sigs and data must have the same number of dimensions");
+  if (PyArray_NDIM(c) != ndims) ERR("sigs and derivs must have the same number of dimensions");
+  const int d_given = (int)PyArray_DIM(b, ndims - 1);
+  if (d_given<1) ERR("Path must have positive dimension");
+  const int d_out = std::isnan(fixedLast) ? d_given : d_given + 1;
+  size_t sigLength = calcSigTotalLength(d_out, level);
+  if (sigLength != (size_t)PyArray_DIM(a, ndims - 1))
     ERR("signatures have unexpected length");
-  if(sigLength != (size_t) PyArray_DIM(c,1))
-    ERR("derivs should have the same shape as signatures");
+
+  int nPaths = 1;
+  for (int i = 0; i + 1 < ndims; ++i) {
+    npy_intp x = PyArray_DIM(a, i);
+    if (PyArray_DIM(b, i) != x)
+      ERR("mismatched dimensions between sigs and data");
+    if (PyArray_DIM(c, i) != x)
+      ERR("mismatched dimensions between sigs and derivs");
+    nPaths *= (int)x;
+  }
   ReadArrayAsDoubles sig, displacement, derivs;
   if(sig.read(a,nPaths*sigLength)||displacement.read(b,nPaths*d_given)
      ||derivs.read(c,nPaths*sigLength))
     ERR("Out of memory");
 
-  npy_intp dims1[] = {(npy_intp) nPaths, (npy_intp) sigLength};
-  npy_intp dims2[] = {(npy_intp) nPaths, (npy_intp) d_given};
-                     
-  PyObject* o1 = PyArray_SimpleNew(2,dims1,NPY_FLOAT32);
+  PyObject* o1 = PyArray_SimpleNew(ndims, PyArray_DIMS(a),NPY_FLOAT32);
   if(!o1)
     return nullptr;
-  PyObject* o2 = PyArray_SimpleNew(2,dims2,NPY_FLOAT32);
-  if(!o2)
+  PyObject* o2 = PyArray_SimpleNew(ndims, PyArray_DIMS(b), NPY_FLOAT32);
+  if (!o2) {
+    Py_DECREF(o1);
     return nullptr;
+  }
   
   float* out1 = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o1)));
   float* out2 = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o2)));
@@ -493,22 +575,29 @@ sigScale(PyObject *self, PyObject *args){
   if (!bb) ERR("scales must be (convertable to) a numpy array");
   Deleter b_(bb);
   PyArrayObject* b = (PyArrayObject*)bb;
-  if(PyArray_NDIM(a)!=2) ERR("sigs must be 2d");
-  if(PyArray_NDIM(b)!=2) ERR("scales must be 2d");
-  const int nPaths = (int)PyArray_DIM(a,0);
-  if(nPaths!=(int)PyArray_DIM(b,0))
-    ERR("different number of sigs and data");
-  const int d = (int)PyArray_DIM(b,1);
-  if(d<1) ERR("scales must have positive dimension");
-  size_t sigLength = calcSigTotalLength(d,level);
-  if(sigLength != (size_t) PyArray_DIM(a,1))
+
+  int ndims = PyArray_NDIM(a);
+  if (ndims < 1) ERR("no signatures provided");
+  if (PyArray_NDIM(b) != ndims) ERR("sigs and scales must have the same number of dimensions");
+  const int d = (int)PyArray_DIM(b, ndims - 1);
+  if (d<1) ERR("scales must have positive dimension");
+  size_t sigLength = calcSigTotalLength(d, level);
+  if (sigLength != (size_t)PyArray_DIM(a, ndims - 1))
     ERR("signatures have unexpected length");
+
+  int nPaths = 1;
+  for (int i = 0; i + 1 < ndims; ++i) {
+    npy_intp x = PyArray_DIM(a, i);
+    if (PyArray_DIM(b, i) != x)
+      ERR("mismatched dimensions between sigs and scales");
+    nPaths *= (int)x;
+  }
+
   ReadArrayAsDoubles sig, scales;
   if(sig.read(a,nPaths*sigLength)||scales.read(b,nPaths*d))
     ERR("Out of memory");
 
-  npy_intp dims[] = {(npy_intp) nPaths, (npy_intp)sigLength};
-  PyObject* o = PyArray_SimpleNew(2,dims,NPY_FLOAT32);
+  PyObject* o = PyArray_SimpleNew(ndims, PyArray_DIMS(a),NPY_FLOAT32);
   if(!o)
     return nullptr;
   float* out = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
@@ -539,36 +628,41 @@ static PyObject *
   if (!cc) ERR("derivs must be (convertable to) a numpy array");
   Deleter c_(cc);
   PyArrayObject* c = (PyArrayObject*)cc;
-  if(PyArray_NDIM(a)!=2) ERR("sigs must be 2d");
-  if(PyArray_NDIM(b)!=2) ERR("scales must be 2d");
-  if(PyArray_NDIM(c)!=2) ERR("derivs must be 2d");
-  const int nPaths = (int)PyArray_DIM(a,0);
-  if(nPaths!=(int)PyArray_DIM(b,0))
-    ERR("different number of sigs and scales");
-  if(nPaths!=(int)PyArray_DIM(c,0))
-    ERR("different number of sigs and derivs");
-  const int d = (int)PyArray_DIM(b,1);
-  if(d<1) ERR("Path must have positive dimension");
-  size_t sigLength = calcSigTotalLength(d,level);
-  if(sigLength != (size_t) PyArray_DIM(a,1))
+
+  int ndims = PyArray_NDIM(a);
+  if (ndims < 1) ERR("no signatures provided");
+  if (PyArray_NDIM(b) != ndims) ERR("sigs and data must have the same number of dimensions");
+  if (PyArray_NDIM(c) != ndims) ERR("sigs and derivs must have the same number of dimensions");
+  const int d = (int)PyArray_DIM(b, ndims - 1);
+  if (d<1) ERR("Path must have positive dimension");
+  size_t sigLength = calcSigTotalLength(d, level);
+  if (sigLength != (size_t)PyArray_DIM(a, ndims - 1))
     ERR("signatures have unexpected length");
-  if(sigLength != (size_t) PyArray_DIM(c,1))
-    ERR("derivs should have the same shape as signatures");
+
+  int nPaths = 1;
+  for (int i = 0; i + 1 < ndims; ++i) {
+    npy_intp x = PyArray_DIM(a, i);
+    if (PyArray_DIM(b, i) != x)
+      ERR("mismatched dimensions between sigs and data");
+    if (PyArray_DIM(c, i) != x)
+      ERR("mismatched dimensions between sigs and derivs");
+    nPaths *= (int)x;
+  }
+
   ReadArrayAsDoubles sig, scale, derivs;
   if(sig.read(a,nPaths*sigLength)||scale.read(b,nPaths*d)
      ||derivs.read(c,nPaths*sigLength))
     ERR("Out of memory");
 
-  npy_intp dims1[] = {(npy_intp) nPaths, (npy_intp) sigLength};
-  npy_intp dims2[] = {(npy_intp) nPaths, (npy_intp) d};
-                     
-  PyObject* o1 = PyArray_SimpleNew(2,dims1,NPY_FLOAT32);
-  if(!o1)
+  PyObject* o1 = PyArray_SimpleNew(ndims, PyArray_DIMS(a), NPY_FLOAT32);
+  if (!o1)
     return nullptr;
-  PyObject* o2 = PyArray_SimpleNew(2,dims2,NPY_FLOAT32);
-  if(!o2)
+  PyObject* o2 = PyArray_SimpleNew(ndims, PyArray_DIMS(b), NPY_FLOAT32);
+  if (!o2) {
+    Py_DECREF(o1);
     return nullptr;
-  
+  }
+
   float* out1 = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o1)));
   float* out2 = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o2)));
   for(int iPath=0; iPath<nPaths; ++iPath)
@@ -658,10 +752,10 @@ class LeastSquares {
   PyObject* m_pinv;
   PyObject* m_svd;
   PyObject* m_qrScipy = nullptr;
-  std::unique_ptr<Deleter> m_t_, m_l_, m_p_, m_s_, m_q_; //we can do better than this
+  ReleasableDeleter m_t_, m_l_, m_p_, m_s_, m_q_; //we can do better than this
 public:
   bool m_ok = false;
-  LeastSquares() {
+  LeastSquares(bool wantQR = false) {
     PyObject* numpy = PyImport_AddModule("numpy");
     if (!numpy)
       return;
@@ -672,36 +766,38 @@ public:
     m_transpose = PyObject_GetAttrString(numpy, "transpose");
     if (!m_transpose)
       return;
-    m_t_.reset(new Deleter(m_transpose));
+    m_t_.releaseAndSet(m_transpose);
     m_lstsq = PyObject_GetAttrString(linalg, "lstsq");
     if (!m_lstsq)
       return;
-    m_l_.reset(new Deleter(m_lstsq));
+    m_l_.releaseAndSet(m_lstsq);
     m_pinv = PyObject_GetAttrString(linalg, "pinv");
     if (!m_pinv)
       return;
-    m_p_.reset(new Deleter(m_pinv));
+    m_p_.releaseAndSet(m_pinv);
     m_svd = PyObject_GetAttrString(linalg, "svd");
     if (!m_svd)
       return;
-    m_s_.reset(new Deleter(m_svd));
+    m_s_.releaseAndSet(m_svd);
     m_ok = true;
 
-    //For some reason I don't understand, I have to use the higher level
-    //PyImport_Import to load scipy.linalg
-    auto pckg_name = PyUnicode_FromString("scipy.linalg");
-    Deleter pckg_name_(pckg_name);
-    PyObject* scipyLinalg = PyImport_Import(pckg_name);
-    if (!scipyLinalg) {
-      PyErr_Clear();
-      return;
+    if (wantQR) {
+      //For some reason I don't understand, I have to use the higher level
+      //PyImport_Import to load scipy.linalg
+      auto pckg_name = PyUnicode_FromString("scipy.linalg");
+      Deleter pckg_name_(pckg_name);
+      PyObject* scipyLinalg = PyImport_Import(pckg_name);
+      if (!scipyLinalg) {
+        PyErr_Clear();
+        return;
+      }
+      Deleter scipyLinalg_(scipyLinalg);
+      m_qrScipy = PyObject_GetAttrString(scipyLinalg, "qr");
+      if (m_qrScipy)
+        m_q_.releaseAndSet(m_qrScipy);
+      else
+        PyErr_Clear();
     }
-    Deleter scipyLinalg_(scipyLinalg);
-    m_qrScipy = PyObject_GetAttrString(scipyLinalg, "qr");
-    if (m_qrScipy)
-      m_q_.reset(new Deleter(m_qrScipy));
-    else
-      PyErr_Clear();
   }
   PyObject* lstsqWithTranspose(PyObject *a1, PyObject *a2) const {
     PyObject* a1t = PyObject_CallFunctionObjArgs(m_transpose, a1, NULL);
@@ -750,7 +846,7 @@ public:
   public:
     double* m_u;//is rxr if full_matrices, else rxc
     bool m_ok = false;
-    std::unique_ptr<Deleter> m_delete;
+    ReleasableDeleter m_delete;
     int m_rank = 0;
     SVD(const vector<double>& mat, npy_intp r, npy_intp c, bool full_matrices, LeastSquares& ls) {
       MatrixOfVector<UseDouble> mat_(mat, r, c);
@@ -767,7 +863,7 @@ public:
         full_matrices ? Py_True : Py_False, NULL);
       if (!svd)
         return;
-      m_delete.reset(new Deleter(svd));//a bit of a mess
+      m_delete.releaseAndSet(svd);
       PyObject* svs = PyTuple_GetItem(svd, 1);
       PyArrayObject* svd0 = (PyArrayObject*)PyTuple_GetItem(svd, 0);
       bool ok = PyArray_NDIM((PyArrayObject*)svs) == 1 &&
@@ -811,16 +907,17 @@ public:
   public:
     double* m_q;//is rxc
     bool m_ok = false;
-    std::unique_ptr<Deleter> m_delete;
+    ReleasableDeleter m_delete;
     int m_rank = 0;
     QR(const vector<double>& mat, npy_intp r, npy_intp c, LeastSquares& ls) {
       MatrixOfVector<UseDouble> mat_(mat, r, c);
       if (mat.size() != ((size_t)r*c))
         ERRr("bad use of QR");
-      PyObject* qr = PyObject_CallFunction(ls.m_qrScipy, "Oissi",mat_.m_mat, 0,NULL,"economic",1);
+      char* Oissi = (char*) "Oissi"; //Yukky cast, but needed for older pythons
+      PyObject* qr = PyObject_CallFunction(ls.m_qrScipy, Oissi, mat_.m_mat, 0,NULL,"economic",1);
       if (!qr)
         return;
-      m_delete.reset(new Deleter(qr));//a bit of a mess
+      m_delete.releaseAndSet(qr);
       bool ok1 = PyTuple_CheckExact(qr) &&
         PyTuple_Size(qr) > 1 &&
         PyArray_Check(PyTuple_GetItem(qr, 0)) &&
@@ -1092,19 +1189,10 @@ prepare(PyObject *self, PyObject *args){
     ERR(methodError);
   auto basis = wantedmethods.m_want_matchCoropa ? LieBasis::StandardHall : LieBasis::Lyndon;
   std::unique_ptr<LogSigFunction> lsf(new LogSigFunction(basis));
-  std::string exceptionMessage;
-  setup_signals();
-  Py_BEGIN_ALLOW_THREADS
-  try{
+  do_interruptible_releasing_lock([&]{
     makeLogSigFunction(dim,level,*lsf, wantedmethods, interrupt);
-  }catch(std::exception& e){
-    exceptionMessage = e.what();
-  }
-  Py_END_ALLOW_THREADS
-  if(PyErr_CheckSignals()) //I think if(interrupt_wanted()) would do just as well
-    return nullptr;
-  if(!exceptionMessage.empty())
-    ERR(exceptionMessage.c_str());
+    return true;
+  });
 
 #ifndef IISIGNATURE_NO_NUMPY
   LeastSquares ls;
@@ -1161,8 +1249,7 @@ static PyObject* info(PyObject *self, PyObject *args) {
     methods += 'C';
   if (!lsf->m_fd.m_formingT.empty())
     methods += 'O';
-  bool canTakeLogOfSig = lsf->m_level < 2 || !lsf->m_simples.empty();
-  if (canTakeLogOfSig)
+  if (lsf->canTakeLogOfSig())
     methods += 'S';
   methods += 'X';
   const char* basis = (lsf->m_s.m_basis == LieBasis::StandardHall) ? 
@@ -1191,120 +1278,87 @@ logsig(PyObject *self, PyObject *args){
   if (!aa) ERR("data must be (convertable to) a numpy array");
   Deleter a_(aa);
   PyArrayObject* a = (PyArrayObject*)aa;
-  if(PyArray_NDIM(a)!=2) ERR("data must be 2d");
-  const int lengthOfPath = (int)PyArray_DIM(a,0);
-  const int d = (int)PyArray_DIM(a,1);
-  if(lengthOfPath<1) ERR("Path has no length");
-  if(d!=lsf->m_dim) 
-    ERR(("Path has dimension "+std::to_string(d)+" but we prepared for dimension "
-         +std::to_string(lsf->m_dim)).c_str());
+
+  int ndims = PyArray_NDIM(a);
+  if (ndims < 2) ERR("data must be 2d");
+  const int lengthOfPath = (int)PyArray_DIM(a, ndims - 2);
+  const int d = (int)PyArray_DIM(a, ndims - 1);
+  const size_t eachInputLength = (size_t)(lengthOfPath * d);
+  if (lengthOfPath < 1) ERR("Path has no length");
+  if (d != lsf->m_dim)
+    ERR(("Path has dimension " + std::to_string(d) + " but we prepared for dimension "
+      + std::to_string(lsf->m_dim)).c_str());
   size_t logsiglength = lsf->m_basisElements.size();
-  vector<double> out(logsiglength);//why double
+  double* data = static_cast<double*>(PyArray_DATA(a));
+
+  int nPaths = 1;
+  for (int i = 0; i + 2 < ndims; ++i) {
+    npy_intp x = PyArray_DIM(a, i);
+    nPaths *= (int)x;
+  }
 
   FunctionRunner* f = lsf->m_f.get();
   using OutT=UseDouble;
   if ((wantedmethods.m_compiled_bch && f!=nullptr) || 
-      (wantedmethods.m_simple_bch && !lsf->m_fd.m_formingT.empty())){
+      (wantedmethods.m_simple_bch && lsf->m_fd.m_length_of_b>0)){
     vector<double> displacement(d);
     const bool useCompiled = (f!=nullptr && wantedmethods.m_compiled_bch);
 
-    double* data = static_cast<double*>(PyArray_DATA(a));
-    if(lengthOfPath>0){
-      for(int j=0; j<d; ++j)
-        out[j]=data[1*d+j]-data[0*d+j];
-    }
-    for(int i=2; i<lengthOfPath; ++i){
-      for(int j=0;j<d; ++j)
-        displacement[j]=data[i*d+j]-data[(i-1)*d+j];
-      if(useCompiled)
-        f->go(out.data(),displacement.data());
-      else
-        slowExplicitFunction(out.data(), displacement.data(), lsf->m_fd);
-    }
-    npy_intp dims[] = {(npy_intp)out.size()};
-    PyObject* o = PyArray_SimpleNew(1,dims,OutT::typenum);
+    PyObject* o = simpleNew_ownLastDim(ndims - 1, a, logsiglength, OutT::typenum);
     if (!o)
       return nullptr;
     auto dest = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
-    for(double d : out)
-      *dest++ = (OutT::T) d;
+    vector<double> out;
+    for (int path = 0; path < nPaths; ++path) {
+      out.assign(logsiglength, 0);
+      if (lengthOfPath > 0) {
+        for (int j = 0; j < d; ++j)
+          out[j] = data[1 * d + j] - data[0 * d + j];
+      }
+      for (int i = 2; i < lengthOfPath; ++i) {
+        for (int j = 0; j < d; ++j)
+          displacement[j] = data[i*d + j] - data[(i - 1)*d + j];
+        if (useCompiled)
+          f->go(out.data(), displacement.data());
+        else
+          slowExplicitFunction(out.data(), displacement.data(), lsf->m_fd);
+      }
+      for (double d : out)
+        *dest++ = (OutT::T) d;
+      data += eachInputLength;
+    }
     return o;
   }
-  bool canTakeLogOfSig = lsf->m_level < 2 || !lsf->m_simples.empty();
-  if(wantedmethods.m_expanded || 
-     (wantedmethods.m_log_of_signature && canTakeLogOfSig)){
-    CalculatedSignature sig;
-    setup_signals();
-    if (!calcSignature(sig, a, lsf->m_level))
-      return nullptr;
-    if (PyErr_CheckSignals())
-      return nullptr;
-    logTensor(sig);
-    if(wantedmethods.m_expanded){
-      npy_intp siglength = (npy_intp) calcSigTotalLength(lsf->m_dim,lsf->m_level);
-      npy_intp dims[] = {siglength};
-      PyObject* flattenedFullLogSigAsNumpyArray = PyArray_SimpleNew(1,dims,OutT::typenum);
-      if (!flattenedFullLogSigAsNumpyArray)
-        return nullptr;
-      auto asArray = reinterpret_cast<PyArrayObject*>(flattenedFullLogSigAsNumpyArray);
-      sig.writeOut(static_cast<OutT::T*>(PyArray_DATA(asArray)));
-      return flattenedFullLogSigAsNumpyArray;
-    }
-    
-    size_t writeOffset = 0;
-    vector<float> rhs;
-    for(float f : sig.m_data[0])
-      out[writeOffset++]=f;
-    for (int l = 2; l <= lsf->m_level; ++l) {
-      const size_t loglevelLength = lsf->m_logLevelSizes[l - 1];
-      for (const auto& i : lsf->m_simples[l - 1]) {
-        out[writeOffset + i.m_dest] = sig.m_data[l - 1][i.m_source] * i.m_factor;
-      }
-      for (auto& i : lsf->m_smallTriangles[l - 1]) {
-        size_t triangleSize = i.m_dests.size();
-        auto mat =
-#ifdef SHAREMAT
-          i.m_matrix.empty() ?
-          lsf->m_smallTriangles[l - 1][i.m_matrixToUse].m_matrix.data() :
-#endif
-          i.m_matrix.data();
-        for (size_t dest = 0; dest < triangleSize; ++dest) {
-          double sum = 0;
-          for (size_t source = 0; source < dest; ++source) {
-            sum += mat[dest*triangleSize + source] * out[writeOffset + i.m_dests[source]];
-          }
-          double newVal = sig.m_data[l - 1][i.m_sources[dest]] - sum;
-          out[writeOffset + i.m_dests[dest]] = newVal;
-        }
-      }
-      for (auto& i : lsf->m_smallSVDs[l-1]) {
-        auto mat = 
-#ifdef SHAREMAT
-          i.m_matrix.empty() ? 
-          lsf->m_smallSVDs[l-1][i.m_matrixToUse].m_matrix.data() :
-#endif
-          i.m_matrix.data();
-        size_t nSources = i.m_sources.size();
-        rhs.resize(nSources);
-        for (size_t j = 0; j < nSources;++j)
-          rhs[j] = sig.m_data[l - 1][i.m_sources[j]];
-        for (size_t j = 0; j < i.m_dests.size();++j) {
-          double val = 0;
-          for (size_t k = 0; k < nSources; ++k)
-            val += mat[nSources*j + k] * rhs[k];
-          out[writeOffset + i.m_dests[j]] = val;
-        }
-      }
-      writeOffset += loglevelLength;
-    }
-
-    npy_intp dims[] = {(npy_intp)out.size()};
-    PyObject* o = PyArray_SimpleNew(1,dims,NPY_FLOAT32);
+  if (wantedmethods.m_expanded ||
+    (wantedmethods.m_log_of_signature && lsf->canTakeLogOfSig())) {
+    size_t eachOutputSize = wantedmethods.m_expanded ?
+      (size_t)calcSigTotalLength(lsf->m_dim, lsf->m_level) : (npy_intp)logsiglength;
+    PyObject* o = simpleNew_ownLastDim(ndims - 1, a, eachOutputSize, OutT::typenum);
     if (!o)
       return nullptr;
-    float* dest = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
-    for(double d : out)
-      *dest++ = (float) d;
+    auto outp = static_cast<OutT::T*>(PyArray_DATA(
+      reinterpret_cast<PyArrayObject*>(o)));
+    ReleasableDeleter o_(o);
+
+    CalculatedSignature sig;
+    bool ok = do_interruptible([&] {
+      for (int path = 0; path < nPaths; ++path) {
+        if (!calcSignature(sig, data, lengthOfPath, d, lsf->m_level))
+          return false;
+        data += eachInputLength;
+        logTensor(sig);
+        if (wantedmethods.m_expanded)
+          sig.writeOut(outp + path * eachOutputSize);
+        else {
+          projectExpandedLogSigToBasis(outp + path * eachOutputSize,
+            lsf, sig);
+        }
+      }
+      return true;
+    });
+    if (!ok)
+      return nullptr;
+    o_.release();
     return o;
   }
   ERR("We had not prepare()d for this request type");
@@ -1384,7 +1438,7 @@ rotinv2dprepare(PyObject *self, PyObject *args) {
 #ifndef IISIGNATURE_NO_NUMPY
   if (t == RotationalInvariants::InvariantType::SVD || 
       t==RotationalInvariants::InvariantType::QR) {
-    LeastSquares ls;
+    LeastSquares ls (t == RotationalInvariants::InvariantType::QR);
     if (!ls.m_ok)
       return nullptr;
     vector<double> tempa, tempb, tempc;
@@ -1440,10 +1494,10 @@ rotinv2d(PyObject *self, PyObject *args) {
     ERR("Level must be a small positive even number");
 
   CalculatedSignature sig;
-  setup_signals();
-  if (!calcSignature(sig, a, level))
-    return nullptr;
-  if (PyErr_CheckSignals())
+  bool ok = do_interruptible([&] {
+    return calcSignature(sig, (double*)PyArray_DATA(a), lengthOfPath, d, level);
+  });
+  if (!ok)
     return nullptr;
 
   std::vector<double> out;
@@ -1520,7 +1574,7 @@ rotinv2dcoeffs(PyObject *self, PyObject *args) {
 static PyMethodDef Methods[] = {
 #ifndef IISIGNATURE_NO_NUMPY
   {"sig",  sig, METH_VARARGS, "sig(X,m,format=1)\n Returns the signature of a path X "
-   "up to level m. X must be a numpy NxD float32 or float64 array of points "
+   "up to level m. X must be a numpy [...x]NxD float32 or float64 array of points "
    "making up the path in R^d. The initial 1 in the zeroth level of the signature is excluded. "
    "If format is 1, the output is a list of arrays not a single one."},
   {"sigmultcount", sigMultCount, METH_VARARGS, "sigmultcount(X,m)\n "
@@ -1535,8 +1589,8 @@ static PyMethodDef Methods[] = {
    "sigbackprop(s,X,m) should be approximately numpy.dot(sigjacobian(X,m),s)"},
   {"sigjoin", sigJoin, METH_VARARGS, "sigjoin(X,D,m,f=float('nan'))\n "
    "If X is an array of signatures of d dimensional paths of shape "
-   "(K, siglength(d,m)) and D is an array of d dimensional displacements "
-   "of shape (K, d), then return an array shaped like X "
+   "(..., siglength(d,m)) and D is an array of d dimensional displacements "
+   "of shape (..., d), then return an array shaped like X "
    "of the signatures of the paths concatenated with the displacements. "
    "If f is provided, then it is taken to be the fixed value of the "
    "displacement in the last dimension, and D should have shape (K, d-1)."},
@@ -1546,8 +1600,8 @@ static PyMethodDef Methods[] = {
    " of F with respect to sigjoin(X,D,m,f). The result is a tuple of two items."}, 
   {"sigscale", sigScale, METH_VARARGS, "sigjoin(X,D,m))\n "
    "If X is an array of signatures of d dimensional paths of shape "
-   "(K, siglength(d,m)) and D is an array of d dimensional scales "
-   "of shape (K, d), then return an array shaped like X "
+   "(..., siglength(d,m)) and D is an array of d dimensional scales "
+   "of shape (..., d), then return an array shaped like X "
    "of the signatures of the paths scaled by the corresponding scale factor in each dimension. "},
   {"sigscalebackprop",sigScaleBackwards,METH_VARARGS, "sigscalebackprop(s,X,D,m) \n "
    "gives the derivatives of F with respect to X and D where s is the derivatives"
@@ -1578,7 +1632,7 @@ static PyMethodDef Methods[] = {
    "information about the opaque object s. s must have come from prepare."},
 #ifndef IISIGNATURE_NO_NUMPY
   {"logsig", logsig, METH_VARARGS, "logsig(X, s, methods=None) \n "
-   "Calculates the log signature of the path X. X must be a numpy NxD float32 "
+   "Calculates the log signature of the path X. X must be a numpy [...x]NxD float32 "
    "or float64 array of points making up the path in R^d. s must have come from "
    "prepare(D,m) for some m. The value is returned as a 1D numpy array of its "
    "log signature up to level m. By default, the method used is the default out "

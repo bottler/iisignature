@@ -61,9 +61,11 @@ namespace CalcSignature{
     void sigOfNothing(int d, int m){
       m_data.resize(m);
       m_data[0].assign(d,0);
+      size_t size = (size_t)d;
       for(int level=2; level<=m; ++level){
         auto& s = m_data[level-1];
-        s.assign(calcSigLevelLength(d,level),0);
+        size *= (size_t)d;
+        s.assign(size,0);
       }
     }
   
