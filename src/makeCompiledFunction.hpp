@@ -37,7 +37,7 @@ public:
   }
   ~Mem(){
 #ifdef _WIN32
-    bool i = !VirtualFreeEx(GetCurrentProcess(),m_buf,0,MEM_DECOMMIT);
+    bool i = !VirtualFreeEx(GetCurrentProcess(),m_buf,0,MEM_RELEASE);
 #else
     int i = munmap(m_buf, m_size);
 #endif
