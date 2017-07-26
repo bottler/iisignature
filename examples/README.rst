@@ -1,4 +1,5 @@
-## iisignature examples
+iisignature examples
+====================
 
 The files in this folder beginning with "iisignature" contain useful
 python functionality which builds on the functionality in iisignature.
@@ -13,15 +14,15 @@ code, then you should be able to run the demo files once you have run
 ``python setup.py build_ext --inplace`` in the root of the tree,
 because they append ``..`` to the ``PYTHONPATH``.
 
-* leak_check.py runs functions from iisignature many times - I can watch 
-memory usage while this happens to try to diagnose memory leaks.
+All the other files are freestanding programs.
 
-* innerProductLogSig.py shows how to find the L2 inner product of the tensor-space-expanded 
-versions of log signatures when they are not tensor-space-expanded.
+* freehand_draw.py prints out log signatures of paths you draw freehand with the mouse.
 
-* protectedRotinvExperiment.py shows how you might, on Windows and Linux,
-experiment with high levels of some calculation (rotational invariants in
-this case) without fear you will stall your computer by eating all your RAM.
+* innerProductLogSig.py shows how to find the L2 inner product of the tensor-space-expanded versions of log signatures when they are not tensor-space-expanded.
 
-The *Mathematica* folder contains some signature related Mathematica stuff.
+* leak_check.py runs functions from iisignature many times - I can watch memory usage while this happens to try to diagnose memory leaks.
+
+* protectedRotinvExperiment.py shows how you might, on Windows and Linux, experiment with high levels of some calculation (rotational invariants in this case) without fear you will stall your computer by eating all your RAM.
+
+The **Mathematica** folder contains some signature related Mathematica stuff.
 
