@@ -99,7 +99,7 @@ class SigJoinGrad_op(theano.Op):
         fixed=theano.tensor.as_tensor_variable(fixed)
         outT=theano.tensor.TensorType("float32",[False]*(x.ndim))
         return theano.Apply(self,inputs=[s,x,y,m,fixed],
-                            outputs=[OutT(), OutT()])
+                            outputs=[outT(), outT()])
     def perform(self,node,inputs_storage,out):
         s=inputs_storage[0]
         x=inputs_storage[1]
@@ -134,7 +134,7 @@ class SigJoin_op(theano.Op):
         fixed=theano.tensor.as_tensor_variable(fixed)
         outT=theano.tensor.TensorType("float32",[False]*(x.ndim))
         return theano.Apply(self,inputs=[x,y,m,fixed],
-                            outputs=[OutT()])
+                            outputs=[outT()])
     def perform(self,node,inputs_storage,outputs_storage):
         x=inputs_storage[0]
         y=inputs_storage[1]
@@ -168,7 +168,7 @@ class SigScaleGrad_op(theano.Op):
         m=theano.tensor.as_tensor_variable(m)
         outT=theano.tensor.TensorType("float32",[False]*(x.ndim))
         return theano.Apply(self,inputs=[s,x,y,m],
-                            outputs=[OutT(), OutT()])
+                            outputs=[outT(), outT()])
     def perform(self,node,inputs_storage,out):
         s=inputs_storage[0]
         x=inputs_storage[1]
@@ -201,7 +201,7 @@ class SigScale_op(theano.Op):
         m=theano.tensor.as_tensor_variable(m)
         outT=theano.tensor.TensorType("float32",[False]*(x.ndim))
         return theano.Apply(self,inputs=[x,y,m],
-                            outputs=[OutT()])
+                            outputs=[outT()])
     def perform(self,node,inputs_storage,outputs_storage):
         x=inputs_storage[0]
         y=inputs_storage[1]

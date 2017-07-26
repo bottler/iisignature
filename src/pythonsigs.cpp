@@ -72,7 +72,8 @@ void interrupt(){if(g_signal_given) throw std::runtime_error("INTERRUPTION");}
 
 //The following 3 functions just do t, which returns true if it succeeded,
 // returning true if t succeeded.
-//Calling a function which might interrupt must be done inside one.
+//When in one of the python functions (defined in this file), 
+//calling a function which might call interrupt needs catching like this.
 template<typename T>
 bool do_interruptible(T&& t) {
   bool ok = false;
@@ -94,6 +95,7 @@ template<typename T>
 bool do_dummy(T&& t) {//useful for timing experiments, 
   return t();
 }
+//Like do_interruptible but also releases the GIL
 template<typename T>
 bool do_interruptible_releasing_lock(T&& t) {
   bool ok = false;
@@ -1189,10 +1191,12 @@ prepare(PyObject *self, PyObject *args){
     ERR(methodError);
   auto basis = wantedmethods.m_want_matchCoropa ? LieBasis::StandardHall : LieBasis::Lyndon;
   std::unique_ptr<LogSigFunction> lsf(new LogSigFunction(basis));
-  do_interruptible_releasing_lock([&]{
+  bool ok = do_interruptible_releasing_lock([&]{
     makeLogSigFunction(dim,level,*lsf, wantedmethods, interrupt);
     return true;
   });
+  if (!ok)
+    return nullptr;
 
 #ifndef IISIGNATURE_NO_NUMPY
   LeastSquares ls;
@@ -1674,7 +1678,9 @@ PyInit_iisignature(void){
 #ifndef IISIGNATURE_NO_NUMPY
   import_array();
 #endif
-  return PyModule_Create(&moduledef);
+  PyObject* moduleObj =  PyModule_Create(&moduledef);
+  PyModule_AddStringConstant(moduleObj, "__version__", TOSTRING(VERSION));
+  return moduleObj;
 }
 #else
 
@@ -1683,7 +1689,8 @@ PyMODINIT_FUNC
 initiisignature(void)
 {
   import_array();
-  (void) Py_InitModule3("iisignature", Methods, MODULEDOC);
+  PyObject* moduleObj = Py_InitModule3("iisignature", Methods, MODULEDOC);
+  PyModule_AddStringConstant(moduleObj, "__version__", TOSTRING(VERSION));
 }
 
 #endif

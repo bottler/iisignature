@@ -526,11 +526,14 @@ void productCoefficients3 (Coefficient& a, const Coefficient& b, const Coefficie
 void sumCoefficients(Coefficient& lhs, Coefficient&& rhs){
   auto& a = lhs.m_details;
   auto& b = rhs.m_details;
+  auto comp1st = [](const std::pair<std::vector<Input>, double>& a,
+                    const std::pair<std::vector<Input>, double>& b){
+                      return a.first<b.first;  };
 
   size_t ss = a.size();
   a.reserve(a.size()+b.size());
   std::move(b.begin(),b.end(),std::back_inserter(a));
-  std::inplace_merge(a.begin(),a.begin()+ss,a.end());
+  std::inplace_merge(a.begin(),a.begin()+ss,a.end(), comp1st);
 
   using A = std::pair<std::vector<Input>,double>;
   a.erase(amalgamate_adjacent_pairs(a.begin(), a.end(),
@@ -549,10 +552,13 @@ public:
   std::vector<std::vector<std::pair<const BasisElt*,Coefficient>>> m_data;
 };
 
-std::ostream& printPolynomial(Polynomial& poly, std::ostream& o){
+std::ostream& printPolynomial(Polynomial& poly, std::ostream& o, bool brackets = false ){
   for(auto &l : poly.m_data){
     for(auto& m : l){
-      printBasisEltDigits(*m.first,o);
+      if(brackets)
+        printBasisEltBracketsDigits(*m.first, o);
+      else
+        printBasisEltDigits(*m.first, o);
       o<<" ";
       for(const auto& c : m.second.m_details){
         for(const auto& i : c.first){
