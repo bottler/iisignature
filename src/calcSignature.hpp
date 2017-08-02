@@ -72,7 +72,7 @@ namespace CalcSignature{
     //if a is the signature of path A, b of B, then
     //a.concatenateWith(d,m,b) makes a be the signature of the concatenated path AB
     //This is also the (concatenation) product of the elements a and b in the tensor algebra.
-    void concatenateWith(int d, int m, const CalculatedSignature& other){
+    void concatenateWith(int /*d*/, int m, const CalculatedSignature& other){
       for(int level=m; level>0; --level){
         for(int mylevel=level-1; mylevel>0; --mylevel){
           int otherlevel=level-mylevel;
@@ -80,8 +80,8 @@ namespace CalcSignature{
           for(auto dest=m_data[level-1].begin(), 
                 my =m_data[mylevel-1].begin(),
                 myE=m_data[mylevel-1].end(); my!=myE; ++my){
-            for(const CalcSigNumeric& d : oth){
-              *(dest++) += d * *my;
+            for(const CalcSigNumeric& dd : oth){
+              *(dest++) += dd * *my;
             }
           }
         }
@@ -141,8 +141,8 @@ namespace CalcSignature{
         auto& bb = b.m_data[blevel-1];
         auto dest=out.m_data[level-1].begin();
         for(const CalcSigNumeric& c : aa){
-          for(const CalcSigNumeric& d : bb){
-            *(dest++) += d * c;
+          for(const CalcSigNumeric& dd : bb){
+            *(dest++) += dd * c;
           }
         }
       }
@@ -240,7 +240,7 @@ namespace TotalDerivativeSignature{
     //if a is the signature of path A, b of B, then
     //a.concatenateWith(d,m,b) makes a be the signature of the concatenated path AB
     //This is also the (concatenation) product of the elements a and b in the tensor algebra.
-    void concatenateWith(int d, int m, const Signature& other){
+    void concatenateWith(int /*d*/, int m, const Signature& other){
       for(int level=m; level>0; --level){
         for(int mylevel=level-1; mylevel>0; --mylevel){
           int otherlevel=level-mylevel;
@@ -248,8 +248,8 @@ namespace TotalDerivativeSignature{
           for(auto dest=m_data[level-1].begin(),
                 my =m_data[mylevel-1].begin(),
                 myE=m_data[mylevel-1].end(); my!=myE; ++my){
-            for(const auto& d : oth){
-              accumulateMultiply(*(dest++), d,*my);
+            for(const auto& dd : oth){
+              accumulateMultiply(*(dest++), dd,*my);
             }
           }
         }
@@ -345,7 +345,7 @@ namespace BackwardDerivativeSignature{
     //if a is the signature of path A, b of B, then
     //a.concatenateWith(d,m,b) makes a be the signature of the concatenated path AB
     //This is also the (concatenation) product of the elements a and b in the tensor algebra.
-    void concatenateWith(int d, int m, const Signature& other){
+    void concatenateWith(int /*d*/, int m, const Signature& other){
       for(int level=m; level>0; --level){
         for(int mylevel=level-1; mylevel>0; --mylevel){
           int otherlevel=level-mylevel;
@@ -353,8 +353,8 @@ namespace BackwardDerivativeSignature{
           for(auto dest=m_data[level-1].begin(), 
                 my =m_data[mylevel-1].begin(),
                 myE=m_data[mylevel-1].end(); my!=myE; ++my){
-            for(const Number& d : oth){
-              *(dest++) += d * *my;
+            for(const Number& dd : oth){
+              *(dest++) += dd * *my;
             }
           }
         }
@@ -369,7 +369,7 @@ namespace BackwardDerivativeSignature{
     //a.unconcatenateWith(d,m,b) makes a be the signature of A.
     //This is like concatenateWith except that other is taken to be negative in its odd levels,
     //which depends critically on the fact that other is the signature of a straight line.
-    void unconcatenateWith(int d, int m, const Signature& other){
+    void unconcatenateWith(int /*d*/, int m, const Signature& other){
       for(int level=m; level>0; --level){
         for(int mylevel=level-1; mylevel>0; --mylevel){
           int otherlevel=level-mylevel;
@@ -378,8 +378,8 @@ namespace BackwardDerivativeSignature{
           for(auto dest=m_data[level-1].begin(), 
                 my =m_data[mylevel-1].begin(),
                 myE=m_data[mylevel-1].end(); my!=myE; ++my){
-            for(const Number& d : oth){
-              *(dest++) += d * *my * factor;
+            for(const Number& dd : oth){
+              *(dest++) += dd * *my * factor;
             }
           }
         }
@@ -426,7 +426,7 @@ namespace BackwardDerivativeSignature{
   //Let F be some scalar.
   //Given input: a is sig(A), b is sig(B) and ww is dF/d(sig(AB))
   //Produces output: bb is dF/d(sig(B)), ww is dF/d(sig(A))
-  void backConcatenate(int d, int m, const Signature& a, const Signature& b, Signature& ww, Signature& bb){
+  void backConcatenate(int /*d*/, int m, const Signature& a, const Signature& b, Signature& ww, Signature& bb){
     bb=ww;
     //in this block, we only modify bb
     for(int level=m; level>0; --level){
@@ -436,8 +436,8 @@ namespace BackwardDerivativeSignature{
         auto dest=ww.m_data[level-1].begin();
         for(auto my =a.m_data[mylevel-1].begin(),
               myE=a.m_data[mylevel-1].end(); my!=myE; ++my){
-          for(Number& d : oth){
-            d += *(dest++) * *my;
+          for(Number& dd : oth){
+            dd += *(dest++) * *my;
           }
         }
       }
@@ -452,8 +452,8 @@ namespace BackwardDerivativeSignature{
         for(auto dest=ww.m_data[level-1].begin(), 
               my =ww.m_data[mylevel-1].begin(),
               myE=ww.m_data[mylevel-1].end(); my!=myE; ++my){
-          for(const Number& d : oth){
-            *my += *(dest++) * d;
+          for(const Number& dd : oth){
+            *my += *(dest++) * dd;
           }
         }
       }
@@ -549,7 +549,8 @@ namespace BackwardDerivativeSignature{
   void sigJoinBackwards(int d, int m, const Number* signature,
                         const Number* displacement, const Number* derivs,
                         double fixedLast,
-                        OutputNumber* dSig, OutputNumber* dSeg){
+                        OutputNumber* dSig, OutputNumber* dSeg,
+                        double& dFixedLast){
     Signature allSigDerivs, allSig, localDerivs,segmentSig;
     allSig.fromRaw(d,m,signature);
     allSigDerivs.fromRaw(d,m,derivs);
@@ -557,9 +558,12 @@ namespace BackwardDerivativeSignature{
     backConcatenate(d,m,allSig,segmentSig,allSigDerivs,localDerivs);
     allSigDerivs.writeOut(dSig);
     backToSegment(d,m,segmentSig,localDerivs);
-    const int d_given = std::isnan(fixedLast) ? d : d-1;
+    bool fixed = !std::isnan(fixedLast);
+    const int d_given =  fixed ? d-1 : d;
     for(int j=0;j<d_given;++j)
       dSeg[j]=(OutputNumber)localDerivs.m_data[0][j];
+    if (fixed)
+      dFixedLast += localDerivs.m_data[0][d - 1];
   }
 
   //replace s with the signature of its path scaled by scales[.] in each dim

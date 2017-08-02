@@ -23,6 +23,10 @@ def _sigJoinGradImp(g,x,y,m):
     o= iisignature.sigjoinbackprop(g,x,y,m)
     return o[0],o[1],_zero
 
+def _sigJoinGradImpFixed(g,x,y,m,fixedlast):
+    o= iisignature.sigjoinbackprop(g,x,y,m,fixedlast)
+    return o[0],o[1],_zero,np.array(o[2],dtype="float32")
+
 def _sigGrad(op, grad):
     return tf.py_func(_sigGradImp,[grad]+list(op.inputs),
                       [tf.float32]*2, name="SigGrad")
@@ -35,6 +39,10 @@ def _sigJoinGrad(op, grad):
     return tf.py_func(_sigJoinGradImp,[grad]+list(op.inputs),
                       [tf.float32]*3, name="SigJoinGrad")
 
+def _sigJoinGradFixed(op, grad):
+    return tf.py_func(_sigJoinGradFixedImp,[grad]+list(op.inputs),
+                      [tf.float32]*4, name="SigJoinGradFixed")
+
 def _sigImp(x,m):
     return iisignature.sig(x,m)
 
@@ -43,6 +51,8 @@ def _sigScaleImp(x,y,m):
 
 def _sigJoinImp(x,y,m):
     return iisignature.sigjoin(x,y,m)
+def _sigJoinFixedImp(x,y,m,fixedLast):
+    return iisignature.sigjoin(x,y,m,fixedLast)
 
 def Sig(x, m):
     rnd_name = 'PyFuncGrad' + str(np.random.randint(0, 1E+8))
@@ -58,12 +68,18 @@ def SigScale(x, y, m):
     with g.gradient_override_map({"PyFunc":rnd_name}):
         return tf.py_func(_sigScaleImp, [x,y,m], tf.float32, name="SigScale") 
     
-def SigJoin(x,y,m):
+def SigJoin(x,y,m,fixedLast=None):
     rnd_name = 'PyFuncGrad' + str(np.random.randint(0, 1E+8))
-    tf.RegisterGradient(rnd_name)(_sigJoinGrad)
-    g=tf.get_default_graph()
-    with g.gradient_override_map({"PyFunc":rnd_name}):
-        return tf.py_func(_sigJoinImp, [x,y,m], tf.float32, name="SigJoin")
+    if fixedLast is None:
+        tf.RegisterGradient(rnd_name)(_sigJoinGrad)
+        g=tf.get_default_graph()
+        with g.gradient_override_map({"PyFunc":rnd_name}):
+            return tf.py_func(_sigJoinImp, [x,y,m], tf.float32, name="SigJoin")
+    else:
+        tf.RegisterGradient(rnd_name)(_sigJoinGradFixed)
+        g=tf.get_default_graph()
+        with g.gradient_override_map({"PyFunc":rnd_name}):
+            return tf.py_func(_sigJoinFixedImp, [x,y,m,fixedLast], tf.float32, name="SigJoin")
 
 #https://stackoverflow.com/questions/37924071/tensorflow-writing-an-op-in-python
 #https://gist.github.com/harpone/3453185b41d8d985356cbe5e57d67342

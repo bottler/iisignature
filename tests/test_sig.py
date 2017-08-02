@@ -247,11 +247,18 @@ class A(TestCase):
             derivsOfSum = numpy.ones((numberToDo,siglength))
             calculated = iisignature.sigjoinbackprop(derivsOfSum,joinee,extra,
                                                      level,fixedPoint)
+            self.assertEqual(len(calculated),3 if fixed else 2)
             diff1 = (bump1 - base) - numpy.sum(calculated[0] * (bumpedJoinee - joinee))
             diff2 = (bump2 - base) - numpy.sum(calculated[1] * (bumpedExtra - extra))
             #print ("\n",bump1,bump2,base,diff1,diff2)
             self.assertLess(numpy.abs(diff1),0.000001,"diff1 as expected " + (" with fixed Dim" if fixed else ""))
             self.assertLess(numpy.abs(diff2),0.00001,"diff2 as expected " + (" with fixed Dim" if fixed else ""))
+            if fixed:
+                bumpedFixedPoint = fixedPoint * 1.01
+                bump3 = numpy.sum(iisignature.sigjoin(joinee,extra, level, bumpedFixedPoint))
+                diff3 = (bump3-base - numpy.sum(calculated[2] * (bumpedFixedPoint-fixedPoint)))
+                #print("\n",bump3,base, fixedPoint, bumpedFixedPoint, calculated[2])
+                self.assertLess(numpy.abs(diff3),0.00001, "diff3")
 
 #test that sigjacobian and sigbackprop compatible with sig
 class Deriv(TestCase):

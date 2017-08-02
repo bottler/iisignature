@@ -43,7 +43,7 @@ class RecurrentSig(keras.layers.recurrent.Recurrent):
     '''
     def __init__(self, n_units,
                  sig_level=2,
-                 train_time_lapse =False,#doesn't work yet - no gradient produ
+                 train_time_lapse =False,
                  initial_time_lapse=0.1,
                  output_signatures = False,#whether the output includes the signatures
                  use_signatures = True, #whether each new state can depend on the signature

@@ -550,15 +550,20 @@ static PyObject *
   
   float* out1 = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o1)));
   float* out2 = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o2)));
+  double dFixedLast = 0;
   for(int iPath=0; iPath<nPaths; ++iPath)
     BackwardDerivativeSignature::sigJoinBackwards(d_out,level,sig.ptr()+iPath*sigLength,
                                                   displacement.ptr()+iPath*d_given,
                                                   derivs.ptr()+iPath*sigLength,
                                                   fixedLast,
                                                   out1+iPath*sigLength,
-                                                  out2+iPath*d_given);
+                                                  out2+iPath*d_given,
+                                                  dFixedLast);
   //PyTuple_Pack doesn't steal references
-  return Py_BuildValue("(NN)", o1, o2);
+  if(std::isnan(fixedLast))
+    return Py_BuildValue("(NN)", o1, o2);
+  else
+    return Py_BuildValue("(NNd)", o1, o2, dFixedLast);
 }
 
 static PyObject *
@@ -1600,8 +1605,8 @@ static PyMethodDef Methods[] = {
    "displacement in the last dimension, and D should have shape (K, d-1)."},
    //"If X is an NxD array then out s must be a (siglength(D,m),) array."},
   {"sigjoinbackprop",sigJoinBackwards,METH_VARARGS, "sigjoinbackprop(s,X,D,m,f=float('nan')) \n "
-   "gives the derivatives of F with respect to X and D where s is the derivatives"
-   " of F with respect to sigjoin(X,D,m,f). The result is a tuple of two items."}, 
+   "gives the derivatives of F with respect to X and D (and f if given) where s is the derivatives"
+   " of F with respect to sigjoin(X,D,m,f). The result is a tuple of two or three items."}, 
   {"sigscale", sigScale, METH_VARARGS, "sigjoin(X,D,m))\n "
    "If X is an array of signatures of d dimensional paths of shape "
    "(..., siglength(d,m)) and D is an array of d dimensional scales "

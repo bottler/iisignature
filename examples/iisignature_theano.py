@@ -86,11 +86,11 @@ class Sig_op(theano.Op):
 Sig = Sig_op()
 
 #This is a theano Op which wraps iisignature.sigjoinbackprop .
-#It has two outputs - there is nothing strange about this.
+#It has multiple outputs.
 class SigJoinGrad_op(theano.Op):
     __props__=()
     def infer_shape(self,node,shapes):
-        return [shapes[1],shapes[2]]
+        return [shapes[1],shapes[2], None]
     def make_node(self,s,x,y,m,fixed):
         s=theano.tensor.as_tensor_variable(s)
         x=theano.tensor.as_tensor_variable(x)
@@ -99,7 +99,7 @@ class SigJoinGrad_op(theano.Op):
         fixed=theano.tensor.as_tensor_variable(fixed)
         outT=theano.tensor.TensorType("float32",[False]*(x.ndim))
         return theano.Apply(self,inputs=[s,x,y,m,fixed],
-                            outputs=[outT(), outT()])
+                            outputs=[outT(), outT(), theano.tensor.dscalar()])
     def perform(self,node,inputs_storage,out):
         s=inputs_storage[0]
         x=inputs_storage[1]
@@ -120,6 +120,7 @@ class SigJoinGrad_op(theano.Op):
                 raise RuntimeError("nan in output")
         out[0][0]=o[0]
         out[1][0]=o[1]
+        out[2][0]=np.array(0.0 if np.isnan(fixed) else o[2], dtype="float64")
 SigJoinGrad = SigJoinGrad_op()
 
 #This is a theano Op which wraps iisignature.sigjoin .
@@ -152,7 +153,7 @@ class SigJoin_op(theano.Op):
         gg = SigJoinGrad(g[0],inputs[0],inputs[1],inputs[2],inputs[3])
         return [gg[0],gg[1],
                 theano.gradient.grad_undefined(self,2,inputs[2]),
-                theano.gradient.grad_not_implemented(self,3,inputs[3])]
+                gg[2]]
 SigJoin = SigJoin_op()
 
 #This is a theano Op which wraps iisignature.sigscalebackprop .
