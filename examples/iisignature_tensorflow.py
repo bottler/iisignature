@@ -23,7 +23,7 @@ def _sigJoinGradImp(g,x,y,m):
     o= iisignature.sigjoinbackprop(g,x,y,m)
     return o[0],o[1],_zero
 
-def _sigJoinGradImpFixed(g,x,y,m,fixedlast):
+def _sigJoinGradFixedImp(g,x,y,m,fixedlast):
     o= iisignature.sigjoinbackprop(g,x,y,m,fixedlast)
     return o[0],o[1],_zero,np.array(o[2],dtype="float32")
 

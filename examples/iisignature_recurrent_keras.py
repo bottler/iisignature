@@ -2,12 +2,17 @@ import keras.layers.recurrent
 from keras.engine import InputSpec
 from keras import backend as K
 from keras import initializers, activations
+import keras
 import iisignature
 if K.backend() == "theano":
     from iisignature_theano import SigJoin
 if K.backend() == "tensorflow":
     from iisignature_tensorflow import SigJoin
 import math
+from distutils.version import LooseVersion
+
+if LooseVersion(keras.__version__)<LooseVersion("2.0.4"):
+    raise RuntimeError("old keras, please find another version of this file")
 
 #Consider initializing so that state is constant initially or something.
 #-perhaps a highway
