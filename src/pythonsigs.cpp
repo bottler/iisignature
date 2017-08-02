@@ -1320,7 +1320,7 @@ logsig(PyObject *self, PyObject *args){
     vector<double> out;
     for (int path = 0; path < nPaths; ++path) {
       out.assign(logsiglength, 0);
-      if (lengthOfPath > 0) {
+      if (lengthOfPath > 1) {
         for (int j = 0; j < d; ++j)
           out[j] = data[1 * d + j] - data[0 * d + j];
       }

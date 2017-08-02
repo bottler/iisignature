@@ -339,6 +339,29 @@ class Counts(TestCase):
             self.assertLess(diff(isig[i],sig[i]),0.00001)
         self.assertEqual(mults,iisignature.sigmultcount(path,m))
 
+class SimplePaths(TestCase):
+    def testa(self):
+        # check sanity of paths with less than 3 points
+        path1=[[4.3,0.8]]
+        path2=numpy.array([[1,2],[2,4]])
+        m=4
+        d=2
+        s=iisignature.prepare(d,m,"cosx")
+        loglength=iisignature.logsiglength(d,m)
+        blankLogSig=numpy.zeros(loglength)
+        blankSig=numpy.zeros(iisignature.siglength(d,m))
+        self.assertLess(diff(iisignature.sig(path1,m),blankSig),0.000000001)
+        self.assertLess(diff(iisignature.logsig(path1,s,"C"),blankLogSig),0.000000001)
+        self.assertLess(diff(iisignature.logsig(path1,s,"O"),blankLogSig),0.000000001)
+        self.assertLess(diff(iisignature.logsig(path1,s,"S"),blankLogSig),0.000000001)
+        self.assertLess(diff(iisignature.logsig(path1,s,"X"),blankSig),0.000000001)
+        blankLogSig[:d]=path2[1]-path2[0]
+        blankSig[:d]=path2[1]-path2[0]
+        self.assertLess(diff(iisignature.logsig(path2,s,"C"),blankLogSig),0.000001)
+        self.assertLess(diff(iisignature.logsig(path2,s,"O"),blankLogSig),0.000001)
+        self.assertLess(diff(iisignature.logsig(path2,s,"S"),blankLogSig),0.000001)
+        self.assertLess(diff(iisignature.logsig(path2,s,"X"),blankSig),0.000001)
+        
 class Scales(TestCase):
     #check sigscale and its derivatives
     def testa(self):
