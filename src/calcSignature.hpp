@@ -466,8 +466,10 @@ namespace BackwardDerivativeSignature{
   //then this function leaves s.m_data[0] with dF/d(displacement of X)
   //and leaves the rest of s in a meaningless state
   void backToSegment(int d, int m, const Signature& x, Signature& s){
+#ifndef _MSC_VER
     const auto& segment = x.m_data[0];
     auto& dSegment = s.m_data[0];
+#endif
     for(int level = m; level>1; --level){
       auto i = s.m_data[level-1].begin();
       for(size_t j=0; j<s.m_data[level-2].size(); ++j)

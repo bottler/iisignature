@@ -167,6 +167,7 @@
     <ClInclude Include="..\..\readBCHCoeffs.hpp" />
     <ClInclude Include="..\..\rotationalInvariants.hpp" />
     <ClInclude Include="arbitrarySig.hpp" />
+    <ClInclude Include="utils.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\README.md" />

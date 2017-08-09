@@ -267,6 +267,19 @@ namespace IISignature_algebra {
     std::map<const BasisElt*, std::vector<std::pair<size_t, float> >, LessBE>;
   using MappingMatrix = std::vector<MappingMatrixLevel>;
 
+  void printMappingMatrix(const MappingMatrix& m, std::ostream& of) {
+    for (auto& lev : m) {
+      for (auto& p : lev) {
+        printBasisEltBracketsDigits(*p.first, of);
+        of << "\n";
+        for (auto& p2 : p.second)
+          of << "(" << p2.first << "," << p2.second << ")";
+        of << "\n";
+      }
+      of << "\n";
+    }
+  }
+
   MappingMatrix makeMappingMatrix(int /*dim*/, int level, BasisPool &basisPool,
     const std::vector<BasisElt*> &basisWords,
     const std::vector<size_t> &sigLevelSizes) {
@@ -313,6 +326,27 @@ namespace IISignature_algebra {
   using Letters_BEs = std::pair<vector<Letter>, vector< const BasisElt*>>;
   using LetterOrderToBE = std::vector<Letters_BEs>;
   using BasisEltToIndex = std::vector<std::pair<const BasisElt*, size_t>>;
+
+  void printMappingMatrixLevelAnalysis(int lev, const LetterOrderToBE& letterOrderToBE, 
+    const BasisEltToIndex& basisEltToIndex, std::ostream& of) {
+    of << "BEGIN" << lev << "\n";
+    for (auto& p : letterOrderToBE) {
+      for (auto l : p.first)
+        printLetterAsDigit(l, of);
+      of << "\n";
+      for (auto elt : p.second) {
+        printBasisEltBracketsDigits(*elt, of);
+        of << "\n";
+      }
+      of << "\n";
+    }
+    for (auto& p : basisEltToIndex) {
+      printBasisEltBracketsDigits(*p.first, of);
+      of << "\n" << p.second <<"\n";
+    }
+    of << "END" << lev << "\n";
+  }
+
   void analyseMappingMatrixLevel(const MappingMatrix& m, int lev,
     LetterOrderToBE& letterOrderToBE, BasisEltToIndex& basisEltToIndex) {
     letterOrderToBE.reserve(m.size());

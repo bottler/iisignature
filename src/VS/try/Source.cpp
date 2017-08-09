@@ -7,6 +7,7 @@
 #include"logsig.hpp"
 #include "arbitrarySig.hpp"
 #include "rotationalInvariants.hpp"
+#include "utils.h"
 using namespace std;
 
 void interrupt() {}
@@ -29,6 +30,15 @@ void setupGlobal() {
   g_bchLyndon20_dat = s->c_str();
 }
 
+class SecondsCounter
+{
+  const std::chrono::steady_clock::time_point start;
+  double& output;
+public:
+  SecondsCounter(double& output) :start(std::chrono::steady_clock::now()), output(output) {}
+  ~SecondsCounter() { output = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count() / 1000.0; }
+};
+
 void trial() {
   setupGlobal();
   LogSigFunction lsf(LieBasis::Lyndon);
@@ -48,7 +58,53 @@ void trySVD() {
   wm.m_expanded =wm.m_compiled_bch= wm.m_log_of_signature = wm.m_simple_bch = false;
   wm.m_log_of_signature = true;
   //makeLogSigFunction(103, 4, lsf, wm, interrupt1);
-  makeLogSigFunction(3, 5, lsf, wm, interrupt);
+  makeLogSigFunction(2, 5, lsf, wm, interrupt);
+}
+
+void compareHL() {
+  setupGlobal();
+  WantedMethods wm;
+  wm.m_expanded = wm.m_compiled_bch = wm.m_log_of_signature = wm.m_simple_bch = false;
+  wm.m_compiled_bch = true;
+  for (int i = 0; i < 1; ++i) {
+    LogSigFunction lyndon(LieBasis::Lyndon);
+    LogSigFunction hall(LieBasis::StandardHall);
+    int d = 2;
+    int m = 7;
+    makeLogSigFunction(d, m, lyndon, wm, interrupt);
+    makeLogSigFunction(d, m, hall, wm, interrupt);
+    std::cout << "Lyndon: " << lyndon.m_f->m_m.used() << "\n";
+    std::cout << "Hall: " << hall.m_f->m_m.used() << "\n";
+  }
+}
+
+//Look at timing difference using different basis
+double doTrianglesHelp() {
+  setupGlobal();
+  WantedMethods wm;
+  wm.m_expanded = wm.m_compiled_bch = wm.m_log_of_signature = wm.m_simple_bch = false;
+  wm.m_log_of_signature = true;
+  LogSigFunction lsf(LieBasis::Lyndon);
+  //LogSigFunction lsf(LieBasis::StandardHall);
+  int d = 3;
+  int m = 10;
+  makeLogSigFunction(d, m, lsf, wm, interrupt);
+  vector<double> seg(d);
+  vector<double> output((size_t)std::pow(d, m + 1));
+  double out = 0;
+  
+  {
+    SecondsCounter sc(out);
+    for (int i = 0; i < 100; ++i) {
+      CalcSignature::CalculatedSignature sig;
+      sig.sigOfSegment(d, m, &output[0]);
+      logTensor(sig);
+      projectExpandedLogSigToBasis(&output[0], &lsf, sig);
+      out+=output[0] ;//just to confound the optimizer
+    }
+  }
+  std::cout << "\ntime taken (s): " << out << "\n";
+  return out;
 }
 
 void __fastcall foo(double* a, const double* b, double* c);
@@ -133,7 +189,7 @@ void dynkinExperiment(const int d, const int m, bool p1, bool p2) {
     v.resize(sigLevelSizes.back());
   auto& letters = list[0];
   vector<int> allSeqs = getAllSequences(d, m);
-  int nWords = allSeqs.size() / m;
+  int nWords = ((int)allSeqs.size()) / m;
   for (int i = 0; i < nWords; ++i)
   {
     int offset = i*m;
@@ -187,6 +243,38 @@ std::vector<Letter> indexToWord(size_t index, int d, int m) {
   }
   std::reverse(o.begin(), o.end());
   return o;
+}
+
+bool equalLetters(const BasisElt* elt, const vector<int>& counts) {
+  vector<int> mycounts(counts.size());
+  elt->iterateOverLetters([&](Letter l){
+    ++mycounts[l];
+  });
+  return mycounts == counts;
+}
+
+size_t countLyndonWords(const vector<int>& counts){
+    vector<Letter> myletters;
+  for (Letter i = 0; i < counts.size(); ++i)
+    for (int j = 0; j < counts[i]; ++j)
+      myletters.push_back(i);
+  int m = (int)myletters.size();
+  int d = 1 + *std::max_element(myletters.begin(), myletters.end());
+  using namespace IISignature_algebra;
+  //BasisPool s(LieBasis::Lyndon);
+  BasisPool s(LieBasis::StandardHall);
+  auto list = makeListOfBasisElts(s, d, m);
+  size_t out = 0;
+  for (auto elt : list.back()) {
+    if (equalLetters(elt, counts))
+      ++out;
+  }
+  return out;
+}
+
+size_t countLyndonWordsWithTwos(size_t nTwos) {
+  vector<int> counts(2, (int)nTwos);
+  return countLyndonWords(counts);
 }
 
 void printAMappingMatrix() {
@@ -284,15 +372,6 @@ void printAMappingMatrix() {
   }
 }
 
-class SecondsCounter
-{
-  const std::chrono::steady_clock::time_point start;
-  double& output;
-public:
-  SecondsCounter(double& output) :start(std::chrono::steady_clock::now()), output(output) {}
-  ~SecondsCounter() { output = std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::steady_clock::now() - start).count() / 1000.0; }
-};
-
 void timeRotInv() {
   double out=0;
   double sum = 0;
@@ -321,8 +400,25 @@ void timeRotInv2() {
   std::cout << sum << "\n";//just to confound the optimizer
 }
 
+//Check that the Mem object cleans up properly.
+void memLeakChecker() {
+  for (int i = 0; i < 2000000; ++i) {
+    Mem m(20*1024*1024);
+    m.push(2);
+    if (i % 100 == 0)
+      std::cout << "a\n";
+  }
+  int ii;
+  std::cin >> ii;
+  std::cout << "ok\n";
+}
+
 int main() {
-  printAMappingMatrix();
+  restrictWorkingSet(2000);
+  //std::cout << countLyndonWords({ 3,3,4 }) << "\n";
+  //printAMappingMatrix();
+  //compareHL();
+  //memLeakChecker();
   //RotationalInvariants::printAsMatrix();
   //timeRotInv2();
   //RotationalInvariants::demoShuffle();
@@ -333,6 +429,7 @@ int main() {
   //dynkinExperiment(2, 4, 0, 1);
   //dynkinExperiment(2, 4, 1, 1);
   //trySVD();
+  doTrianglesHelp();
   //setupGlobal();
   //calcFla(2, 4, interrupt);
   return 0;
