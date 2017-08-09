@@ -8,6 +8,11 @@ headers = ["bch","calcSignature","logsig","logSigLength","makeCompiledFunction",
 args = []
 if os.name == 'posix':
     args=['-std=c++11']
+
+if os.name == 'darwin' and "MACOSX_DEPLOYMENT_TARGET" not in os.environ:
+    if "IISIGNATURE_MACOSX_DONOTBECLEVER" not in os.environ:
+        args.append('-mmacosx-version-min=10.9')
+
 xtn = Extension('iisignature', ['src/pythonsigs.cpp'], 
                 extra_compile_args=args, # '-DVERSION="'+version+'"'],
                 define_macros=[("VERSION",version)],
