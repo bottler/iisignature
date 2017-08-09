@@ -1,40 +1,50 @@
-#This depends on kivy being properly installed - install its dependencies first.
-#It allows you to draw paths freehand with the mouse in the canvas, and
+#This allows you to draw paths freehand with the mouse on the canvas, and
 #see their log signatures printed on the console.
-#based on https://kivy.org/docs/tutorials/firstwidget.html
+#based on http://www.tkdocs.com/tutorial/canvas.html
 
-from kivy.app import App
-from kivy.uix.widget import Widget
-from kivy.graphics import Color, Ellipse, Line
-import numpy as np, os, sys
+from tkinter import *
+from tkinter import ttk
+import sys, os, numpy as np
 
 #add the parent directory, so we find our iisignature build if it was built --inplace
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 import iisignature
 
-np.set_printoptions(suppress=True)
+np.set_printoptions(suppress=True, precision=6)
 
-m=2
+m=3
 s=iisignature.prepare(2,m)
 
-class MyPaintWidget(Widget):
+lastx, lasty = 0, 0
+points=[]
 
-    def on_touch_down(self, touch):
-        with self.canvas:
-            Color(1, 1, 0)
-            touch.ud['line'] = Line(points=(touch.x, touch.y))
+root = Tk()
+root.columnconfigure(0, weight=1)
+root.rowconfigure(0, weight=1)
 
-    def on_touch_move(self, touch):
-        touch.ud['line'].points += [touch.x, touch.y]
-    
-    def on_touch_up(self, touch):
-        path=np.reshape(touch.ud['line'].points,(-1,2))
-        print(iisignature.logsig(path,s))
+canvas = Canvas(root)
 
+def xy(event):
+    global lastx, lasty, points
+    lastx, lasty = event.x, event.y
+    points=[[lastx,-lasty]]
 
-class MyPaintApp(App):
-    def build(self):
-        return MyPaintWidget()
+def addLine(event):
+    global lastx, lasty
+    canvas.create_line((lastx, lasty, event.x, event.y))
+    lastx, lasty = event.x, event.y
+    points.append([lastx,-lasty])
 
-if __name__ == '__main__':
-    MyPaintApp().run()
+def doneStroke(event):
+    #scaled_points = points / np.array([canvas.winfo_width(), canvas.winfo_height()])
+    scaled_points = points / np.array(max(canvas.winfo_width(), canvas.winfo_height()))
+    #print(iisignature.sig(points,m))
+    #print(iisignature.logsig(points,s))
+    #print(iisignature.sig(scaled_points,m))
+    print(iisignature.logsig(scaled_points,s))
+
+canvas.grid(column=0, row=0, sticky=(N, W, E, S))
+canvas.bind("<Button-1>", xy)
+canvas.bind("<B1-Motion>", addLine)
+canvas.bind("<B1-ButtonRelease>", doneStroke)
+root.mainloop()
