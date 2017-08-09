@@ -394,6 +394,18 @@ class Scales(TestCase):
         self.assertLess(numpy.abs(diff1),0.0000001)
         self.assertLess(numpy.abs(diff2),0.0000001)
 
+class Bases(TestCase):
+    #Check that the Lyndon basis consists of Lyndon words.
+    def testLyndon(self):
+        d=2
+        m=5
+        s=iisignature.prepare(d,m,"O")
+        for expression in iisignature.basis(s):
+            word = ''.join(c for c in expression if c not in '[,]')
+            if len(word) > 1:
+                for prefixLength in range(1,len(word)):
+                    self.assertLess(word[:prefixLength],word[prefixLength:])
+
 class Batching(TestCase):
     def test_batch(self):
         numpy.random.seed(734)
