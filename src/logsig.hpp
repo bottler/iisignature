@@ -122,9 +122,8 @@ void makeFunctionDataForBCH(int dim, int level, BasisPool& s, FunctionData& fd, 
     for(int i=0; i<dim; ++i)
       rhs->m_data[0].push_back(std::make_pair(eltList[0][i],basicCoeff(-i-1))); //just the letters in order
   }
-  for(auto& l : eltList)
-    std::sort(l.begin(),l.end(),[&s](BasisElt* a, BasisElt* b){
-      return s.lexicographicLess(a,b);});
+  for (auto& l : eltList)
+    std::sort(l.begin(), l.end());
   if(!justWords){
     lhs->m_data.resize(level);
     for(int l=1,i=1; l<=level; ++l)
@@ -232,24 +231,22 @@ void makeFunctionDataForBCH(int dim, int level, BasisPool& s, FunctionData& fd, 
   }
 }
 
-//lexicographicLess made into a function object
-class LessBE{
-public:
-  LessBE(BasisPool& basisPool):m_basisPool(&basisPool){}
-  bool operator()(const BasisElt* a, const BasisElt* b) const{
-    return m_basisPool->lexicographicLess(a,b);
-  }
-  BasisPool* m_basisPool;
-};
-
 //Given v, a sorted vector<pair<A,B> > which contains (a,x) for exactly one x,
 //lookupInFlatMap(v,a) returns x.
 template<typename V, typename A>
 const typename V::value_type::second_type&
 lookupInFlatMap(const V& v, const A& a){
-  auto i = std::lower_bound(v.begin(), v.end(), a, 
+  //if (!std::is_sorted(v.begin(), v.end()))
+  //  throw 0;
+  //if (!std::is_sorted(v.begin(), v.end(), [](const typename V::value_type& p, 
+  //                                      const typename V::value_type& q) {
+  //  return p.first < q.first; }))
+  //  throw 0;
+  auto i = std::lower_bound(v.begin(), v.end(), a,
                             [](const typename V::value_type& p, const A& a){
                               return p.first<a;});
+  //if (i == v.end() || i->first != a)
+  //  throw 2;
   return i->second;
 }
 
@@ -263,8 +260,9 @@ namespace IISignature_algebra {
   //if x is a basis element for level m, then mappingMatrix[m-1][x] is 
   //the sparse vector which is its image in tensor
   //space - what we call rho(x)
+  //a MappingMatrixLevel is a flat map, ordered by address.
   using MappingMatrixLevel =
-    std::map<const BasisElt*, std::vector<std::pair<size_t, float> >, LessBE>;
+    vector<pair<const BasisElt*, vector<pair<size_t, float> >>>;
   using MappingMatrix = std::vector<MappingMatrixLevel>;
 
   void printMappingMatrix(const MappingMatrix& m, std::ostream& of) {
@@ -288,19 +286,22 @@ namespace IISignature_algebra {
     //it would be nice to use a lambda and decltype here, but visual studio
     //doesn't allow swapping two lambdas of the same type, 
     //so the vector operations fail.
-    vector<std::map<const BasisElt*, vector<P>, LessBE> > m;
-    m.reserve(level);
-    for (int i = 0; i < level; ++i)
-      m.emplace_back(LessBE(basisPool));
+    MappingMatrix m;
+    m.resize(level);
     for (BasisElt* w : basisWords) {
       if (w->isLetter()) {
-        m[0][w] = { std::make_pair(w->getLetter(),1.0f) };
+        m[0].emplace_back(w, vector<P>{{w->getLetter(),1.0f} });
       }
       else {
         auto len1 = w->getLeft()->length();
         auto len2 = w->getRight()->length();
-        auto& left = m[len1 - 1][w->getLeft()];
-        auto& right = m[len2 - 1][w->getRight()];
+        auto& dest = m[len1 + len2 - 1];
+        if (dest.empty()) {
+          auto& completedLastLevel = m[len1 + len2 - 2];
+          std::sort(completedLastLevel.begin(), completedLastLevel.end());
+        }
+        auto& left = lookupInFlatMap(m[len1 - 1], w->getLeft());
+        auto& right = lookupInFlatMap(m[len2 - 1], w->getRight());
         std::vector<P> v;
         for (const auto& l : left) {
           for (const auto& r : right) {
@@ -313,15 +314,17 @@ namespace IISignature_algebra {
           [](const P& a, const P& b) {return a.first == b.first; },
           [](P& a, P& b) {a.second += b.second; return a.second != 0; }),
           v.end());
-        m[len1 + len2 - 1][w] = std::move(v);
+        dest.emplace_back(w, std::move(v));
       }
     }
+    auto& finalLevel = m.back();
+    std::sort(finalLevel.begin(), finalLevel.end());
     return m;
   }
 
   //Given a MappingMatrix (contains the information for the mapping BasisElt -> tensor space
   //fill letterOrderToBE (maps a sorted list of letters to the BEs which have it)
-  //and basisEltToIndex (maps a BE to its index)
+  //and basisEltToIndex (maps a BE to its index, ordered by address)
   //based on level lev
   using Letters_BEs = std::pair<vector<Letter>, vector< const BasisElt*>>;
   using LetterOrderToBE = std::vector<Letters_BEs>;
@@ -448,7 +451,7 @@ namespace IISignature_algebra {
           const BasisElt* lw = i.second[0];
           sim.m_dest = lookupInFlatMap(basisEltToIndex, lw);
           //we can take any we want, so just take the zeroth
-          const P& p = m[lev - 1].at(lw)[0];
+          const P& p = lookupInFlatMap(m[lev - 1],lw)[0];
           sim.m_factor = 1.0f / p.second;
           sim.m_source = p.first;
           lsf.m_simples[lev - 1].push_back(sim);
@@ -465,7 +468,7 @@ namespace IISignature_algebra {
             //comes first in its own expansion - Reutenauer theorem 5.1.
             //It also comes with coefficient 1, so the diagonal of mtx.m_matrix
             //will always be 1.
-            size_t fullIdx = m[lev - 1].at(j).at(0).first;
+            size_t fullIdx = lookupInFlatMap(m[lev - 1], j).at(0).first;
             mtx.m_sources.push_back(fullIdx);
             fullIdxToSourceIdx.at(fullIdx) = mtx.m_sources.size()-1u;
           }
@@ -477,7 +480,7 @@ namespace IISignature_algebra {
             //note that I can use mtx.m_sources to look up the index of each Lyndon word
             for (size_t col = 0; col < triangleSize; ++col) {
               auto lw = i.second[col];
-              for (auto& p : m[lev - 1][lw]) {
+              for (auto& p : lookupInFlatMap(m[lev - 1],lw)){
                 intptr_t row = fullIdxToSourceIdx.at(p.first);
                 if (row != -1) {
                   mtx.m_matrix[((size_t)row)*triangleSize + col] = p.second;
@@ -495,7 +498,7 @@ namespace IISignature_algebra {
           std::map<size_t, size_t> sourceMap;
           for (auto& j : i.second) {
             mtx.m_dests.push_back(lookupInFlatMap(basisEltToIndex, j));
-            for (auto& k : m[lev - 1].at(j)) {
+            for (auto& k : lookupInFlatMap(m[lev - 1],j)) {
               sourceMap[k.first] = 0;//this element will very often be already present
             }
           }
@@ -510,7 +513,7 @@ namespace IISignature_algebra {
           {
             mtx.m_matrix.assign(mtx.m_dests.size()*mtx.m_sources.size(), 0);
             for (size_t j = 0; j < i.second.size(); ++j) {
-              for (P& k : m[lev - 1].at(i.second[j])) {
+              for (const P& k : lookupInFlatMap(m[lev - 1],i.second[j])) {
                 size_t rowBegin = sourceMap[k.first] * mtx.m_dests.size();
                 mtx.m_matrix[rowBegin + j] = k.second;
               }

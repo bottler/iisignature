@@ -210,14 +210,14 @@ void dynkinExperiment(const int d, const int m, bool p1, bool p2) {
       for (auto &l : poly->m_data)
         for (auto& ll : l) {
           double co = numberFromCoeff(ll.second);
-          for (auto p : map.at(ll.first))
+          for (auto p : lookupInFlatMap(map,ll.first))
             fullMatrix[i][p.first] += co*p.second;
         }
     if (poly2)//poly2)
       for (auto &l : poly2->m_data)
         for (auto& ll : l) {
           double co = numberFromCoeff(ll.second);
-          for (auto p : map.at(ll.first))
+          for (auto p : lookupInFlatMap(map, ll.first))
             fullMatrix[i][p.first] += co*p.second;
         }
   }
@@ -307,7 +307,7 @@ void printAMappingMatrix() {
   auto v = lookupInFlatMap(letterOrderToBE, myletters);
   std::set<size_t> usedTensorIndicesS;
   for (auto elt : v) {
-    for (auto& i : mappingMatrix.back().at(elt))
+    for (auto& i : lookupInFlatMap(mappingMatrix.back(),elt))
       usedTensorIndicesS.insert(i.first);
     //printBasisEltDigits(*elt, std::cout);
     //std::cout << "\n";
@@ -336,7 +336,7 @@ void printAMappingMatrix() {
   }
   for (auto elt : v) {
     vector<float> out(usedTensorIndicesS.size());
-    auto& expanded = mappingMatrix.back().at(elt);
+    auto& expanded = lookupInFlatMap(mappingMatrix.back(), elt);
     for (auto& i : expanded)
       out[bigIdx2SmallIdx.at(i.first)] = i.second;
     if(!printBrackets)

@@ -12,6 +12,8 @@
 #include "readBCHCoeffs.hpp"
 
 //Uncomment this to store (the foliage of) each BasisElt as a string to aid debugging.
+//(These strings never get freed, but that's not going to matter as the number of WordPools
+//in any debugging session should be small).
 //#define STORE_STRING_IN_BE
 
 //If you use StandardHall, calculations will be happen according to 
@@ -133,6 +135,21 @@ OutputIt merge3(InputIt1 first1, InputIt1 last1,
     }
   }
   return std::merge(first2, last2, first3, last3, d_first);
+}
+
+//sort a vector of pairs by the first element
+template<class T>
+void sortByFirst(std::vector<T>& v) {
+  std::sort(v.begin(), v.end(), [](const T& a, const T& b) {
+    return a.first < b.first; });
+}
+
+//look something up in a vector of pairs sorted by the first element
+template<class S, class T>
+typename std::vector<std::pair<S, T>>::const_iterator lookupByFirst(
+  const std::vector<std::pair<S, T>>& v, const S& key) {
+  return std::lower_bound(v.begin(), v.end(), key, 
+    [](const std::pair<S, T>& a, const S& b) {return a.first < b; });
 }
 
 //need transform version
@@ -278,53 +295,49 @@ void printBasisEltBracketsDigits(const BasisElt& w, std::ostream& o){
 //owns all the memory for all the BasisElt objects around, and knows
 //their order.
 class BasisPool{
-  void* getSpace(){
-    if(m_used + objectSize>=eachLength){
-      m_used=0;
-      m_space.push_back({});
-      m_space.back().resize(eachLength);
-    }
-    void** out = m_space.back().data()+m_used;
-    m_used+=objectSize;
-    return (void*) out;
+  void* getSpace() {
+    if (m_storage.empty())
+      throw "no space";
+    void* out = &m_storage[m_used];
+    m_used += objectSize;
+    return out;
   }
-  std::vector<std::vector<void*>> m_space;
+  std::vector<void*> m_storage;
   std::vector<const BasisElt*> m_spaceForIterator1, m_spaceForIterator2;
-  std::map<std::pair<const BasisElt*,const BasisElt*>, BasisElt*> m_products;
+  std::vector<std::pair<std::pair<const BasisElt*, const BasisElt*>, BasisElt*>> m_products;
   std::vector<std::pair<const BasisElt*, size_t> > m_orderLookup;
  public:
-#ifndef STORE_STRING_IN_BE
-  static const int eachLength = 2000;
-#else
-   static const int eachLength = 2016;//a multiple of the object size on all configurations
-#endif
   static const int objectSize = (sizeof(BasisElt)+sizeof(void*)-1)/sizeof(void*);
-  int m_used = eachLength+2;//so we know we need to allocate at the start
+  int m_used = 0;
   const LieBasis m_basis;
   BasisPool(LieBasis basis) : m_basis(basis) {}
+  void makeSpace(size_t size) {
+    if (!m_storage.empty())
+      throw "Can't make space again";
+    m_storage.assign(size*objectSize,nullptr);
+  }
   BasisElt* newBasisEltFromLetter(Letter l){
 #ifndef STORE_STRING_IN_BE
     static_assert(2==objectSize, "bad objectSize");
 #endif
-    static_assert(eachLength%objectSize==0, "bad eachLength");
     return new(getSpace()) BasisElt(l);
   }
   BasisElt* newBasisElt(const BasisElt& left, const BasisElt& right){
-    auto p = std::make_pair(&left,&right);
-    BasisElt*& o = m_products[p];
-    if(!o)
-      o=new(getSpace()) BasisElt(left,right);
-    return o;
+    return new(getSpace()) BasisElt(left, right);
+  }
+  void registerProduct(BasisElt& elt) {
+    m_products.emplace_back(std::make_pair(elt.getLeft(), elt.getRight()), &elt);
   }
   //returns the BasisElt corresponding to [left,right] if it exists
   BasisElt* concatenateIfAllowed(const BasisElt& left, const BasisElt& right){
     auto p = std::make_pair(&left,&right);
-    auto i = m_products.find(p);
-    if(i==m_products.end())
+    auto i = lookupByFirst(m_products, p);
+    if(i==m_products.end() || i->first!=p)
       return nullptr;
     return i->second;
   }
   void doneAdding(){
+    sortByFirst(m_products);
     using std::make_pair;
     m_orderLookup.clear();
     std::map<const BasisElt*,size_t> all;
@@ -361,8 +374,7 @@ class BasisPool{
   //Currently, we only have one comparison function for the BasisElt object. It's here.
   //In the LieBasis::Lyndon case, this function is lexicographic on the letters.
   //In the StandardHall case, it isn't.
-  //Most of the uses of the ordering are just to choose an order to output or store in a container
-  //- no mathematical properties of the order are relied on, except for the small triangles calculation.
+  //The addresses of BasisElts are in increasing order of level, sorted within each level.
   bool /*__attribute__ ((noinline))*/ manualLexicographicLess(const BasisElt* l, const BasisElt* r){
     if (m_basis == LieBasis::Lyndon) {
       BasisEltIterator lit(l, m_spaceForIterator1), rit(r, m_spaceForIterator2), end;
@@ -386,43 +398,67 @@ class BasisPool{
   bool lexicographicLess(const BasisElt* l, const BasisElt* r){
     if(!m_orderLookup.empty())
       return getProxy(l)<getProxy(r);
-    return manualLexicographicLess(l,r);
+    return manualLexicographicLess(l, r);
   }
 };
 
+//Looking at the necklace counting function, it is clear that
+//d^m/m is more than the number of Lyndon words on d letters of length m.
+//This is not a bad approximation, so it is not a serious waste of memory to 
+//preallocate a pool of this size for the basis elements.
+
+size_t ceilingOnNumberOfBasisElts(int d, int m) {
+  size_t total = (size_t)d;
+  size_t d_to_level = (size_t)d;
+  for (int level = 2; level <= m; ++level) {
+    d_to_level *= d;
+    total += d_to_level / level;
+  }
+  return total;
+}
+
 std::vector<std::vector<BasisElt*>> makeListOfBasisElts(BasisPool& s, int d,int m){
+  s.makeSpace(ceilingOnNumberOfBasisElts(d, m));
   std::vector<std::vector<BasisElt*>> elts(m);
   elts[0].resize(d);
   for(Letter i=0; i<d; ++i){
     elts[0][i] = s.newBasisEltFromLetter(i);
   }
-  if(s.m_basis == LieBasis::Lyndon)
-    for (int level = 2; level <= m; ++level) {
+  BasisElt* levelEnd = elts[0].back();
+  for (int level = 2; level <= m; ++level) {
+    if (s.m_basis == LieBasis::Lyndon){
       for (int leftlength = 1; leftlength<level; ++leftlength) {
         const int rightlength = level - leftlength;
         for (BasisElt* left : elts[leftlength - 1])
           for (BasisElt* right : elts[rightlength - 1])
-            if (s.lexicographicLess(left, right) && 
+            if (s.manualLexicographicLess(left, right) && 
                 (left->isLetter() || left->getRight() == right ||
-                  !s.lexicographicLess(left->getRight(), right)))
+                  !s.manualLexicographicLess(left->getRight(), right)))
               elts[level - 1].push_back(s.newBasisElt(*left, *right));
       }
-    }
-  else
-    for (int level = 2; level <= m; ++level) {
-      for (int leftlength = 1; leftlength<=level/2; ++leftlength) {
+    }else{
+      for (int leftlength = 1; leftlength <= level / 2; ++leftlength) {
         const int rightlength = level - leftlength;
         for (size_t il = 0; il < elts[leftlength - 1].size(); ++il) {
           BasisElt* left = elts[leftlength - 1][il];
           for (size_t ir = leftlength < rightlength ? 0 : il + 1;
             ir < elts[rightlength - 1].size(); ++ir) {
             BasisElt* right = elts[rightlength - 1][ir];
-            if (rightlength==1 || !s.lexicographicLess(left, right->getLeft()))
+            if (rightlength == 1 || !s.manualLexicographicLess(left, right->getLeft()))
               elts[level - 1].push_back(s.newBasisElt(*left, *right));
           }
         }
       }
     }
+    BasisElt* levelStart = levelEnd;
+    levelEnd = elts[level - 1].back();
+    //?no need to sort in the Hall case?
+    std::sort(levelStart + 1, levelEnd + 1, [&](const BasisElt& a, const BasisElt& b) {
+      return s.manualLexicographicLess(&a, &b);
+    });
+    for (BasisElt* elt : elts[level - 1])
+      s.registerProduct(*elt);
+  }
   s.doneAdding();
   return elts;
 }
@@ -585,19 +621,7 @@ std::unique_ptr<Polynomial> polynomialOfBasisElt(const BasisElt* w){
 
 using Term = std::pair<const BasisElt*,Coefficient>;
 
-struct TermLess{
-  BasisPool& m_s;
-  TermLess(BasisPool& s):m_s(s){}
-  //mutable int count = 0;
-  bool operator() (const Term& a, const Term& b) const {
-  //  ++count;
-    return m_s.lexicographicLess(a.first, b.first);
-  }
-};
-
-void sumPolynomialLevels(BasisPool& s, std::vector<Term>& lhs,
-    std::vector<Term>& rhs){
-  auto comp = TermLess(s);
+void sumPolynomialLevels(std::vector<Term>& lhs,  std::vector<Term>& rhs) {
   auto& a = lhs;
   auto& b = rhs;
   size_t ss = a.size();
@@ -610,7 +634,8 @@ void sumPolynomialLevels(BasisPool& s, std::vector<Term>& lhs,
     std::cout<<a.capacity()<<" "<<b.capacity()<<" "<<a.size()<<" "<<b.size()<<std::endl;
   */
   std::move(b.begin(),b.end(),std::back_inserter(a));
-  std::inplace_merge(a.begin(),a.begin()+ss,a.end(),std::ref(comp));
+  std::inplace_merge(a.begin(), a.begin() + ss, a.end(), [](const Term& a, const Term& b) {
+    return a.first < b.first; });
   a.erase(amalgamate_adjacent_pairs(a.begin(), a.end(),
                                     [](const Term& a, const Term& b){
                                       return a.first->isEqual(*b.first);},
@@ -625,7 +650,7 @@ void sumPolynomials(BasisPool& s, Polynomial& lhs, Polynomial& rhs){
   if(lhs.m_data.size()<rhs.m_data.size())
     lhs.m_data.resize(rhs.m_data.size());
   for(size_t l=0; l<rhs.m_data.size(); ++l)
-    sumPolynomialLevels(s,lhs.m_data[l],rhs.m_data[l]);
+    sumPolynomialLevels(lhs.m_data[l], rhs.m_data[l]);
 }
 
 std::unique_ptr<Polynomial> 
@@ -655,7 +680,7 @@ productPolynomials(BasisPool& s, const Polynomial* x, const Polynomial* y, int m
             auto& tt = t->m_data[targetlevel-1];
             for(auto& key : tt)//this loop usually happens not many times I think 
               productCoefficients3(key.second, keyx.second, keyy.second);
-            sumPolynomialLevels(s,out->m_data[targetlevel-1],tt);
+            sumPolynomialLevels(out->m_data[targetlevel - 1], tt);
           }
         }
       }
@@ -779,8 +804,7 @@ void calcFla(int d, int m, Interrupt interrupt){
   BasisPool s(LieBasis::Lyndon);
   auto eltList = makeListOfBasisElts(s,d,m);
   for(auto& l : eltList)
-    std::sort(l.begin(),l.end(),[&s](BasisElt* a, BasisElt* b){
-      return s.lexicographicLess(a,b);});
+    std::sort(l.begin(), l.end());
   std::unique_ptr<Polynomial> lhs(new Polynomial);
   std::unique_ptr<Polynomial> rhs(new Polynomial);
   lhs->m_data.resize(eltList.size());
