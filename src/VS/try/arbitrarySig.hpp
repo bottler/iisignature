@@ -119,7 +119,7 @@ namespace ArbitrarySig {
       auto& mapping = mappingMatrix[level - 1];
       auto& outlevel = tensorspace.m_data[level - 1];
       for (auto& p : logdata) {
-        const auto& sparseMatrix = mapping.at(p.first);
+        const auto& sparseMatrix = lookupInFlatMap(mapping, p.first);
         for (auto& pos : sparseMatrix) {
           auto& dest = outlevel[pos.first];
           if (dest.m_details.empty()) {
