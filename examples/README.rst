@@ -7,6 +7,17 @@ They are not part of the iisignature package build.
 They can have dependencies on other python packages which iisignature
 does not depend on - e.g. Theano and tensorflow.
 
+* iisignature_theano.py and iisignature_tensorflow.py provide theano and tensorflow operations
+  which mirror sig, sigjoin and sigscale from iisignature. demo_keras.py shows how
+  they might be used very simply in a Keras layer.
+
+* iisignature_recurrent_keras.py shows a recurrent network keras layer which uses signatures of the history of
+  its units
+
+* iisignature_match_esig.py wraps essential functionality from iisignature in an interface
+  which matches esig.tosig (formerly called sigtools)
+  from CoRoPa as closely as possible.
+
 The files beginning with "demo" are just demonstrations of this functionality.
 
 If you have not installed iisignature but have the git checkout of the
