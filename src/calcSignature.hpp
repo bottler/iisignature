@@ -149,8 +149,64 @@ namespace CalcSignature{
     }
     return out;
   }
+
+  //This calculates the log of a tensor (assumed to have 1 in the zeroth level)
+  //according to the formula for log(1+x).
+  //The algorithm comes from a private communication from Professor Terry Lyons
+  //and Professor Mike Giles, using Horner's method.
+  //log(1+x) = x(1-x(1/2-x(1/3-x(1/4-...))))
+  //= x-x(x/2-x(x/3-x(x/4-...)))
+  //When inside p brackets, we only need the first m-p levels to be calculated,
+  //because when multiplying a tensor t by x (which has 0 in the zeroth level)
+  //level k of t only affects level k+1 and above of xt.
+  void logTensorHorner(CalculatedSignature& x) {
+    const int m = (int)x.m_data.size();
+    const int d = (int)x.m_data[0].size();
+    if (m <= 1)
+      return;
+    CalculatedSignature s, t;
+    s.sigOfNothing(d, m-1);
+    t.sigOfNothing(d, m);
+    for (int depth = m; depth > 0; --depth) {
+      CalcSigNumeric constant = (CalcSigNumeric) 1.0 / depth;
+      //make t be x*s up to level (1+m-depth). [this does nothing the first time round]
+      for (int lev = 2; lev <= 1+m - depth; ++lev) {
+        auto& tt = t.m_data[lev - 1];
+        std::fill(tt.begin(), tt.end(),(CalcSigNumeric) 0.0);
+        for (int leftLev = 1; leftLev < lev; ++leftLev) {
+          int rightLev = lev - leftLev;
+          auto& aa = x.m_data[leftLev - 1];
+          auto& bb = s.m_data[rightLev - 1];
+          auto dest = t.m_data[lev - 1].begin();
+          for (const CalcSigNumeric& c : aa)
+            for (const CalcSigNumeric& dd : bb)
+              *(dest++) += dd * c;
+        }
+      }
+      //make s be x*constant-t up to level (1+m-depth)
+      if(depth>1)
+        for (int lev = 1; lev <= 1+m - depth; ++lev){
+          auto is = s.m_data[lev - 1].begin();
+          auto ix = x.m_data[lev - 1].begin();
+          auto es = s.m_data[lev - 1].end();
+          auto it = t.m_data[lev - 1].begin();
+          for (; is != es; ++is, ++it, ++ix)
+            *is = constant * *ix - *it;
+        }
+    }
+    //x isn't modified until this next bit.
+    //make x be x-t
+    for (int lev = 2; lev <= m; ++lev) {
+      auto it = t.m_data[lev - 1].begin();
+      auto ix = x.m_data[lev - 1].begin();
+      auto ex = x.m_data[lev - 1].end();
+      for (; ix != ex; ++ix, ++it)
+        *ix -= *it;
+    }
+  }
   
-  void logTensor(CalculatedSignature& s){
+  //Calculates the log of a tensor in the obvious way.
+  void logTensorNaive(CalculatedSignature& s){
     const int m = (int)s.m_data.size();
     const int d = (int)s.m_data[0].size();
     vector<CalculatedSignature> powers;

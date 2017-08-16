@@ -1355,7 +1355,7 @@ logsig(PyObject *self, PyObject *args){
         if (!calcSignature(sig, data, lengthOfPath, d, lsf->m_level))
           return false;
         data += eachInputLength;
-        logTensor(sig);
+        logTensorHorner(sig);
         if (wantedmethods.m_expanded)
           sig.writeOut(outp + path * eachOutputSize);
         else {

@@ -98,7 +98,7 @@ double doTrianglesHelp() {
     for (int i = 0; i < 100; ++i) {
       CalcSignature::CalculatedSignature sig;
       sig.sigOfSegment(d, m, &output[0]);
-      logTensor(sig);
+      logTensorHorner(sig);
       projectExpandedLogSigToBasis(&output[0], &lsf, sig);
       out+=output[0] ;//just to confound the optimizer
     }

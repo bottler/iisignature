@@ -108,24 +108,50 @@ namespace ExactSignature {
     return out;
   }
 
-  void logTensor(CalculatedSignature& s) {
-    const int m = (int)s.m_data.size();
-    const int d = (int)s.m_data[0].size();
-    vector<CalculatedSignature> powers;
-    powers.reserve(m);
-    powers.push_back(s);
-    for (int power = 2; power <= m; ++power) {
-      powers.push_back(concatenateWith_zeroFirstLevel(d, m, powers.back(), s));
+  void logTensorHorner(CalculatedSignature& x) {
+    const int m = (int)x.m_data.size();
+    const int d = (int)x.m_data[0].size();
+    if (m <= 1)
+      return;
+    CalculatedSignature s, t;
+    s.sigOfNothing(d, m - 1);
+    t.sigOfNothing(d, m);
+    for (int depth = m; depth > 0; --depth) {
+      CalcSigNumeric constant = (CalcSigNumeric) 1.0 / depth;
+      //make t be x*s up to level (1+m-depth). [this does nothing the first time round]
+      for (int lev = 2; lev <= 1 + m - depth; ++lev) {
+        //t.m_data[lev - 1] = x.m_data[lev - 1];
+        auto& tt = t.m_data[lev - 1];
+        std::fill(tt.begin(), tt.end(), (CalcSigNumeric) 0.0);
+        for (int leftLev = 1; leftLev < lev; ++leftLev) {
+          int rightLev = lev - leftLev;
+          auto& aa = x.m_data[leftLev - 1];
+          auto& bb = s.m_data[rightLev - 1];
+          auto dest = t.m_data[lev - 1].begin();
+          for (const CalcSigNumeric& c : aa)
+            for (const CalcSigNumeric& dd : bb)
+              *(dest++) += dd * c;
+        }
+      }
+      //make s be x*constant-t up to level (1+m-depth)
+      if (depth>1)
+        for (int lev = 1; lev <= 1 + m - depth; ++lev) {
+          auto is = s.m_data[lev - 1].begin();
+          auto ix = x.m_data[lev - 1].begin();
+          auto es = s.m_data[lev - 1].end();
+          auto it = t.m_data[lev - 1].begin();
+          for (; is != es; ++is, ++it, ++ix)
+            *is = constant * *ix - *it;
+        }
     }
-    bool neg = true;
-    for (int power = 2; power <= m; ++power) {
-      powers[power - 1].multiplyByConstant(neg ? CalcSigNumeric(-1, power) : CalcSigNumeric(1, power));
-      neg = !neg;
-    }
-    for (int power = 2; power <= m; ++power) {
-      for (int level = 0; level<m; ++level)
-        for (size_t i = 0; i<s.m_data[level].size(); ++i)
-          s.m_data[level][i] += powers[power - 1].m_data[level][i];
+    //x isn't modified until this next bit.
+    //make x be x-t
+    for (int lev = 2; lev <= m; ++lev) {
+      auto it = t.m_data[lev - 1].begin();
+      auto ix = x.m_data[lev - 1].begin();
+      auto ex = x.m_data[lev - 1].end();
+      for (; ix != ex; ++ix, ++it)
+        *ix -= *it;
     }
   }
 
@@ -172,7 +198,7 @@ std::vector<double> sig(const std::vector<PathReal>& path, int d, int m, bool lo
   size_t pathLength = path.size() / d;
   auto s2 = sigPiece<arbprec>(path, d, m, 1, pathLength);
   if (log)
-    logTensor(s2);
+    logTensorHorner(s2);
   std::vector<double> out(calcSigTotalLength(d, m));
   s2.writeOut(out.data());
   return out;
@@ -203,7 +229,7 @@ std::vector<double> sigParallel(const std::vector<PathReal>& path, int d, int m,
   for (size_t i = 1; i < nThreads; ++i)
     s2.concatenateWith(d, m, pieces[i]);
   if (log)
-    logTensor(s2);
+    logTensorHorner(s2);
   std::vector<double> out(calcSigTotalLength(d, m));
   s2.writeOut(out.data());
   return out;
