@@ -118,26 +118,29 @@ bool do_interruptible_releasing_lock(T&& t) {
 
 //end of Interrupts stuff
 
-class Deleter{
+//This class is constructed from a PyObject* and decreases
+//its reference count on destruction.
+//It is basically an "owner" of a reference.
+class RefHolder{
   PyObject* m_p;
 public:
-  Deleter(PyObject* p):m_p(p){};
-  Deleter(const Deleter&)=delete;
-  Deleter operator=(const Deleter&) = delete;
-  ~Deleter(){Py_DECREF(m_p);}
+  RefHolder(PyObject* p):m_p(p){};
+  RefHolder(const RefHolder&)=delete;
+  RefHolder operator=(const RefHolder&) = delete;
+  ~RefHolder(){Py_DECREF(m_p);}
 };
 
-//This only deletes in its destructor
-class ReleasableDeleter {
+//This is a version which can change what it owns (or whether it owns anything).
+class ReleasableRefHolder {
   PyObject* m_p;
 public:
-  ReleasableDeleter(PyObject* p) :m_p(p) {};
-  ReleasableDeleter() : m_p(nullptr) {};
+  ReleasableRefHolder(PyObject* p) :m_p(p) {};
+  ReleasableRefHolder() : m_p(nullptr) {};
   void releaseAndSet(PyObject* p) { m_p = p; }
   void release() { m_p = nullptr; }
-  ReleasableDeleter(const ReleasableDeleter&) = delete;
-  ReleasableDeleter operator=(const ReleasableDeleter&) = delete;
-  ~ReleasableDeleter() { Py_XDECREF(m_p); }
+  ReleasableRefHolder(const ReleasableRefHolder&) = delete;
+  ReleasableRefHolder operator=(const ReleasableRefHolder&) = delete;
+  ~ReleasableRefHolder() { Py_XDECREF(m_p); }
 };
 
 #ifndef IISIGNATURE_NO_NUMPY
@@ -249,7 +252,7 @@ sig(PyObject *self, PyObject *args) {
   //could have a shortcut here if a1 is a contiguous array of float32
   PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa) ERR("data must be (convertable to) a numpy array");
-  Deleter a_(aa);
+  RefHolder a_(aa);
   PyArrayObject* a = (PyArrayObject*)aa;
   int ndims = PyArray_NDIM(a);
   if (ndims < 2) ERR("data must be 2d");
@@ -274,7 +277,7 @@ sig(PyObject *self, PyObject *args) {
   }
   else if (format != 1) 
     ERR("Invalid format requested");
-  ReleasableDeleter o_(o);
+  ReleasableRefHolder o_(o);
   double* in_data = (double*)PyArray_DATA(a);
 
   CalculatedSignature s;
@@ -317,7 +320,7 @@ sigMultCount(PyObject *self, PyObject *args) {
   if (level<1) ERR("level must be positive");
   PyObject* aa = PyArray_ContiguousFromAny(data, NPY_FLOAT64, 0, 0);
   if (!aa) ERR("data must be (convertable to) a numpy array");
-  Deleter a_(aa);
+  RefHolder a_(aa);
   PyArrayObject* a = (PyArrayObject*)aa;
   if (PyArray_NDIM(a) != 2) ERR("data must be 2d");
   const int lengthOfPath = (int)PyArray_DIM(a, 0);
@@ -368,11 +371,11 @@ sigBackwards(PyObject *self, PyObject *args){
   if(level<1) ERR("level must be positive");
   PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa) ERR("path must be (convertable to) a numpy array");
-  Deleter a_(aa);
+  RefHolder a_(aa);
   PyArrayObject* a = (PyArrayObject*)aa;
   PyObject* bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
   if (!bb) ERR("derivs must be (convertable to) a numpy array");
-  Deleter b_(bb);
+  RefHolder b_(bb);
   PyArrayObject* b = (PyArrayObject*)bb;
 
   int ndims = PyArray_NDIM(a);
@@ -420,7 +423,7 @@ sigJacobian(PyObject *self, PyObject *args){
   if(level<1) ERR("level must be positive");
   PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa) ERR("data must be (convertable to) a numpy array");
-  Deleter a_(aa);
+  RefHolder a_(aa);
   PyArrayObject* a = (PyArrayObject*)aa;
   if(PyArray_NDIM(a)!=2) ERR("data must be 2d");
   const int lengthOfPath = (int)PyArray_DIM(a,0);
@@ -452,11 +455,11 @@ sigJoin(PyObject *self, PyObject *args){
   if(level<1) ERR("level must be positive");
   PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa) ERR("sigs must be (convertable to) a numpy array");
-  Deleter a_(aa);
+  RefHolder a_(aa);
   PyArrayObject* a = (PyArrayObject*)aa;
   PyObject* bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
   if (!bb) ERR("data must be (convertable to) a numpy array");
-  Deleter b_(bb);
+  RefHolder b_(bb);
   PyArrayObject* b = (PyArrayObject*)bb;
 
   int ndims = PyArray_NDIM(a);
@@ -503,15 +506,15 @@ static PyObject *
   if(level<1) ERR("level must be positive");
   PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa) ERR("sigs must be (convertable to) a numpy array");
-  Deleter a_(aa);
+  RefHolder a_(aa);
   PyArrayObject* a = (PyArrayObject*)aa;
   PyObject* bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
   if (!bb) ERR("new data must be (convertable to) a numpy array");
-  Deleter b_(bb);
+  RefHolder b_(bb);
   PyArrayObject* b = (PyArrayObject*)bb;
   PyObject* cc = PyArray_ContiguousFromAny(a3, NPY_FLOAT64, 0, 0);
   if (!cc) ERR("derivs must be (convertable to) a numpy array");
-  Deleter c_(cc);
+  RefHolder c_(cc);
   PyArrayObject* c = (PyArrayObject*)cc;
 
   int ndims = PyArray_NDIM(a);
@@ -576,11 +579,11 @@ sigScale(PyObject *self, PyObject *args){
   if(level<1) ERR("level must be positive");
   PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa) ERR("sigs must be (convertable to) a numpy array");
-  Deleter a_(aa);
+  RefHolder a_(aa);
   PyArrayObject* a = (PyArrayObject*)aa;
   PyObject* bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
   if (!bb) ERR("scales must be (convertable to) a numpy array");
-  Deleter b_(bb);
+  RefHolder b_(bb);
   PyArrayObject* b = (PyArrayObject*)bb;
 
   int ndims = PyArray_NDIM(a);
@@ -625,15 +628,15 @@ static PyObject *
   if(level<1) ERR("level must be positive");
   PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa) ERR("sigs must be (convertable to) a numpy array");
-  Deleter a_(aa);
+  RefHolder a_(aa);
   PyArrayObject* a = (PyArrayObject*)aa;
   PyObject* bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
   if (!bb) ERR("scales must be (convertable to) a numpy array");
-  Deleter b_(bb);
+  RefHolder b_(bb);
   PyArrayObject* b = (PyArrayObject*)bb;
   PyObject* cc = PyArray_ContiguousFromAny(a3, NPY_FLOAT64, 0, 0);
   if (!cc) ERR("derivs must be (convertable to) a numpy array");
-  Deleter c_(cc);
+  RefHolder c_(cc);
   PyArrayObject* c = (PyArrayObject*)cc;
 
   int ndims = PyArray_NDIM(a);
@@ -714,23 +717,23 @@ bool getData(){
   //PyObject* pkgutil = PyImport_AddModule("pkgutil"); //flaky, returns borrowed
   PyObject* pkgutil = PyImport_ImportModule("pkgutil");
   if(pkgutil){
-    Deleter p_(pkgutil);
+    RefHolder p_(pkgutil);
     get_data = PyObject_GetAttrString(pkgutil,"get_data");
   }
   if(!get_data){
     PyObject* pkgutil = PyImport_ImportModule("pkg_resources");
     if(pkgutil){
-      Deleter p_(pkgutil);
+      RefHolder p_(pkgutil);
       get_data = PyObject_GetAttrString(pkgutil,"resource_string");
     }
   }
   if(!get_data)
     ERRb("neither pkgutil nor pkg_resources is working");
-  Deleter get_data_(get_data);
+  RefHolder get_data_(get_data);
   PyObject* ii = PyUnicode_FromString("iisignature_data");
-  Deleter ii_(ii);
+  RefHolder ii_(ii);
   PyObject* name = PyUnicode_FromString("bchLyndon20.dat");
-  Deleter name_(name);
+  RefHolder name_(name);
   PyObject* o = PyObject_CallFunctionObjArgs(get_data,ii,name,NULL);
   if(!o)
     return false;
@@ -759,7 +762,7 @@ class LeastSquares {
   PyObject* m_pinv;
   PyObject* m_svd;
   PyObject* m_qrScipy = nullptr;
-  ReleasableDeleter m_t_, m_l_, m_p_, m_s_, m_q_; //we can do better than this
+  ReleasableRefHolder m_t_, m_l_, m_p_, m_s_, m_q_; //we can do better than this
 public:
   bool m_ok = false;
   LeastSquares(bool wantQR = false) {
@@ -769,7 +772,7 @@ public:
     PyObject* linalg = PyObject_GetAttrString(numpy, "linalg");
     if (!linalg)
       return;
-    Deleter linalg_(linalg);
+    RefHolder linalg_(linalg);
     m_transpose = PyObject_GetAttrString(numpy, "transpose");
     if (!m_transpose)
       return;
@@ -792,13 +795,13 @@ public:
       //For some reason I don't understand, I have to use the higher level
       //PyImport_Import to load scipy.linalg
       auto pckg_name = PyUnicode_FromString("scipy.linalg");
-      Deleter pckg_name_(pckg_name);
+      RefHolder pckg_name_(pckg_name);
       PyObject* scipyLinalg = PyImport_Import(pckg_name);
       if (!scipyLinalg) {
         PyErr_Clear();
         return;
       }
-      Deleter scipyLinalg_(scipyLinalg);
+      RefHolder scipyLinalg_(scipyLinalg);
       m_qrScipy = PyObject_GetAttrString(scipyLinalg, "qr");
       if (m_qrScipy)
         m_q_.releaseAndSet(m_qrScipy);
@@ -810,13 +813,13 @@ public:
     PyObject* a1t = PyObject_CallFunctionObjArgs(m_transpose, a1, NULL);
     if (!a1t)
       return nullptr;
-    Deleter a1t_(a1t);
+    RefHolder a1t_(a1t);
     PyObject* o = PyObject_CallFunctionObjArgs(m_lstsq, a1t, a2, NULL);
     if (!o)
       return nullptr;
     //return o;
     //return PyTuple_Pack(2,o,a1);
-    Deleter o_(o);
+    RefHolder o_(o);
     PyObject* answer = PyTuple_GetItem(o, 0);
     Py_INCREF(answer);
     return answer;
@@ -827,7 +830,7 @@ public:
       return nullptr;
     //return o;
     //return PyTuple_Pack(2,o,a1);
-    Deleter o_(o);
+    RefHolder o_(o);
     PyObject* answer = PyTuple_GetItem(o, 0);
     Py_INCREF(answer);
     return answer;
@@ -853,7 +856,7 @@ public:
   public:
     double* m_u;//is rxr if full_matrices, else rxc
     bool m_ok = false;
-    ReleasableDeleter m_delete;
+    ReleasableRefHolder m_delete;
     int m_rank = 0;
     SVD(const vector<double>& mat, npy_intp r, npy_intp c, bool full_matrices, LeastSquares& ls) {
       MatrixOfVector<UseDouble> mat_(mat, r, c);
@@ -914,7 +917,7 @@ public:
   public:
     double* m_q;//is rxc
     bool m_ok = false;
-    ReleasableDeleter m_delete;
+    ReleasableRefHolder m_delete;
     int m_rank = 0;
     QR(const vector<double>& mat, npy_intp r, npy_intp c, LeastSquares& ls) {
       MatrixOfVector<UseDouble> mat_(mat, r, c);
@@ -973,11 +976,11 @@ public:
     vector<float> input(matrix, matrix + r*c);
     npy_intp dims2[] = { (npy_intp)(r), (npy_intp)c };
     PyObject* mat = PyArray_SimpleNewFromData(2, dims2, NPY_FLOAT32, input.data());
-    Deleter m_(mat);
+    RefHolder m_(mat);
     PyObject* o = PyObject_CallFunctionObjArgs(m_pinv, mat, NULL);
     if (!o)
       return false;
-    Deleter o_(o);
+    RefHolder o_(o);
     PyArrayObject* oa = reinterpret_cast<PyArrayObject*>(o);
     bool ok = PyArray_Check(o) && PyArray_TYPE(oa) == NPY_FLOAT32
       && PyArray_NDIM(oa) == 2 
@@ -985,7 +988,7 @@ public:
     if (!ok)
       ERRb("bad output from pinv");
     PyArrayObject* outc = PyArray_GETCONTIGUOUS(oa);
-    Deleter l2_(reinterpret_cast<PyObject*>(outc));
+    RefHolder l2_(reinterpret_cast<PyObject*>(outc));
     float* ptr = static_cast<float*>(PyArray_DATA(outc));
     for (size_t i = 0; i < r*c; ++i)
       matrix[i] = ptr[i];
@@ -1146,18 +1149,18 @@ bool callLeastSquares(LeastSquares& ls, float* matrix, size_t dim1, size_t dim2,
   //const size_t out_length = (transpose ? dim1 : dim2);
   npy_intp dims[] = { (npy_intp)rhs_length };
   PyObject* rhs_ = PyArray_SimpleNewFromData(1, dims, NPY_FLOAT32, rhs);
-  Deleter r_(rhs_);
+  RefHolder r_(rhs_);
 
   npy_intp dims2[] = { (npy_intp)(dim1), (npy_intp)dim2 };
   PyObject* mat = PyArray_SimpleNewFromData(2, dims2, NPY_FLOAT32, matrix);
-  Deleter m_(mat);
+  RefHolder m_(mat);
   PyObject* out = transpose ? ls.lstsqWithTranspose(mat, rhs_) : ls.lstsqNoTranspose(mat, rhs_);
   if (!out)
     return false;
-  Deleter o_(out);
+  RefHolder o_(out);
   auto outa = reinterpret_cast<PyArrayObject*>(out);
   PyArrayObject* outc = PyArray_GETCONTIGUOUS(outa);
-  Deleter l2_(reinterpret_cast<PyObject*>(outc));
+  RefHolder l2_(reinterpret_cast<PyObject*>(outc));
   float* ptr = static_cast<float*>(PyArray_DATA(outc));
   if (false) {
     for (size_t row = 0;row < dim1;row++) {
@@ -1285,7 +1288,7 @@ logsig(PyObject *self, PyObject *args){
     ERR(methodError);
   PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa) ERR("data must be (convertable to) a numpy array");
-  Deleter a_(aa);
+  RefHolder a_(aa);
   PyArrayObject* a = (PyArrayObject*)aa;
 
   int ndims = PyArray_NDIM(a);
@@ -1347,7 +1350,7 @@ logsig(PyObject *self, PyObject *args){
       return nullptr;
     auto outp = static_cast<OutT::T*>(PyArray_DATA(
       reinterpret_cast<PyArrayObject*>(o)));
-    ReleasableDeleter o_(o);
+    ReleasableRefHolder o_(o);
 
     CalculatedSignature sig;
     bool ok = do_interruptible([&] {
@@ -1491,7 +1494,7 @@ rotinv2d(PyObject *self, PyObject *args) {
   int level = prepared->m_level;
   PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa) ERR("data must be (convertable to) a numpy array");
-  Deleter a_(aa);
+  RefHolder a_(aa);
   PyArrayObject* a = (PyArrayObject*)aa;
   if (PyArray_NDIM(a) != 2) ERR("data must be 2d");
   const int lengthOfPath = (int)PyArray_DIM(a, 0);
