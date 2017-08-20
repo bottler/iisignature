@@ -7,8 +7,6 @@ import numpy as np
 #Unlike for theano, there's no obvious reason to provide an
 #op for siglength.
 
-#Sig also allows a batch dimension
-
 _zero=np.array(0.0,dtype="float32")
 
 def _sigGradImp(g,x,m):

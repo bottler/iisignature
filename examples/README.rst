@@ -14,6 +14,12 @@ does not depend on - e.g. Theano and tensorflow.
 * iisignature_recurrent_keras.py shows a recurrent network keras layer which uses signatures of the history of
   its units
 
+* iisignature_torch.py provides pytorch operations
+  which mirror sig, sigjoin and sigscale from iisignature. demo_torch.py shows how they can be called very simply.
+
+* iisignature_recurrent_torch.py shows a recurrent network pytorch layer which uses signatures of the history of
+  its units
+
 * iisignature_match_esig.py wraps essential functionality from iisignature in an interface
   which matches esig.tosig (formerly called sigtools)
   from CoRoPa as closely as possible.

@@ -1,5 +1,5 @@
 #This module defines a theano op called Sig,
-# which just does iisignature.sig, in a possibly batched way,
+# which just does iisignature.sig,
 #one called SigJoin,
 # which just does iisignature.sigjoin.
 #and one called SigScale,
