@@ -268,12 +268,13 @@ sig(PyObject *self, PyObject *args) {
   size_t eachInputSize = (size_t)(lengthOfPath * d);
   size_t eachOutputSize = (size_t)calcSigTotalLength(d, level);
   PyObject* o = nullptr;
-  float* out_data = nullptr;
+  using OutT = UseFloat;
+  OutT::T* out_data = nullptr;
   if (format == 0) {
-    o = simpleNew_ownLastDim(ndims - 1, a, eachOutputSize, NPY_FLOAT32);
+    o = simpleNew_ownLastDim(ndims - 1, a, eachOutputSize, OutT::typenum);
     if (!o)
       return nullptr;
-    out_data = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
+    out_data = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
   }
   else if (format != 1) 
     ERR("Invalid format requested");
@@ -297,12 +298,12 @@ sig(PyObject *self, PyObject *args) {
     o = PyTuple_New(level);
     for (int m = 0; m < level; ++m) {
       npy_intp dims[] = { (npy_intp)calcSigLevelLength(d,m+1) };
-      PyObject* p = PyArray_SimpleNew(1, dims, NPY_FLOAT32);
+      PyObject* p = PyArray_SimpleNew(1, dims, OutT::typenum);
       if (!p)
         return nullptr;
-      auto ptr = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(p)));
+      auto ptr = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(p)));
       for (auto f : s.m_data[m])
-        *(ptr++) = f;
+        *(ptr++) = (OutT::T)f;
       PyTuple_SET_ITEM(o, m, p);
     }
   }

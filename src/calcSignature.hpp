@@ -116,7 +116,7 @@ namespace CalcSignature{
     void writeOut(Numeric* dest) const{
       for(auto& a: m_data)
         for(auto& b:a)
-          *(dest++)=b;
+          *(dest++)=(Numeric)b;
     }
     void writeOutExceptLasts(CalcSigNumeric* dest) const{
       for(auto& a: m_data)

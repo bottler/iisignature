@@ -544,8 +544,8 @@ namespace IISignature_algebra {
 void projectExpandedLogSigToBasis(double* out, const LogSigFunction* lsf, 
     const CalcSignature::CalculatedSignature& sig) {
   size_t writeOffset = 0;
-  std::vector<float> rhs;
-  for (float f : sig.m_data[0])
+  std::vector<CalcSignature::CalcSigNumeric> rhs;
+  for (auto f : sig.m_data[0])
     out[writeOffset++] = f;
   for (int l = 2; l <= lsf->m_level; ++l) {
     const size_t loglevelLength = lsf->m_logLevelSizes[l - 1];
