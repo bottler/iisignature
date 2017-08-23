@@ -23,6 +23,10 @@ On other platforms, you will need to be able to compile C++ extensions.
 On a Mac, you will need to have installed Xcode and the Xcode command line tools before doing the installation.
 The fastest, on-the-fly compiled versions of the log signature calculations are for Windows, Mac and Linux, on both 32 and 64 bit.
 
+Sometimes there are compile errors on a Mac, if this happens try::
+
+    MACOSX_DEPLOYMENT_TARGET=10.9 pip install iisignature
+
 Authors
 -------
 
