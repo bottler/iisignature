@@ -10,19 +10,19 @@
 namespace ExactSignature {
   using std::vector;
 
-  typedef boost::multiprecision::cpp_rational CalcSigNumeric;
+  typedef boost::multiprecision::cpp_rational Number;
 
-  class CalculatedSignature {
+  class Signature {
   public:
-    vector<vector<CalcSigNumeric>> m_data;
+    vector<vector<Number>> m_data;
 
-    template<typename Number>
-    void sigOfSegment(int d, int m, const Number* segment) {
+    template<typename Numeric>
+    void sigOfSegment(int d, int m, const Numeric* segment) {
       m_data.resize(m);
       auto& first = m_data[0];
       first.resize(d);
       for (int i = 0; i<d; ++i)
-        first[i] = (CalcSigNumeric)segment[i];
+        first[i] = (Number)segment[i];
       for (int level = 2; level <= m; ++level) {
         const auto& last = m_data[level - 2];
         auto& s = m_data[level - 1];
@@ -30,7 +30,7 @@ namespace ExactSignature {
         int i = 0;
         for (auto l : last)
           for (auto p = segment; p<segment + d; ++p)
-            s[i++] = (CalcSigNumeric)(*p * l * CalcSigNumeric(1, level));
+            s[i++] = (Number)(*p * l * Number(1, level));
       }
     }
 
@@ -46,7 +46,7 @@ namespace ExactSignature {
     //if a is the signature of path A, b of B, then
     //a.concatenateWith(d,m,b) makes a be the signature of the concatenated path AB
     //This is also the (concatenation) product of the elements a and b in the tensor algebra.
-    void concatenateWith(int d, int m, const CalculatedSignature& other) {
+    void concatenateWith(int d, int m, const Signature& other) {
       for (int level = m; level>0; --level) {
         for (int mylevel = level - 1; mylevel>0; --mylevel) {
           int otherlevel = level - mylevel;
@@ -54,7 +54,7 @@ namespace ExactSignature {
           for (auto dest = m_data[level - 1].begin(),
             my = m_data[mylevel - 1].begin(),
             myE = m_data[mylevel - 1].end(); my != myE; ++my) {
-            for (const CalcSigNumeric& d : oth) {
+            for (const Number& d : oth) {
               *(dest++) += d * *my;
             }
           }
@@ -67,10 +67,10 @@ namespace ExactSignature {
 
       }
     }
-    void swap(CalculatedSignature& other) {
+    void swap(Signature& other) {
       m_data.swap(other.m_data);
     }
-    void multiplyByConstant(CalcSigNumeric c) {
+    void multiplyByConstant(Number c) {
       for (auto& a : m_data)
         for (auto& b : a)
           b *= c;
@@ -87,10 +87,10 @@ namespace ExactSignature {
   //This also calculates the concatenation product in the tensor algebra, 
   //but in the case where we assume 0 instead of 1 in the zeroth level.
   //It is not in-place
-  CalculatedSignature concatenateWith_zeroFirstLevel(int d, int m,
-    const CalculatedSignature& a,
-    const CalculatedSignature& b) {
-    CalculatedSignature out;
+  Signature concatenateWith_zeroFirstLevel(int d, int m,
+    const Signature& a,
+    const Signature& b) {
+    Signature out;
     out.sigOfNothing(d, m);
     for (int level = m; level>0; --level) {
       for (int alevel = level - 1; alevel>0; --alevel) {
@@ -98,8 +98,8 @@ namespace ExactSignature {
         auto& aa = a.m_data[alevel - 1];
         auto& bb = b.m_data[blevel - 1];
         auto dest = out.m_data[level - 1].begin();
-        for (const CalcSigNumeric& c : aa) {
-          for (const CalcSigNumeric& d : bb) {
+        for (const Number& c : aa) {
+          for (const Number& d : bb) {
             *(dest++) += d * c;
           }
         }
@@ -108,28 +108,28 @@ namespace ExactSignature {
     return out;
   }
 
-  void logTensorHorner(CalculatedSignature& x) {
+  void logTensorHorner(Signature& x) {
     const int m = (int)x.m_data.size();
     const int d = (int)x.m_data[0].size();
     if (m <= 1)
       return;
-    CalculatedSignature s, t;
+    Signature s, t;
     s.sigOfNothing(d, m - 1);
     t.sigOfNothing(d, m);
     for (int depth = m; depth > 0; --depth) {
-      CalcSigNumeric constant = (CalcSigNumeric) 1.0 / depth;
+      Number constant = (Number) 1.0 / depth;
       //make t be x*s up to level (1+m-depth). [this does nothing the first time round]
       for (int lev = 2; lev <= 1 + m - depth; ++lev) {
         //t.m_data[lev - 1] = x.m_data[lev - 1];
         auto& tt = t.m_data[lev - 1];
-        std::fill(tt.begin(), tt.end(), (CalcSigNumeric) 0.0);
+        std::fill(tt.begin(), tt.end(), (Number) 0.0);
         for (int leftLev = 1; leftLev < lev; ++leftLev) {
           int rightLev = lev - leftLev;
           auto& aa = x.m_data[leftLev - 1];
           auto& bb = s.m_data[rightLev - 1];
           auto dest = t.m_data[lev - 1].begin();
-          for (const CalcSigNumeric& c : aa)
-            for (const CalcSigNumeric& dd : bb)
+          for (const Number& c : aa)
+            for (const Number& dd : bb)
               *(dest++) += dd * c;
         }
       }
@@ -169,8 +169,8 @@ std::vector<PathReal> randomPath(int pathLength, int d){
 
 template<bool arbprec>
 using SignatureType = std::conditional_t<arbprec,
-  ExactSignature::CalculatedSignature,
-  CalcSignature::CalculatedSignature>;
+  ExactSignature::Signature,
+  CalcSignature::Signature>;
 
 //the stroke ending at from ... the stroke ending before to
 template<bool arbprec>

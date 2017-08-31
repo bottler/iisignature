@@ -215,9 +215,9 @@ logsiglength(PyObject *self, PyObject *args){
 //returns true on success
 //makes s2 be the signature of the path in data
 //data is (lengthOfPath x d)
-using CalcSignature::CalculatedSignature;
-static bool calcSignature(CalculatedSignature& s2, double* data, int lengthOfPath, int d, int level){
-  CalculatedSignature s1;
+using CalcSignature::Signature;
+static bool calcSignature(Signature& s2, const double* data, int lengthOfPath, int d, int level){
+  Signature s1;
 
   if(lengthOfPath==1){
     s2.sigOfNothing(d,level);
@@ -281,7 +281,7 @@ sig(PyObject *self, PyObject *args) {
   ReleasableRefHolder o_(o);
   double* in_data = (double*)PyArray_DATA(a);
 
-  CalculatedSignature s;
+  Signature s;
   bool ok = do_interruptible([&]{
     for (int path = 0; path < nPaths; ++path) {
       if (!calcSignature(s, in_data + path*eachInputSize, lengthOfPath, d, level))
@@ -329,8 +329,8 @@ sigMultCount(PyObject *self, PyObject *args) {
   if (lengthOfPath<1) ERR("Path has no length");
   if (d<1) ERR("Path must have positive dimension");
 
-  double out = CalcSignature::CalculatedSignature::concatenateWithMultCount(d,level)*(lengthOfPath-2);
-  out += CalcSignature::CalculatedSignature::sigOfSegmentMultCount(d, level)*(lengthOfPath - 1);
+  double out = CalcSignature::Signature::concatenateWithMultCount(d,level)*(lengthOfPath-2);
+  out += CalcSignature::Signature::sigOfSegmentMultCount(d, level)*(lengthOfPath - 1);
   return PyLong_FromDouble(out);
 }
 
@@ -398,19 +398,17 @@ sigBackwards(PyObject *self, PyObject *args){
     nPaths *= (int)x;
   }
   size_t eachInputSize = (size_t)(lengthOfPath * d);
-  size_t eachOutputSize = (size_t)calcSigTotalLength(d, level);
+  size_t eachOutputSize = sigLength;
 
   ReadArrayAsDoubles input, derivs;
   if(input.read(a,lengthOfPath*d) || derivs.read(b,sigLength))
     ERR("Out of memory");
-  PyObject* o = PyArray_SimpleNew(ndims, PyArray_DIMS(a), NPY_FLOAT32);
+  PyObject* o = PyArray_ZEROS(ndims, PyArray_DIMS(a), NPY_FLOAT32, 0);
   if(!o)
     return nullptr;
   float* out = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
-  for(int i=0; i<lengthOfPath*d*nPaths; ++i)
-    out[i]=0.0f;
   for(int path =0; path<nPaths; ++path)
-    BackwardDerivativeSignature::sigBackwards(d,level,lengthOfPath,
+    CalcSignature::sigBackwardsRaw(d,level,lengthOfPath,
       input.ptr()+path*eachInputSize,derivs.ptr()+path*eachOutputSize,out+path*eachInputSize);  
   return o;
 }
@@ -490,7 +488,7 @@ sigJoin(PyObject *self, PyObject *args){
     return nullptr;
   float* out = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
   for(int iPath=0; iPath<nPaths; ++iPath)
-    BackwardDerivativeSignature::sigJoin(d_out,level,sig.ptr()+iPath*sigLength,
+    CalcSignature::sigJoin(d_out,level,sig.ptr()+iPath*sigLength,
     displacement.ptr()+iPath*d_given,fixedLast,out+iPath*sigLength);
   return o;
 }
@@ -556,7 +554,7 @@ static PyObject *
   float* out2 = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o2)));
   double dFixedLast = 0;
   for(int iPath=0; iPath<nPaths; ++iPath)
-    BackwardDerivativeSignature::sigJoinBackwards(d_out,level,sig.ptr()+iPath*sigLength,
+    CalcSignature::sigJoinBackwards(d_out,level,sig.ptr()+iPath*sigLength,
                                                   displacement.ptr()+iPath*d_given,
                                                   derivs.ptr()+iPath*sigLength,
                                                   fixedLast,
@@ -613,7 +611,7 @@ sigScale(PyObject *self, PyObject *args){
     return nullptr;
   float* out = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
   for(int iPath=0; iPath<nPaths; ++iPath)
-    BackwardDerivativeSignature::sigScale(d,level,sig.ptr()+iPath*sigLength,
+    CalcSignature::sigScale(d,level,sig.ptr()+iPath*sigLength,
                                           scales.ptr()+iPath*d,out+iPath*sigLength);
   return o;
 }
@@ -677,7 +675,7 @@ static PyObject *
   float* out1 = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o1)));
   float* out2 = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o2)));
   for(int iPath=0; iPath<nPaths; ++iPath)
-    BackwardDerivativeSignature::sigScaleBackwards(d,level,sig.ptr()+iPath*sigLength,
+    CalcSignature::sigScaleBackwards(d,level,sig.ptr()+iPath*sigLength,
                                                   scale.ptr()+iPath*d,
                                                   derivs.ptr()+iPath*sigLength,
                                                   out1+iPath*sigLength,
@@ -1137,6 +1135,25 @@ public:
     return true;
   }
 };
+
+//things which have to be done at the end of prepare, relying on Numpy
+//returns false on error
+//can also be called in logsigbackwards
+bool postPrepare(LogSigFunction* lsf) {
+  LeastSquares ls;
+  if (!ls.m_ok)
+    return false;
+  for (auto& i : lsf->m_smallSVDs)
+    for (auto& j : i) {
+      if (j.m_matrix.empty())
+        continue;
+      bool ok = ls.inplacePinvMatrix(j.m_matrix.data(),
+        j.m_sources.size(), j.m_dests.size());
+      if (!ok)
+        return false;
+    }
+  return true;
+}
 #endif // IISIGNATURE_NO_NUMPY
 
 //This function takes a dim1xdim2 matrix and an rhs and calls resultAction on a pointer
@@ -1197,7 +1214,7 @@ prepare(PyObject *self, PyObject *args){
   if(methods)
     methodString = methods;
   if(setWantedMethods(wantedmethods,dim,level,false,methodString))
-    ERR(methodError);
+    ERR(wantedmethods.m_errMsg);
   auto basis = wantedmethods.m_want_matchCoropa ? LieBasis::StandardHall : LieBasis::Lyndon;
   std::unique_ptr<LogSigFunction> lsf(new LogSigFunction(basis));
   bool ok = do_interruptible_releasing_lock([&]{
@@ -1208,18 +1225,8 @@ prepare(PyObject *self, PyObject *args){
     return nullptr;
 
 #ifndef IISIGNATURE_NO_NUMPY
-  LeastSquares ls;
-  if (!ls.m_ok)
+  if (!postPrepare(lsf.get()))
     return nullptr;
-  for (auto& i : lsf->m_smallSVDs)
-    for (auto& j : i){
-      if(j.m_matrix.empty())
-        continue;
-      bool ok = ls.inplacePinvMatrix(j.m_matrix.data(),
-                                     j.m_sources.size(), j.m_dests.size());
-      if(!ok)
-        return nullptr;
-    }
 #endif // IISIGNATURE_NO_NUMPY
 
 #ifdef NO_CAPSULES
@@ -1262,13 +1269,19 @@ static PyObject* info(PyObject *self, PyObject *args) {
     methods += 'C';
   if (!lsf->m_fd.m_formingT.empty())
     methods += 'O';
-  if (lsf->canTakeLogOfSig())
+  if (lsf->canProjectToBasis())
     methods += 'S';
   methods += 'X';
   const char* basis = (lsf->m_s.m_basis == LieBasis::StandardHall) ? 
                           "Standard Hall" : "Lyndon";
   return Py_BuildValue("{sisissss}", "dimension", lsf->m_dim, "level",
     lsf->m_level, "methods", methods.c_str(), "basis", basis);
+}
+
+static int getSigLength(LogSigFunction* lsf) {
+  if (lsf->m_siglength != 0)
+    return lsf->m_siglength;
+  return calcSigTotalLength(lsf->m_dim, lsf->m_level);
 }
 
 #ifndef IISIGNATURE_NO_NUMPY
@@ -1286,7 +1299,7 @@ logsig(PyObject *self, PyObject *args){
   if(methods)
     methodString = methods;
   if(setWantedMethods(wantedmethods,lsf->m_dim,lsf->m_level,true,methodString))
-    ERR(methodError);
+    ERR(wantedmethods.m_errMsg);
   PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa) ERR("data must be (convertable to) a numpy array");
   RefHolder a_(aa);
@@ -1343,9 +1356,9 @@ logsig(PyObject *self, PyObject *args){
     return o;
   }
   if (wantedmethods.m_expanded ||
-    (wantedmethods.m_log_of_signature && lsf->canTakeLogOfSig())) {
+    (wantedmethods.m_log_of_signature && lsf->canProjectToBasis())) {
     size_t eachOutputSize = wantedmethods.m_expanded ?
-      (size_t)calcSigTotalLength(lsf->m_dim, lsf->m_level) : (npy_intp)logsiglength;
+      (size_t)getSigLength(lsf) : (npy_intp)logsiglength;
     PyObject* o = simpleNew_ownLastDim(ndims - 1, a, eachOutputSize, OutT::typenum);
     if (!o)
       return nullptr;
@@ -1353,7 +1366,7 @@ logsig(PyObject *self, PyObject *args){
       reinterpret_cast<PyArrayObject*>(o)));
     ReleasableRefHolder o_(o);
 
-    CalculatedSignature sig;
+    Signature sig;
     bool ok = do_interruptible([&] {
       for (int path = 0; path < nPaths; ++path) {
         if (!calcSignature(sig, data, lengthOfPath, d, lsf->m_level))
@@ -1375,6 +1388,108 @@ logsig(PyObject *self, PyObject *args){
     return o;
   }
   ERR("We had not prepare()d for this request type");
+}
+
+static PyObject *
+logsigbackwards(PyObject *self, PyObject *args) {
+  PyObject *a0, *a1, *a2;
+  const char* methods = nullptr;
+  if (!PyArg_ParseTuple(args, "OOO|z", &a0, &a1, &a2, &methods))
+    return nullptr;
+  LogSigFunction* lsf = getLogSigFunction(a2);
+  if (!lsf)
+    return nullptr;
+
+  WantedMethods wantedmethods;
+  std::string methodString;
+  if (methods)
+    methodString = methods;
+  if (setWantedMethods(wantedmethods, 100, 100, true, methodString))
+    ERR(wantedmethods.m_errMsg);
+  if (!(wantedmethods.m_log_of_signature || wantedmethods.m_expanded))
+    ERR("Requested method cannot be used here");
+  bool needProjectionButDontHaveIt = !wantedmethods.m_expanded && !lsf->canProjectToBasis();
+  //if (needProjectionButDontHaveIt)
+  //  ERR("We had not prepared the S method");
+
+  PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  if (!aa) ERR("data must be (convertable to) a numpy array");
+  RefHolder a_(aa);
+  PyArrayObject* a = (PyArrayObject*)aa;
+
+  PyObject* derivs = PyArray_ContiguousFromAny(a0, NPY_FLOAT64, 0, 0);
+  if (!derivs) ERR("derivs must be (convertable to) a numpy array");
+  RefHolder derivs_(derivs);
+  PyArrayObject* derivsa = (PyArrayObject*)derivs;
+
+  int ndims = PyArray_NDIM(a);
+  if (ndims < 2) ERR("data must be at least 2d");
+  const int lengthOfPath = (int)PyArray_DIM(a, ndims - 2);
+  const int d = (int)PyArray_DIM(a, ndims - 1);
+  const size_t eachInputLength = (size_t)(lengthOfPath * d);
+  if (lengthOfPath < 1) ERR("Path has no length");
+  if (d != lsf->m_dim)
+    ERR(("Path has dimension " + std::to_string(d) + " but we prepared for dimension "
+      + std::to_string(lsf->m_dim)).c_str());
+  if (PyArray_NDIM(derivsa) != ndims - 1) ERR("derivs has the wrong number of dimensions");
+  size_t logsiglength = lsf->m_basisElements.size();
+  const double* data = static_cast<double*>(PyArray_DATA(a));
+  const double* derivPtr = static_cast<double*>(PyArray_DATA(derivsa));
+
+  int nPaths = 1;
+  for (int i = 0; i + 2 < ndims; ++i) {
+    npy_intp x = PyArray_DIM(a, i);
+    if (PyArray_DIM(derivsa, i) != x)
+      ERR("mismatched dimensions between sigs and derivs");
+    nPaths *= (int)x;
+  }
+
+  using OutT = UseFloat;
+  size_t eachOutputSize = wantedmethods.m_expanded ?
+    (size_t)getSigLength(lsf) : (npy_intp)logsiglength;
+  if (eachOutputSize != PyArray_DIM(derivsa, ndims - 2))
+    ERR("derivatives have unexpected length");
+  PyObject* o = PyArray_ZEROS(ndims, PyArray_DIMS(a), OutT::typenum, 0);
+  if (!o)
+    return nullptr;
+  auto outp = static_cast<OutT::T*>(PyArray_DATA(
+    reinterpret_cast<PyArrayObject*>(o)));
+  ReleasableRefHolder o_(o);
+
+  Signature sig, sigDer;
+  if (needProjectionButDontHaveIt) {
+    bool ok = do_interruptible([&] {
+      IISignature_algebra::makeSparseLogSigMatrices(lsf->m_dim, lsf->m_level, *lsf, interrupt);
+      return true;
+    });
+    ok = ok && postPrepare(lsf);
+    if (!ok) {
+      //We've failed to add projection info to lsf, we better leave lsf in its safe, original state
+      lsf->m_simples.clear();
+      lsf->m_smallSVDs.clear();
+      lsf->m_smallTriangles.clear();
+      return nullptr;
+    }
+  }
+  bool ok = do_interruptible([&] {
+    for (int path = 0; path < nPaths; ++path) {
+      calcSignature(sig, data, lengthOfPath, d, lsf->m_level);
+      if (wantedmethods.m_expanded)
+        sigDer.fromRaw(lsf->m_dim, lsf->m_level, derivPtr);
+      else
+        projectExpandedLogSigToBasisBackwards(derivPtr, lsf, sigDer);
+      derivPtr += eachOutputSize;
+      logBackwards(sigDer, sig);
+      //This should use the calculated signature
+      CalcSignature::sigBackwards(lsf->m_dim, lsf->m_level, lengthOfPath, data, sigDer, outp + path*eachInputLength);
+      data += eachInputLength;
+    }
+    return true;
+  });
+  if (!ok)
+    return nullptr;
+  o_.release();
+  return o;
 }
 
 #endif
@@ -1506,7 +1621,7 @@ rotinv2d(PyObject *self, PyObject *args) {
   if (level < 2 || level > 63 || level % 2 != 0)
     ERR("Level must be a small positive even number");
 
-  CalculatedSignature sig;
+  Signature sig;
   bool ok = do_interruptible([&] {
     return calcSignature(sig, (double*)PyArray_DATA(a), lengthOfPath, d, level);
   });
@@ -1607,10 +1722,9 @@ static PyMethodDef Methods[] = {
    "of the signatures of the paths concatenated with the displacements. "
    "If f is provided, then it is taken to be the fixed value of the "
    "displacement in the last dimension, and D should have shape (K, d-1)."},
-   //"If X is an NxD array then out s must be a (siglength(D,m),) array."},
   {"sigjoinbackprop",sigJoinBackwards,METH_VARARGS, "sigjoinbackprop(s,X,D,m,f=float('nan')) \n "
    "gives the derivatives of F with respect to X and D (and f if given) where s is the derivatives"
-   " of F with respect to sigjoin(X,D,m,f). The result is a tuple of two or three items."}, 
+   " of F with respect to sigjoin(X,D,m,f). The result is a tuple of two or three items."},
   {"sigscale", sigScale, METH_VARARGS, "sigjoin(X,D,m))\n "
    "If X is an array of signatures of d dimensional paths of shape "
    "(..., siglength(d,m)) and D is an array of d dimensional scales "
@@ -1618,7 +1732,7 @@ static PyMethodDef Methods[] = {
    "of the signatures of the paths scaled by the corresponding scale factor in each dimension. "},
   {"sigscalebackprop",sigScaleBackwards,METH_VARARGS, "sigscalebackprop(s,X,D,m) \n "
    "gives the derivatives of F with respect to X and D where s is the derivatives"
-   " of F with respect to sigscale(X,D,m). The result is a tuple of two items."}, 
+   " of F with respect to sigscale(X,D,m). The result is a tuple of two items."},
 #endif
   {"siglength", siglength, METH_VARARGS, "siglength(d,m) \n "
    "Returns the length of the signature (excluding the initial 1) of a d dimensional path up to level m"},
@@ -1636,7 +1750,7 @@ static PyMethodDef Methods[] = {
    "This prepares the way to calculate log signatures of d dimensional paths"
    " up to level m. The returned object is used in the logsig, basis and info functions. \n"
    " By default, all methods will be prepared, but you can restrict it "
-   "by setting methods to " METHOD_DESC "."}, 
+   "by setting methods to " METHOD_DESC "."},
   {"basis", basis, METH_VARARGS, "basis(s) \n  Returns a tuple of strings "
    "which are the basis elements of the log signature. s must have come from prepare."
    " This function is work in progress, especially for dimension greater than 8. "
@@ -1651,6 +1765,9 @@ static PyMethodDef Methods[] = {
    "log signature up to level m. By default, the method used is the default out "
    "of those which have been prepared, "
    "but you can restrict it by setting methods to " METHOD_DESC "."},
+  {"logsigbackprop", logsigbackwards, METH_VARARGS, "logsigbackprop(y, X, s, methods=None) \n"
+   "gives the derivatives of F with respect to X where y is the derivatives"
+   " of F with respect to logsig(X,s,methods). The result has the same shape as X." },
   { "rotinv2d", rotinv2d, METH_VARARGS, "rotinv(X,s) \n "
   "Calculates the linear rotational invariants of the signature of the path X. X must be a numpy Nx2 float32 "
   "or float64 array of points making up the path in R^2. "

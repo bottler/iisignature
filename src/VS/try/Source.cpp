@@ -86,8 +86,8 @@ double doTrianglesHelp() {
   wm.m_log_of_signature = true;
   LogSigFunction lsf(LieBasis::Lyndon);
   //LogSigFunction lsf(LieBasis::StandardHall);
-  int d = 3;
-  int m = 10;
+  int d = 2;
+  int m = 5;
   makeLogSigFunction(d, m, lsf, wm, interrupt);
   vector<double> seg(d);
   vector<double> output((size_t)std::pow(d, m + 1));
@@ -96,7 +96,7 @@ double doTrianglesHelp() {
   {
     SecondsCounter sc(out);
     for (int i = 0; i < 100; ++i) {
-      CalcSignature::CalculatedSignature sig;
+      CalcSignature::Signature sig;
       sig.sigOfSegment(d, m, &output[0]);
       logTensorHorner(sig);
       projectExpandedLogSigToBasis(&output[0], &lsf, sig);
@@ -234,6 +234,61 @@ void dynkinExperiment(const int d, const int m, bool p1, bool p2) {
   isSymmetric(fullMatrix);
 }
 
+
+size_t countAnagrams(const vector<Letter>& sortedLetters) {
+  size_t numerator = 1;
+  size_t currentDenominator = 1;
+  size_t denominator = 1;
+  size_t thisNumber = 1;
+  Letter lastLetter = 0;
+  const size_t size = sortedLetters.size();
+  for (size_t i = 0; i < size; ++i) {
+    if (i == 0 || sortedLetters[i] != sortedLetters[i - 1]) {
+      denominator *= currentDenominator;
+      currentDenominator = thisNumber = 1;
+    }
+    else {
+      ++thisNumber;
+      currentDenominator *= thisNumber;
+    }
+    numerator *= i + 1;
+  }
+  denominator *= currentDenominator;
+  if (numerator%denominator != 0)
+    throw std::runtime_error("math error");
+  return numerator / denominator;
+}
+
+void anagramSetCountings() {
+  using namespace IISignature_algebra;
+  for (int d : {2, 3, 4, 5, 6, 7})
+    for (int m : {2, 3, 4, 5, 6, 7, 8}) {
+      std::cout << "d=" << d << " m=" << m;
+      BasisPool s(LieBasis::Lyndon);
+      auto list = makeListOfBasisElts(s, d, m);
+      vector<BasisElt*> elts;
+      for (auto& v : list)
+        for (auto elt : v)
+          elts.push_back(elt);
+      vector<size_t> sigLevelSizes{ (size_t)d };
+      for (int level = 2; level <= m; ++level)
+        sigLevelSizes.push_back(d*sigLevelSizes.back());
+      auto mappingMatrix = makeMappingMatrix(d, m, s, elts, sigLevelSizes);
+      BasisEltToIndex basisEltToIndex;
+      LetterOrderToBE letterOrderToBE;
+      analyseMappingMatrixLevel(mappingMatrix, m, letterOrderToBE, basisEltToIndex);
+      size_t total = 0;
+      for (auto& i : letterOrderToBE) {
+        size_t nLyndonWords = i.second.size();
+        size_t nWords = countAnagrams(i.first);
+        //std::cout << "\n" << countAnagrams(i.first) << ", " << nLyndonWords;
+        total += nLyndonWords * nWords;
+      }
+      std::cout << ": " << total << "\n";
+      //std::cout << "\n";
+    }
+}
+
 std::vector<Letter> indexToWord(size_t index, int d, int m) {
   std::vector<Letter> o;
   for (int i = 0; i < m; ++i) {
@@ -278,10 +333,10 @@ size_t countLyndonWordsWithTwos(size_t nTwos) {
 }
 
 void printAMappingMatrix() {
-  vector<Letter> myletters{ 0,0,1,1,2,2 };
+  //vector<Letter> myletters{ 0,0,1,1,2,2 };
   //vector<Letter> myletters{ 0,0,1,1,2,2,2 };
   //vector<Letter> myletters{ 0,0,0,0,1,1,1,1 };
-  //vector<Letter> myletters{ 0,0,0,1,1,1,2,2,2 };
+  vector<Letter> myletters{ 0,0,0,1,1,1,2,2,2,2 };
   //vector<Letter> myletters{ 0,0,1,2 };
   //vector<Letter> myletters{ 0,1,2};
   if (!std::is_sorted(myletters.begin(), myletters.end()) || myletters.at(0) != 0)
@@ -413,8 +468,40 @@ void memLeakChecker() {
   std::cout << "ok\n";
 }
 
+void tryLogBackwards() {
+  int d = 3, m = 6;
+  CalcSignature::Signature sig, der;
+  vector<double> segment(d);
+  segment[0] = 3;
+  segment[1] = 2;
+  //sig.sigOfNothing(d, m);
+  sig.sigOfSegment(d, m, segment.data());
+  if (false) {
+    der.sigOfNothing(d, m);
+    for (int i = 0; i < m; ++i)
+      std::fill(der.m_data[i].begin(), der.m_data[i].end(), (CalcSignature::Number)1.0);
+    //std::fill(sig.m_data[0].begin(), sig.m_data[0].end(), (CalcSignature::Number)3.0);
+  }
+  else
+  {
+    WantedMethods wm;
+    wm.m_expanded = wm.m_compiled_bch = wm.m_log_of_signature = wm.m_simple_bch = false;
+    wm.m_log_of_signature = true;
+    LogSigFunction lsf(LieBasis::Lyndon);
+    makeLogSigFunction(d, m, lsf, wm, interrupt);
+    vector<double> logsig(lsf.m_basisElements.size());
+    projectExpandedLogSigToBasisBackwards(logsig.data(), &lsf, der);
+  }
+  //sig.m_data[0].at(1) = 32;
+  logBackwards(der, sig);
+  for (auto d : der.m_data[0])
+    std::cout << d << "\n";
+}
+
 int main() {
   restrictWorkingSet(2000);
+  tryLogBackwards();
+  //anagramSetCountings();
   //std::cout << countLyndonWords({ 3,3,4 }) << "\n";
   //printAMappingMatrix();
   //compareHL();
@@ -429,7 +516,7 @@ int main() {
   //dynkinExperiment(2, 4, 0, 1);
   //dynkinExperiment(2, 4, 1, 1);
   //trySVD();
-  doTrianglesHelp();
+  //doTrianglesHelp();
   //setupGlobal();
   //calcFla(2, 4, interrupt);
   return 0;

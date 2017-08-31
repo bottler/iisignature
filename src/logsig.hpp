@@ -16,11 +16,12 @@ struct LogSigFunction{
   FunctionData m_fd;
   std::unique_ptr<FunctionRunner> m_f;
 
-  bool canTakeLogOfSig() const { return m_level < 2 || !m_simples.empty(); }
+  bool canProjectToBasis() const { return m_level < 2 || !m_simples.empty(); }
 
   //Everything after here is used for the linear algebra calculation of sig -> logsig.
   std::vector<size_t> m_sigLevelSizes;
   std::vector<size_t> m_logLevelSizes;
+  int m_siglength = 0;
 
   //A Simple describes how a certain element of a level of a logsig is just
   //a constant multiple of a certain element of a level of a sig.
@@ -422,8 +423,12 @@ namespace IISignature_algebra {
     using std::vector;
     lsf.m_sigLevelSizes.assign(1, (size_t)dim);
     lsf.m_logLevelSizes.assign(1, (size_t)dim);
-    for (int m = 2; m <= level; ++m)
-      lsf.m_sigLevelSizes.push_back(dim*lsf.m_sigLevelSizes.back());
+    lsf.m_siglength = dim;
+    for (int m = 2; m <= level; ++m) {
+      int a = dim*(int)lsf.m_sigLevelSizes.back();
+      lsf.m_siglength += a;
+      lsf.m_sigLevelSizes.push_back(a);
+    }
     auto m = makeMappingMatrix(dim, level, lsf.m_s, lsf.m_basisElements, lsf.m_sigLevelSizes);
     for (int lev = 2; lev <= level; ++lev)
       lsf.m_logLevelSizes.push_back(m[lev - 1].size());
@@ -542,9 +547,9 @@ namespace IISignature_algebra {
 }
 
 void projectExpandedLogSigToBasis(double* out, const LogSigFunction* lsf, 
-    const CalcSignature::CalculatedSignature& sig) {
+    const CalcSignature::Signature& sig) {
   size_t writeOffset = 0;
-  std::vector<CalcSignature::CalcSigNumeric> rhs;
+  std::vector<CalcSignature::Number> rhs;
   for (auto f : sig.m_data[0])
     out[writeOffset++] = f;
   for (int l = 2; l <= lsf->m_level; ++l) {
@@ -576,16 +581,76 @@ void projectExpandedLogSigToBasis(double* out, const LogSigFunction* lsf,
         lsf->m_smallSVDs[l - 1][i.m_matrixToUse].m_matrix.data() :
 #endif
         i.m_matrix.data();
+      size_t nDests = i.m_dests.size();
       size_t nSources = i.m_sources.size();
       rhs.resize(nSources);
       for (size_t j = 0; j < nSources; ++j)
         rhs[j] = sig.m_data[l - 1][i.m_sources[j]];
-      for (size_t j = 0; j < i.m_dests.size(); ++j) {
+      for (size_t j = 0; j < nDests; ++j) {
         double val = 0;
         for (size_t k = 0; k < nSources; ++k)
           val += mat[nSources*j + k] * rhs[k];
         out[writeOffset + i.m_dests[j]] = val;
       }
+    }
+    writeOffset += loglevelLength;
+  }
+}
+
+//This backpropagates the function projectExpandedLogSigToBasis.
+//Note that, when triangles are in play, projectExpandedLogSigToBasis assumes that its input is 
+//a Lie element, which simplifies the calculation. 
+//Those assumptions are in play here, so you cannot assume that the output of this function is in
+//the subspace of Lie elements. It's not really a "gradient" of a varying expanded log signature.
+//This is not a problem for us where all we want to do is backpropagate further 
+// - to the signature and then to the path.
+void projectExpandedLogSigToBasisBackwards(const double* derivs, const LogSigFunction* lsf,
+  CalcSignature::Signature& out) {
+  out.sigOfNothing(lsf->m_dim, lsf->m_level);
+  size_t writeOffset = 0;
+  std::vector<double> rhs;
+  for (auto& f : out.m_data[0])
+    f = (CalcSignature::Number) derivs[writeOffset++];
+  for (int l = 2; l <= lsf->m_level; ++l) {
+    const size_t loglevelLength = lsf->m_logLevelSizes[l - 1];
+    for (const auto& i : lsf->m_simples[l - 1]) {
+      out.m_data[l - 1][i.m_source] = (CalcSignature::Number)(derivs[writeOffset + i.m_dest] * i.m_factor);
+    }
+    for (auto& i : lsf->m_smallTriangles[l - 1]) {
+      size_t triangleSize = i.m_dests.size();
+      auto mat =
+#ifdef SHAREMAT
+        i.m_matrix.empty() ?
+        lsf->m_smallTriangles[l - 1][i.m_matrixToUse].m_matrix.data() :
+#endif
+        i.m_matrix.data();
+      rhs.assign(triangleSize, 0.0);
+      for (size_t dest = 0; dest < triangleSize; ++dest) {
+        for (size_t source = 0; source < dest; ++source) {
+          rhs[source] += mat[dest*triangleSize + source] * derivs[writeOffset + i.m_dests[dest]];
+        }
+      }
+      for (size_t source = 0; source < triangleSize; ++source) {
+        out.m_data[l - 1][i.m_sources[source]] = (CalcSignature::Number)(derivs[writeOffset + i.m_dests[source]] -rhs[source]);
+      }
+    }
+    for (auto& i : lsf->m_smallSVDs[l - 1]) {
+      auto mat =
+#ifdef SHAREMAT
+        i.m_matrix.empty() ?
+        lsf->m_smallSVDs[l - 1][i.m_matrixToUse].m_matrix.data() :
+#endif
+        i.m_matrix.data();
+      size_t nDests = i.m_dests.size();
+      size_t nSources = i.m_sources.size();
+      rhs.assign(nSources,0.0);
+      for (size_t j = 0; j < nDests; ++j) {
+        double val = derivs[writeOffset + i.m_dests[j]];
+        for (size_t k = 0; k < nSources; ++k)
+          rhs[k] += mat[nSources*j + k] * val;
+      }
+      for (size_t j = 0; j < nSources; ++j)
+        out.m_data[l - 1][i.m_sources[j]] = (CalcSignature::Number) rhs[j];
     }
     writeOffset += loglevelLength;
   }
@@ -598,6 +663,8 @@ struct WantedMethods{
   bool m_expanded = false;
 
   bool m_want_matchCoropa = false;
+
+  const char* m_errMsg = nullptr;
 };
 
 //This function sets up the members of lsf. It occasionally calls interrupt
@@ -617,6 +684,15 @@ void makeLogSigFunction(int dim, int level, LogSigFunction& lsf, const WantedMet
     IISignature_algebra::makeSparseLogSigMatrices(dim,level,lsf,interrupt);
 }
 
+const char* const methodError = "Invalid method string. Should be 'D' (default), 'C' (compiled), "
+                                "'O' (simple BCH object, not compiled), "
+                                "'S' (by taking the log of the signature), "
+                                "or 'X' (to report the expanded log signature), "
+                                "or some combination - order ignored, possibly with 'H', or None.";
+
+const char* const inconsistentRequest = "You asked for both 'X' and another method in your request, "
+                                        "which means I can't tell what output you want.";
+
 //interpret a string as a list of wanted methods, return true on error
 bool setWantedMethods(WantedMethods& w, int dim, int level, bool consumer, const std::string& input){
   const auto npos = std::string::npos;
@@ -632,14 +708,18 @@ bool setWantedMethods(WantedMethods& w, int dim, int level, bool consumer, const
   w.m_log_of_signature = forceLog || (npos!=input.find_first_of("sS"));
   w.m_expanded = (npos != input.find_first_of("xX"));
   w.m_want_matchCoropa = (npos != input.find_first_of("hH"));
-  return npos!=input.find_first_not_of("cCdDhHoOsSxX ");
+  bool totallyInvalid = npos!=input.find_first_not_of("cCdDhHoOsSxX ");
+  if (totallyInvalid) {
+    w.m_errMsg = methodError;
+    return true;
+  }
+  if (consumer && w.m_expanded && (w.m_compiled_bch || w.m_simple_bch || w.m_log_of_signature)) {
+    w.m_errMsg = inconsistentRequest;
+    return true;
+  }
+  return false;
 }
 
-const char* const methodError = "Invalid method string. Should be 'D' (default), 'C' (compiled), "
-                                "'O' (simple BCH object, not compiled), "
-                                "'S' (by taking the log of the signature), "
-                                "or 'X' (to report the expanded log signature), "
-                                "or some combination - order ignored, possibly with 'H', or None.";
 
 //rename LogSigFunction to LogSigData
 

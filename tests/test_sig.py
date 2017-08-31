@@ -135,6 +135,24 @@ def chen(a,b):
 def diff(a,b):
     return numpy.max(numpy.abs(a - b))
 
+#Finite difference derivative
+#estimate bump dot (the derivative of np.sum(f(X)) wrt X at X=x)
+# i.e. the change in np.sum(f(X)) caused by bump 
+# with a finite difference approximation
+def fdDeriv(f,x,bump,order,nosum=False):
+    if order==0:#SIMPLE
+        o=f(x+bump)-f(x)
+    elif order ==2:#2nd order central
+        o=0.5 * (f(x+bump)-f(x-bump))
+    elif order ==4:#4th order central
+        o=(8*f(x+bump)-8*f(x-bump)+f(x-2*bump)-f(x+2*bump))/12
+    elif order ==6:#6th order central
+        o=(45*f(x+bump)-45*f(x-bump)+9*f(x-2*bump)-9*f(x+2*bump)+f(x+3*bump)-f(x-3*bump))/60
+    if nosum:
+        return o
+    return numpy.sum(o)
+
+
 class TestCase(unittest.TestCase):
     if sys.hexversion < 0x2070000:
         def assertLess(self,a,b,msg=None):
@@ -211,7 +229,7 @@ class A(TestCase):
         self.consistency(False, 3, 6)
 
     def testCoropa(self):
-        self.consistency(True, 2, 2)
+        self.consistency(True, 5, 2)
 
     #test sigjoin is compatible with sig and also its deriv
     def testjoining(self):
@@ -260,9 +278,9 @@ class A(TestCase):
                 #print("\n",bump3,base, fixedPoint, bumpedFixedPoint, calculated[2])
                 self.assertLess(numpy.abs(diff3),0.00001, "diff3")
 
-#test that sigjacobian and sigbackprop compatible with sig
 class Deriv(TestCase):
-    def testa(self):
+    def testSig(self):
+        #test that sigjacobian and sigbackprop compatible with sig
         numpy.random.seed(291)
         d = 3
         m = 5
@@ -272,8 +290,7 @@ class Deriv(TestCase):
         increment = 0.01 * numpy.random.uniform(size=(pathLength,d))
         base_sig = iisignature.sig(path,m)
 
-        bumped_sig = iisignature.sig(path + increment,m)
-        target = bumped_sig - base_sig
+        target = fdDeriv(lambda x:iisignature.sig(x,m),path,increment,2, nosum=True)
         
         gradient = iisignature.sigjacobian(path,m)
         calculated = numpy.tensordot(increment,gradient)
@@ -292,13 +309,12 @@ class Deriv(TestCase):
         #print (path)
         #print
         #(numpy.vstack([range(len(base_sig)),base_sig,calculated,target,(calculated-target)/base_sig,calculated/target-1]).transpose())
-        #print (diffs, diffs1, diffs2, ratioDiffs,
-        #numpy.argmax(numpy.abs(calculated[niceOnes]/target[niceOnes]-1)),numpy.argmax(numpy.abs((calculated-target)/base_sig)))
+        #print (diffs, ratioDiffs, diffs1, diffs2)
+        #print(numpy.argmax(numpy.abs(calculated[niceOnes]/target[niceOnes]-1)),numpy.argmax(numpy.abs((calculated-target)/base_sig)))
 
-        #These assertions are pretty weak, the small answers are a bit volatile
-        self.assertLess(diffs,0.0001)
-        self.assertLess(ratioDiffs,0.2)
-        self.assertLess(diffs1,0.05) 
+        self.assertLess(diffs,0.00001)
+        self.assertLess(ratioDiffs,0.01)
+        self.assertLess(diffs1,0.001) 
         self.assertLess(diffs2,0.00001) 
 
         #compatibility between sigbackprop and sigjacobian is strong
@@ -314,6 +330,49 @@ class Deriv(TestCase):
             print(backProp)
             print(manualCalcBackProp)
         self.assertLess(backDiffs,0.000001)
+
+    def logSig(self, type):
+        numpy.random.seed(291)
+        d=2
+        m=5
+        pathLength=10
+        s=iisignature.prepare(d,m,type)
+        path = numpy.random.uniform(size=(pathLength,d))
+        path = numpy.cumsum(2 * (path - 0.5),0)#makes it more random-walk-ish, less like a scribble
+        increment = 0.01*path
+        increment = 0.1*numpy.random.uniform(size=(pathLength,d))
+
+        manualChange = fdDeriv(lambda x:iisignature.logsig(x,s,type),path,increment,4)
+        
+        dFdlogSig = numpy.ones(iisignature.siglength(d,m) if "X"==type else iisignature.logsiglength(d,m))
+        calculatedChange = numpy.sum(increment*iisignature.logsigbackprop(dFdlogSig,path,s,type))
+        #print(manualChange, calculatedChange)
+        self.assertLess(numpy.abs(manualChange-calculatedChange),0.0001)
+
+    def testLogSig_expanded(self):
+        self.logSig("X")
+    def testLogSig_lyndon(self):
+        self.logSig("S")
+    def testLogSig_hall(self):
+        self.logSig("H")
+
+    def test_logsigbackwards_can_augment_s(self):
+        numpy.random.seed(291)
+        d=2
+        m=7
+        pathLength=3
+        path = numpy.random.uniform(size=(pathLength,d))
+        increment = 0.1*numpy.random.uniform(size=(pathLength,d))
+        dFdlogSig = numpy.ones(iisignature.logsiglength(d,m))
+        for types in (("x","o","s"),("xh","oh","sh")):
+            ss=[iisignature.prepare(d,m,t) for t in types]
+            backs=[iisignature.logsigbackprop(dFdlogSig,path,s) for s in ss]
+            self.assertTrue(numpy.allclose(backs[0],backs[2]),types[0])
+            self.assertTrue(numpy.allclose(backs[1],backs[2]),types[1])
+            fwds=[iisignature.logsig(path,s,"s") for s in ss]
+            self.assertTrue(numpy.allclose(fwds[0],fwds[2]),types[0])
+            self.assertTrue(numpy.allclose(fwds[1],fwds[2]),types[1])
+
 
 class Counts(TestCase):
     #check sigmultcount, and also that sig matches a manual signature
@@ -371,6 +430,13 @@ class SimpleCases(TestCase):
         self.assertLess(diff(iisignature.sig(path,m),rightSig),0.0000001)
         for type in ("C","O","S","X"):
             self.assertLess(diff(iisignature.logsig(path,s,type),rightSig),0.0000001,type)
+        derivs=numpy.array([2.1,3.2])
+        pathderivs=numpy.zeros_like(path)
+        pathderivs[-1]=derivs
+        pathderivs[0]=-derivs
+        self.assertLess(diff(iisignature.logsigbackprop(derivs,path,s),pathderivs),0.00001)
+        self.assertLess(diff(iisignature.logsigbackprop(derivs,path,s,"X"),pathderivs),0.00001)
+        self.assertLess(diff(iisignature.sigbackprop(derivs,path,m),pathderivs),0.00001)
 
         
 class Scales(TestCase):
@@ -474,14 +540,20 @@ class Batching(TestCase):
         self.assertTrue(numpy.allclose(backscaled1315[0].reshape(n,-1),backscaledArrays[0]))
         self.assertTrue(numpy.allclose(backscaled1315[1].reshape(n,-1),backscaledArrays[1]))
 
-        s=iisignature.prepare(d,m,"cosx")
-        for type in ("c","o","s","x"):
+        s_s=(iisignature.prepare(d,m,"cosx"),iisignature.prepare(d,m,"coshx"))
+        for type in ("c","o","s","x","ch","oh","sh"):
+            s=s_s[1 if "h" in type else 0]
             logsigs = [iisignature.logsig(i,s,type) for i in paths]
             logsigArray=stack(logsigs)
             logsigArray1315=iisignature.logsig(pathArray1315,s,type)
             self.assertEqual(logsigArray1315.shape,(1,3,1,5,logsigs[0].shape[0]),type)
             self.assertTrue(numpy.allclose(logsigArray1315.reshape(n,-1),logsigArray),type)
 
+            if type in ("s","x","sh"):
+                backlogs = stack(iisignature.logsigbackprop(i,j,s,type) for i,j in zip(logsigs,paths))
+                backlogs1315 = iisignature.logsigbackprop(logsigArray1315,pathArray1315,s,type)
+                self.assertEqual(backlogs1315.shape,backsigs1315.shape)
+                self.assertTrue(numpy.allclose(backlogs1315.reshape(n,6,d),backlogs),type)
 
 #sum (2i choose i) for i in 1 to n
 # which is the number of linear rotational invariants up to level 2n
@@ -493,7 +565,7 @@ def sumCentralBinomialCoefficient(n):
 #python setup.py test -s tests.test_sig.RotInv2d
 class RotInv2d(TestCase):
     def dotest(self,type):
-        m = 6
+        m = 8
         nPaths = 95
         nAngles = 348
         numpy.random.seed(775)
@@ -524,9 +596,13 @@ class RotInv2d(TestCase):
                 print(diff(samePathRotInvs[0],samePathRotInvs[1 + i]))
             self.assertLess(diff(samePathRotInvs[0],samePathRotInvs[1 + i]),0.01)
 
-        #check that the invariants are not repeated
-        if type != "k":
-            self.assertEqual(length,numpy.linalg.matrix_rank(numpy.column_stack(samePathRotInvs)))
+        #check that the invariants match the coefficients
+        if 1:
+            sigLevel=iisignature.sig(paths[0],m)[iisignature.siglength(2,m-1):]
+            lowerRotinvs = 0 if 2==m else iisignature.rotinv2dlength(iisignature.rotinv2dprepare(m-2,type))
+            #print("\n",numpy.dot(coeffs[-1],sigLevel),"\n",samePathRotInvs[0][lowerRotinvs:])
+            #print(numpy.dot(coeffs[-1],sigLevel)-samePathRotInvs[0][lowerRotinvs:])
+            self.assertTrue(numpy.allclose(numpy.dot(coeffs[-1],sigLevel),samePathRotInvs[0][lowerRotinvs:],atol=0.000001))
 
         #check that we are not missing invariants
         if type == "a":
@@ -586,7 +662,7 @@ class RotInv2d(TestCase):
         self.dotest("s")
 
     def testConsistencyOfBases(self):
-        m = 8
+        m = 6
         sa = iisignature.rotinv2dprepare(m,"a")
         sk = iisignature.rotinv2dprepare(m,"k")
         ca = iisignature.rotinv2dcoeffs(sa)[-1]
@@ -610,6 +686,10 @@ class RotInv2d(TestCase):
         self.assertLess(numpy.max(numpy.abs(residuals2)), 0.000001)
 
         self.assertEqual(cq.shape, cs.shape)
+
+        #check that the invariants are linearly independent (not for k)
+        for c, name in ((cs, "s"), (ca, "a"), (cq, "q")):
+            self.assertEqual(numpy.linalg.matrix_rank(c),c.shape[0],name)
 
         #check that rows with nonzeros in evil columns are all before
         #rows with nonzeros in odious columns
