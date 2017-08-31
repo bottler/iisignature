@@ -14,7 +14,7 @@ import six.moves
 sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
 import iisignature
 
-from iisignature_theano import Sig
+from iisignature_theano import LogSig, Sig
 
 
 #1: SETUP VARIABLES
@@ -22,12 +22,14 @@ dim=2
 level=3
 pathlength=4
 timedim=False
+useLogSig = True
+s=iisignature.prepare(dim,level)
 
 numpy.random.seed(51)
 target = numpy.random.uniform(size=(pathlength,dim)).astype("float32")
 #target = numpy.cumsum(2*(target-0.5),0)#makes it more random-walk-ish, less like a scribble
 
-targetSig = iisignature.sig(target,level)
+targetSig = iisignature.logsig(target,s) if useLogSig else iisignature.sig(target,level)
 start = numpy.random.uniform(size=(pathlength,dim)).astype("float32")
 start[0,:] = target[0,:]
 learnable_mask = numpy.ones((pathlength,dim)).astype("float32")
@@ -45,9 +47,12 @@ momentum = 0.95
 learning_rate = theano.shared(numpy.float32(initial_learning_rate),"learning_rate")
 path = theano.shared(start, "path")
 grad_avg = theano.shared(numpy.zeros_like(start,dtype="float32"),"grad_avg")
-cost = theano.tensor.mean(theano.tensor.sqr(Sig(path,level)-targetSig))
+sig = LogSig(path,s) if useLogSig else Sig(path,level)
+cost = theano.tensor.mean(theano.tensor.sqr(sig-targetSig))
 new_grad_avg = (momentum*grad_avg)+(1-momentum)*theano.grad(cost,path)
-ff = theano.function([],[cost],updates=[(path,path-learning_rate*learnable_mask*new_grad_avg),
+use_old=False
+grad_to_use=grad_avg if use_old else new_grad_avg
+ff = theano.function([],[cost],updates=[(path,path-learning_rate*learnable_mask*grad_to_use),
                                         (grad_avg,new_grad_avg),
                                         (learning_rate,learning_rate*learning_rate_decay)])
 
@@ -58,7 +63,7 @@ print ("target:")
 print (target)
 print ("start:")
 print (start)
-for i in six.moves.xrange(181): 
+for i in six.moves.xrange(581): 
     stepcost = ff() #one step of gradient descent
     if i%18 == 0:
         print ("step " + str(i)  + " cost: " + str(ff()[0].item()))

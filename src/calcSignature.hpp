@@ -380,7 +380,6 @@ namespace CalcSignature{
         auto it = x_derivs.m_data[lev - 1].begin();
         for (Number dd : derivs.m_data[lev - 1])
           *(it++) += factor * dd;
-        auto it2 = other_derivs.m_data[lev - 1].begin();
         it = x_derivs.m_data[lev - 1].begin();
         for (Number dd : other_derivs.m_data[lev - 1])//merge with other loop
           *(it++) += factor * scalar * dd;

@@ -1,7 +1,9 @@
 #This module defines a theano op called Sig,
 # which just does iisignature.sig,
+#one called LogSig,
+# which just does iisignature.logsig,
 #one called SigJoin,
-# which just does iisignature.sigjoin.
+# which just does iisignature.sigjoin,
 #and one called SigScale,
 # which just does iisignature.sigscale.
 
@@ -43,6 +45,20 @@ class SigLength_op(theano.Op):
         return [[]]
 SigLength=SigLength_op()
 
+#This is a theano Op which wraps iisignature.logsiglength .
+#It could be used to implement shape inference of LogSig, but isn't.
+class LogSigLength_op(theano.Op):
+    __props__=()
+    def make_node(self,d,m):
+        d = theano.tensor.as_tensor_variable(d)
+        m = theano.tensor.as_tensor_variable(m)
+        return theano.Apply(self,[d,m],[theano.tensor.iscalar()])
+    def perform(self,node,inp,out):
+        out[0][0]=np.array(iisignature.logsiglength(inp[0],inp[1]),dtype="int32")
+    def infer_shape(self,node,shapes):
+        return [[]]
+LogSigLength=LogSigLength_op()
+
 #This is a theano Op which wraps iisignature.sigbackprop .
 #It is used in the grad method of Sig.
 #Ideally we would have an optimization to sum a variable with this in place
@@ -77,13 +93,67 @@ class Sig_op(theano.Op):
         return theano.Apply(self,inputs=[x_,m],
                             outputs=[outT])
     def perform(self,node,inputs_storage,outputs_storage):
-        x=inputs_storage[0] # (batch x ) pathLength x D
+        x=inputs_storage[0]
         m=inputs_storage[1]
         outputs_storage[0][0]=iisignature.sig(x,m)
     def grad(self,inputs,g):
         return [SigGrad(g[0],inputs[0],inputs[1]),
                 theano.gradient.grad_undefined(self,1,inputs[1])]
 Sig = Sig_op()
+
+#There is no smooth way to pass information which is known in one instance of the
+#Op, like the prepared object in LogSig, to the Op's grad() method. node is
+#not one of the parameters of grad. Thus we store the prepared objects in
+#this global variable, and have its index as a constant input to the apply node.
+_prepared_obeject_store=[]
+
+#This is a theano Op which wraps iisignature.logsigbackprop .
+#The arguments are a bit weird: if you want to use this yourself
+#you need to append the prepared object and method as a tuple to
+#_prepared_obeject_store and pass the index as an input.
+class LogSigGrad_op(theano.Op):
+    __props__=()
+    def infer_shape(self,node,shapes):
+        return [shapes[1]]
+    def make_node(self,grad_output,x,index):
+        grad_output=theano.tensor.as_tensor_variable(grad_output)
+        x=theano.tensor.as_tensor_variable(x)
+        outT=theano.tensor.TensorType("float32",[False]*x.ndim)()
+        return theano.Apply(self,inputs=[grad_output,x,index],outputs=[outT])
+    def perform(self,node,inputs_storage,out):
+        grad_output=inputs_storage[0]
+        x=inputs_storage[1]
+        s,method=_prepared_obeject_store[inputs_storage[2]]
+        out[0][0]=iisignature.logsigbackprop(grad_output,x,s,method)
+LogSigGrad=LogSigGrad_op()
+
+#This is a theano Op which wraps iisignature.logsig
+class LogSig_op(theano.Op):
+    __props__=()
+    def infer_shape(self,node,shapes):
+        #d=shapes[0][-1]
+        s,method=_prepared_obeject_store[node.inputs[1].get_value()]
+        m=iisignature.info(s)["level"]
+        d=iisignature.info(s)["dimension"]
+        if "x" in method or "X" in method:
+            length=iisignature.siglength(d,m)
+        else:
+            length=iisignature.logsiglength(d,m)
+        return [shapes[0][:-2]+(length,)]
+    def make_node(self,x,s,method=""):
+        x_=theano.tensor.as_tensor_variable(x)
+        outT=theano.tensor.TensorType("float64",[False]*(x.ndim-1))()
+        index=theano.shared(len(_prepared_obeject_store))
+        _prepared_obeject_store.append((s,method))
+        return theano.Apply(self,inputs=[x_,index], outputs=[outT])
+    def perform(self,node,inputs_storage,outputs_storage):
+        x=inputs_storage[0]
+        s,method=_prepared_obeject_store[inputs_storage[1]]
+        outputs_storage[0][0]=iisignature.logsig(x,s,method)
+    def grad(self,inputs,g):
+        return [LogSigGrad(g[0],inputs[0],inputs[1]),
+                theano.gradient.grad_undefined(self,1,inputs[1])]
+LogSig = LogSig_op()
 
 #This is a theano Op which wraps iisignature.sigjoinbackprop .
 #It has multiple outputs.

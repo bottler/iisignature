@@ -1,7 +1,9 @@
 #This module defines a PyTorch function called Sig,
 # which just does iisignature.sig,
+#one called LogSig,
+# which just does iisignature.logsig,
 #one called SigJoin,
-# which just does iisignature.sigjoin.
+# which just does iisignature.sigjoin,
 #and one called SigScale,
 # which just does iisignature.sigscale.
 import torch
@@ -22,6 +24,21 @@ class SigFn(Function):
         result = iisignature.sigbackprop(grad_output.numpy(),X.numpy(),self.m)
         return torch.FloatTensor(result)
 
+class LogSigFn(Function):
+    def __init__(self, s, method):
+        super(LogSigFn, self).__init__()
+        self.s = s
+        self.method = method
+    def forward(self,X):
+        result=iisignature.logsig(X.numpy(), self.s, self.method)
+        self.save_for_backward(X)
+        return torch.FloatTensor(result)
+    def backward(self, grad_output):
+        (X,) = self.saved_tensors
+        g=grad_output.numpy()
+        result = iisignature.logsigbackprop(g,X.numpy(),self.s,self.method)
+        return torch.FloatTensor(result)
+    
 class SigJoinFn(Function):
     def __init__(self, m):
         super(SigJoinFn, self).__init__()
@@ -63,6 +80,9 @@ class SigScaleFn(Function):
 def Sig(X,m):
     return SigFn(m)(X)
 
+def LogSig(X,s,method=""):
+    return LogSigFn(s,method)(X)
+    
 def SigJoin(X,y,m,fixed=None):
     if fixed is not None:
         return SigJoinFixedFn(m)(X,y,fixed)

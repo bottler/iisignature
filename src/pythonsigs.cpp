@@ -1447,7 +1447,7 @@ logsigbackwards(PyObject *self, PyObject *args) {
   using OutT = UseFloat;
   size_t eachOutputSize = wantedmethods.m_expanded ?
     (size_t)getSigLength(lsf) : (npy_intp)logsiglength;
-  if (eachOutputSize != PyArray_DIM(derivsa, ndims - 2))
+  if (eachOutputSize != (size_t) PyArray_DIM(derivsa, ndims - 2))
     ERR("derivatives have unexpected length");
   PyObject* o = PyArray_ZEROS(ndims, PyArray_DIMS(a), OutT::typenum, 0);
   if (!o)
