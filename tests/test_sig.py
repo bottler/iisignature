@@ -555,6 +555,12 @@ class Batching(TestCase):
                 self.assertEqual(backlogs1315.shape,backsigs1315.shape)
                 self.assertTrue(numpy.allclose(backlogs1315.reshape(n,6,d),backlogs),type)
 
+        a=iisignature.rotinv2dprepare(m,"a")
+        rots=stack([iisignature.rotinv2d(i,a) for i in paths])
+        rots1315=iisignature.rotinv2d(pathArray1315,a)
+        self.assertEqual(rots1315.shape,(1,3,1,5,rots.shape[1]))
+        self.assertTrue(numpy.allclose(rots1315.reshape(n,-1),rots))
+
 #sum (2i choose i) for i in 1 to n
 # which is the number of linear rotational invariants up to level 2n
 def sumCentralBinomialCoefficient(n):

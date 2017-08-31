@@ -1608,49 +1608,64 @@ rotinv2d(PyObject *self, PyObject *args) {
   if (!prepared)
     return nullptr;
   int level = prepared->m_level;
+  size_t nInvariants = 0;
+  for (const auto& i : prepared->m_invariants)
+    nInvariants += (long)i.size();
+
   PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa) ERR("data must be (convertable to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject* a = (PyArrayObject*)aa;
-  if (PyArray_NDIM(a) != 2) ERR("data must be 2d");
-  const int lengthOfPath = (int)PyArray_DIM(a, 0);
-  const int d = (int)PyArray_DIM(a, 1);
+  int ndims = PyArray_NDIM(a);
+  if (ndims < 2) ERR("data must be 2d");
+  const int lengthOfPath = (int)PyArray_DIM(a, ndims - 2);
+  const int d = (int)PyArray_DIM(a, ndims - 1);
   if (lengthOfPath < 1) ERR("Path has no length");
   if (d != 2)
     ERR(("Path has dimension " + std::to_string(d) + " but must have dimension 2.").c_str());
   if (level < 2 || level > 63 || level % 2 != 0)
     ERR("Level must be a small positive even number");
+  int nPaths = 1;
+  for (int i = 0; i + 2 < ndims; ++i) {
+    npy_intp x = PyArray_DIM(a, i);
+    nPaths *= (int)x;
+  }
+  size_t eachInputSize = (size_t)(lengthOfPath * d);
+  using OutT = UseDouble;
+  PyObject* o = simpleNew_ownLastDim(ndims - 1, a, nInvariants, OutT::typenum);
+  if (!o)
+    return nullptr;
+  ReleasableRefHolder o_(o);
+  OutT::T* out_data = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
+  auto in_data = (double*)PyArray_DATA(a);
 
   Signature sig;
+  std::vector<double> out(nInvariants);
   bool ok = do_interruptible([&] {
-    return calcSignature(sig, (double*)PyArray_DATA(a), lengthOfPath, d, level);
+    for (int path = 0; path < nPaths; ++path) {
+      if (!calcSignature(sig, in_data, lengthOfPath, d, level))
+        return false;
+      for (int lev = 2; lev <= level; lev += 2) {
+        for (int parity : {0, 1}) {
+          size_t idx = lev - 2 + parity;
+          auto& invs = prepared->m_invariants[idx];
+          for (auto& i : invs) {
+            double d = 0;
+            for (auto& p : i) {
+              d += p.second*sig.m_data[lev - 1][(size_t)(p.first)];
+            }
+            *(out_data++) = d;
+          }
+        }
+      }
+      in_data += eachInputSize;
+    }
+    return true;
   });
   if (!ok)
     return nullptr;
 
-  std::vector<double> out;
-  for (int lev = 2; lev <= level; lev += 2) {
-    for (int parity : {0, 1}) {
-      size_t idx = lev - 2 + parity;
-      auto& invs = prepared->m_invariants[idx];
-      for (auto& i : invs) {
-        double d = 0;
-        for (auto& p : i) {
-          d += p.second*sig.m_data[lev - 1][(size_t)(p.first)];
-        }
-        out.push_back(d);
-      }
-    }
-  }
-
-  npy_intp dims[] = { (npy_intp)out.size() };
-  using OutT = UseDouble;
-  PyObject* o = PyArray_SimpleNew(1, dims, OutT::typenum);
-  if (!o)
-    return nullptr;
-  OutT::T* dest = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
-  for (double d : out)
-    *dest++ = (OutT::T)d;
+  o_.release();
   return o;
 }
 
@@ -1759,9 +1774,9 @@ static PyMethodDef Methods[] = {
    "information about the opaque object s. s must have come from prepare."},
 #ifndef IISIGNATURE_NO_NUMPY
   {"logsig", logsig, METH_VARARGS, "logsig(X, s, methods=None) \n "
-   "Calculates the log signature of the path X. X must be a numpy [...x]NxD float32 "
+   "Calculates the log signature of the path X. X must be a numpy [...x]Nxd float32 "
    "or float64 array of points making up the path in R^d. s must have come from "
-   "prepare(D,m) for some m. The value is returned as a 1D numpy array of its "
+   "prepare(d,m) for some m. The value is returned as a 1D numpy array of its "
    "log signature up to level m. By default, the method used is the default out "
    "of those which have been prepared, "
    "but you can restrict it by setting methods to " METHOD_DESC "."},
@@ -1769,8 +1784,8 @@ static PyMethodDef Methods[] = {
    "gives the derivatives of F with respect to X where y is the derivatives"
    " of F with respect to logsig(X,s,methods). The result has the same shape as X." },
   { "rotinv2d", rotinv2d, METH_VARARGS, "rotinv(X,s) \n "
-  "Calculates the linear rotational invariants of the signature of the path X. X must be a numpy Nx2 float32 "
-  "or float64 array of points making up the path in R^2. "
+  "Calculates the linear rotational invariants of the signature of the path X. X must be a "
+  "[...x]Nx2 array of points making up the path(s) in R^2. "
   "The value is returned as a 1D numpy array "
   "of invariants from the signature. s must be the result of a call to rotinv2dprepare."},
   { "rotinv2dcoeffs", rotinv2dcoeffs, METH_VARARGS, "rotinv2dcoeffs(s) \n "
