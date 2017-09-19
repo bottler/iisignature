@@ -1,4 +1,4 @@
-(*Mathematica code to find the signature of a 2d path given in parametric form*)
+(*Mathematica code to find the signature of a path given in parametric form*)
 (*If A is some structure of deeply nested lists, which all contain functions,
  then ApplyLowestLevel[A,x] is the same structure where each function
  has been replaced by the result of evaluating it at x. For example
