@@ -2,7 +2,7 @@
 and m is a positive integer,
 then Sig[p,m] is the signature of p up to level m excluding the initial 1, given as a list of nested
 lists. *)
-Sig[p, m_] := 
+Sig[p_, m_] := 
  Module[{StraightSig, Chen}, 
   StraightSig[displacement_] := 
    FoldList[Outer[Times, displacement/#2, #1] &, displacement, 
