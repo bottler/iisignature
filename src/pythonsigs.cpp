@@ -1829,7 +1829,9 @@ PyInit_iisignature(void){
 PyMODINIT_FUNC
 initiisignature(void)
 {
+#ifndef IISIGNATURE_NO_NUMPY
   import_array();
+#endif
   PyObject* moduleObj = Py_InitModule3("iisignature", Methods, MODULEDOC);
   PyModule_AddStringConstant(moduleObj, "__version__", TOSTRING(VERSION));
 }

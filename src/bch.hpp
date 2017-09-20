@@ -646,7 +646,7 @@ void sumPolynomialLevels(std::vector<Term>& lhs,  std::vector<Term>& rhs) {
 }
     
 //make the lhs be lhs+rhs, rhs can be pilfered
-void sumPolynomials(BasisPool& s, Polynomial& lhs, Polynomial& rhs){
+void sumPolynomials(Polynomial& lhs, Polynomial& rhs){
   if(lhs.m_data.size()<rhs.m_data.size())
     lhs.m_data.resize(rhs.m_data.size());
   for(size_t l=0; l<rhs.m_data.size(); ++l)
@@ -727,7 +727,7 @@ productBasisElts(BasisPool& s, const BasisElt& a, const BasisElt& b, int maxLeng
   if(!a1)
     return a2;
   if(a2)
-    sumPolynomials(s,*a1,*a2);
+    sumPolynomials(*a1,*a2);
   return a1;
 }
 
@@ -766,7 +766,7 @@ Polynomial bch(BasisPool& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Poly
   std::vector<std::unique_ptr<Polynomial>> arr;
   Polynomial out = *x; //deep copy except for the basis elements
   Polynomial yCopy = *y;
-  sumPolynomials(s,out,yCopy);
+  sumPolynomials(out,yCopy);
   interrupt();
   arr.reserve(bchTable.m_totalLengths[m-1]);
   arr.push_back(std::move(x));
@@ -794,7 +794,7 @@ Polynomial bch(BasisPool& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Poly
       for (auto&mm : l)
         for(auto& c : mm.second.m_details)
           c.second *= row.m_coeff; //when m_coeff is zero, we're keeping this in
-    sumPolynomials(s,out,*p);
+    sumPolynomials(out,*p);
     interrupt();
   }
   return out;
