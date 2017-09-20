@@ -27,6 +27,20 @@ Sometimes there are compile errors on a Mac, if this happens try::
 
     MACOSX_DEPLOYMENT_TARGET=10.9 pip install iisignature
 
+Use without installing a released version
+-----------------------------------------
+
+To install the current "master" development version straight from github you can type::
+    pip install git+git://github.com/bottler/iisignature
+
+From a checkout of this repository, you can build the extension and run the tests using::
+    python setup.py test
+
+From a checkout of this repository, you can build the extension into this directory itself using::
+    python setup.py build_ext --inplace
+after which you can use the package in Python in this directory, use the examples in the ``examples`` directory, or add this directory to your PYTHONPATH and then use the package in Python anywhere.
+
+
 Authors
 -------
 
