@@ -11,7 +11,8 @@ if os.name == 'posix':
 
 if os.name == 'darwin' and "MACOSX_DEPLOYMENT_TARGET" not in os.environ:
     if "IISIGNATURE_MACOSX_DONOTBECLEVER" not in os.environ:
-        args.append('-mmacosx-version-min=10.9')
+        #args.append('-mmacosx-version-min=10.9')
+        os.environ["MACOSX_DEPLOYMENT_TARGET"]=10.9
 
 xtn = Extension('iisignature', ['src/pythonsigs.cpp'], 
                 extra_compile_args=args, # '-DVERSION="'+version+'"'],
