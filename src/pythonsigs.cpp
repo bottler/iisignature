@@ -699,14 +699,13 @@ LogSigFunction* getLogSigFunction(PyObject* p){
 
 #ifndef NO_CAPSULES
 static void killLogSigFunction(PyObject* p){
-#else
-static void killLogSigFunction(void* v){
-  PyObject* p = (PyObject*) v;
-#endif
   delete getLogSigFunction(p);
 }
-
-
+#else
+static void killLogSigFunction(void* p){
+  delete ((LogSigFunction*)p);
+}
+#endif
 
 //returns true on success
 bool getData(){
@@ -1509,12 +1508,13 @@ RotationalInvariants::Prepared* getPreparedRotInv(PyObject* p) {
 
 #ifndef NO_CAPSULES
 static void killRotInv(PyObject* p) {
-#else
-static void killRotInv(void* v) {
-  PyObject* p = (PyObject*)v;
-#endif
   delete getPreparedRotInv(p);
 }
+#else
+static void killRotInv(void* p) {
+  delete ((RotationalInvariants::Prepared*)p);
+}
+#endif
 
 static PyObject *
 rotinv2dlength(PyObject *self, PyObject *args) {
