@@ -1,3 +1,5 @@
+(* ::Package:: *)
+
 (*If p is a d-dimensional path given as a list of points, where each point is a list of d numbers,
 and m is a positive integer,
 then Sig[p,m] is the signature of p up to level m excluding the initial 1, given as a list of nested
@@ -30,4 +32,12 @@ LogTensor[t_] :=
   terms = 
    Table[If[OddQ[lev], 1/lev, -1/lev]*powers[[lev]], {lev, 1, m}];
   Apply[Plus, terms]]
+  
+(*Return the log signature of a path p by projecting the log of 
+  the signature onto a basis, as a flat list.
+  bases.wl must have been loaded.*)
+LogSig[p_, m_, basisGenerator_:GenerateLyndonBasis] :=
+  With[{sig=Sig[p,m], d=Length[p[[1]]]},
+   LeastSquares[Transpose@LogSigMatrix[d,m,basisGenerator],
+                Flatten[LogTensor[sig]]]]
 
