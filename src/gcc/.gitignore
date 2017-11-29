@@ -1,3 +1,5 @@
+mem_profilee
+mem_profile.sqlite
+mem_profile.massif
 a.out
-iisignature_localbuild.so
-iisignature.so
+*.so

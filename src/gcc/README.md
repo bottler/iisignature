@@ -16,3 +16,12 @@ and nothing outside this directory refers to anything inside this directory.
 * vg.sh: runs valgrind on it
 
 * view.sh: views the output in kcachegrind
+
+
+Memory profiling
+----------------
+
+The standalone program defined in mem_profile.cpp calculates a single log signature.
+It is built with `mem_profile_build.sh`. `mem_profile_run.py` uses the `massif` tool
+from `valgrind` to work out the total memory usage. `mem_profile_analyse.py` plots
+results.
