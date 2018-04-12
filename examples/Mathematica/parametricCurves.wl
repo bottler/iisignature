@@ -13,12 +13,13 @@ You can plot them if they are 2 or 3 dimensional.*)
 
 (** 1. Exps versions. *)
 
+(*Plot uses most of the rainbow red\[Rule]blue. Note that uu ranges over [0,1], it isn't the parameter.*)
 PlotExps[exps_,sym_Symbol,max_]:=
-  If[Length[exps] == 2, ParametricPlot, ParametricPlot3D][exps,{sym,0,max}]
+  If[Length[exps] == 2, ParametricPlot, ParametricPlot3D][exps,{sym,0,max},ColorFunction->Function[{x,y,uu},Hue[0.75uu]]]
 ShiftExps[exps_,sym_Symbol,by_]:=Table[ff/.sym->sym+by,{ff,exps}]
 EvaluateExps[exps_,sym_Symbol,paramValue_]:=exps/.sym->paramValue
 JoinExps[{f_,sym1_Symbol},{g_,sym2_Symbol},break_]:=
-   Table[With[{diff=(tt[[1]]/.sym1->break)-(tt[[2]]/.sym2->0)},Print[diff];
+   Table[With[{diff=(tt[[1]]/.sym1->break)-(tt[[2]]/.sym2->0)},
         Piecewise[{{tt[[1]],sym1<break}},diff+(tt[[2]]/.sym2->sym1-break)]],
    {tt,Transpose[{f,g}]}]
 AddTimeToExp[exp_,sym_Symbol]:=Append[exp,sym]
@@ -66,7 +67,7 @@ SigFns[f_,u_,m_]:=
 (*Plot the parametric curve f on [0,u] where f is a list of functions*)
 PlotFns[f_, u_] := 
  If[Length[f] == 2, ParametricPlot, ParametricPlot3D][
-  Through[f[x]], {x, 0, u}]
+  Through[f[x]], {x, 0, u},ColorFunction->Function[{x,y,uu},Hue[0.75uu]]]
 (*ShiftFns[f,7] is a Fns which on (0,1) is the same as f on (7,8)*)
 (*ShiftFns[f_,by_]:={f[[1]][#-by]&,f[[2]][#-by]&,f[[3]][#-by]&}*)
 ShiftFns[f_,by_]:=Table[With[{ff=ff},ff[#+by]&],{ff,f}]
