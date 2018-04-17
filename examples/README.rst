@@ -33,6 +33,8 @@ because they append ``..`` to the ``PYTHONPATH``.
 
 All the other files are freestanding programs.
 
+* figure8Fibonacci.py shows how to build paths which traverse a figure of 8 multiple times whose signature vanishes below level 5, 8, or 13.
+
 * freehand_draw.py prints out log signatures of paths you draw freehand with the mouse.
 
 * innerProductLogSig.py shows how to find the L2 inner product of the tensor-space-expanded versions of log signatures when they are not tensor-space-expanded.
