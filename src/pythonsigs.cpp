@@ -157,14 +157,29 @@ struct UseDouble{
 //Returns a new numpy array with the type typenum,
 //with ndims dimensions. The first (ndims-1) dimensions are the same
 //as those of arr, and the last dimension is newLastDim.
-//We save an allocation by reusing the shape member of arr,
-//so ndims must not exceed the number of dimensions of arr.
+//arr must have at least one dimension.
 PyObject* simpleNew_ownLastDim(int ndims, PyArrayObject* arr, size_t newLastDim, int typenum) {
   npy_intp* shape = PyArray_DIMS(arr);
   npy_intp orig = shape[ndims - 1];
   shape[ndims - 1] = (npy_intp) newLastDim;
   PyObject* o = PyArray_SimpleNew(ndims, shape, typenum);
   shape[ndims - 1] = orig;
+  return o;
+}
+
+//Returns a new numpy array with the type typenum,
+//with ndims dimensions. The first (ndims-2) dimensions are the same
+//as those of arr, and the last dimensions are newPenultDim and newLastDim.
+//arr must have at least two dimensions.
+PyObject* simpleNew_ownLast2Dims(int ndims, PyArrayObject* arr, size_t newPenultDim, size_t newLastDim, int typenum) {
+  npy_intp* shape = PyArray_DIMS(arr);
+  npy_intp orig1 = shape[ndims - 2];
+  npy_intp orig2 = shape[ndims - 1];
+  shape[ndims - 2] = (npy_intp)newPenultDim;
+  shape[ndims - 1] = (npy_intp)newLastDim;
+  PyObject* o = PyArray_SimpleNew(ndims, shape, typenum);
+  shape[ndims - 2] = orig1;
+  shape[ndims - 1] = orig2;
   return o;
 }
 #endif
@@ -241,6 +256,31 @@ static bool calcSignature(Signature& s2, const double* data, int lengthOfPath, i
   return true;
 }
 
+//data is (lengthOfPath x d)
+//out is ((lengthOfPath-1) x siglength)
+//sets out[i] to signature of data[0:i,:]
+static bool calcCumulativeSignature(const double* data, int lengthOfPath, int d, int level, size_t siglength, double* out) {
+  Signature s1, s2;
+
+  vector<double> displacement(d);
+  for (int i = 1; i<lengthOfPath; ++i) {
+    for (int j = 0; j<d; ++j)
+      displacement[j] = data[i*d + j] - data[(i - 1)*d + j];
+    s1.sigOfSegment(d, level, &displacement[0]);
+    if (interrupt_wanted())
+      return false;
+    if (i == 1)
+      s2.swap(s1);
+    else {
+      s2.concatenateWith(d, level, s1);
+      if (interrupt_wanted())
+        return false;
+    }
+    s2.writeOut(out + (i - 1)*siglength);
+  }
+  return true;
+}
+
 static PyObject *
 sig(PyObject *self, PyObject *args) {
   PyObject* a1;
@@ -268,8 +308,25 @@ sig(PyObject *self, PyObject *args) {
   size_t eachInputSize = (size_t)(lengthOfPath * d);
   size_t eachOutputSize = (size_t)calcSigTotalLength(d, level);
   PyObject* o = nullptr;
-  using OutT = UseFloat;
+  using OutT = UseDouble;
   OutT::T* out_data = nullptr;
+  double* in_data = (double*)PyArray_DATA(a);
+  if (format == 2) {
+    o = simpleNew_ownLast2Dims(ndims, a, (size_t)(lengthOfPath-1u), eachOutputSize, OutT::typenum);
+    if (!o)
+      return nullptr;
+    auto od = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
+    bool ok = do_interruptible([&]{
+      for(int path=0; path<nPaths; ++path)
+        if(!calcCumulativeSignature(in_data + path*eachInputSize, lengthOfPath, d, level, 
+                                    eachOutputSize, od+path*eachOutputSize*(lengthOfPath-1)))
+          return false;
+      return true;
+    });
+    if (!ok)
+      return nullptr;
+    return o;
+  }
   if (format == 0) {
     o = simpleNew_ownLastDim(ndims - 1, a, eachOutputSize, OutT::typenum);
     if (!o)
@@ -279,7 +336,6 @@ sig(PyObject *self, PyObject *args) {
   else if (format != 1) 
     ERR("Invalid format requested");
   ReleasableRefHolder o_(o);
-  double* in_data = (double*)PyArray_DATA(a);
 
   Signature s;
   bool ok = do_interruptible([&]{
@@ -403,10 +459,11 @@ sigBackwards(PyObject *self, PyObject *args){
   ReadArrayAsDoubles input, derivs;
   if(input.read(a,lengthOfPath*d) || derivs.read(b,sigLength))
     ERR("Out of memory");
-  PyObject* o = PyArray_ZEROS(ndims, PyArray_DIMS(a), NPY_FLOAT32, 0);
+  using OutT = UseFloat;
+  PyObject* o = PyArray_ZEROS(ndims, PyArray_DIMS(a), OutT::typenum, 0);
   if(!o)
     return nullptr;
-  float* out = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
+  auto out = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
   for(int path =0; path<nPaths; ++path)
     CalcSignature::sigBackwardsRaw(d,level,lengthOfPath,
       input.ptr()+path*eachInputSize,derivs.ptr()+path*eachOutputSize,out+path*eachInputSize);  
@@ -435,10 +492,11 @@ sigJacobian(PyObject *self, PyObject *args){
     ERR("Out of memory");
 
   npy_intp dims[] = {(npy_intp) lengthOfPath, (npy_intp) d, (npy_intp)sigLength};
-  PyObject* o = PyArray_SimpleNew(3,dims,NPY_FLOAT32);
+  using OutT = UseFloat;
+  PyObject* o = PyArray_SimpleNew(3,dims,OutT::typenum);
   if(!o)
     return nullptr;
-  float* out = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
+  auto out = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
   TotalDerivativeSignature::sigJacobian(input.ptr(),lengthOfPath,d,level,out);  
   return o;
 }
@@ -483,10 +541,11 @@ sigJoin(PyObject *self, PyObject *args){
   if(sig.read(a,nPaths*sigLength)||displacement.read(b,nPaths*d_given))
     ERR("Out of memory");
 
-  PyObject* o = PyArray_SimpleNew(ndims, PyArray_DIMS(a),NPY_FLOAT32);
+  using OutT = UseFloat;
+  PyObject* o = PyArray_SimpleNew(ndims, PyArray_DIMS(a),OutT::typenum);
   if(!o)
     return nullptr;
-  float* out = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
+  auto out = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
   for(int iPath=0; iPath<nPaths; ++iPath)
     CalcSignature::sigJoin(d_out,level,sig.ptr()+iPath*sigLength,
     displacement.ptr()+iPath*d_given,fixedLast,out+iPath*sigLength);
@@ -541,17 +600,18 @@ static PyObject *
      ||derivs.read(c,nPaths*sigLength))
     ERR("Out of memory");
 
-  PyObject* o1 = PyArray_SimpleNew(ndims, PyArray_DIMS(a),NPY_FLOAT32);
+  using OutT = UseFloat;
+  PyObject* o1 = PyArray_SimpleNew(ndims, PyArray_DIMS(a), OutT::typenum);
   if(!o1)
     return nullptr;
-  PyObject* o2 = PyArray_SimpleNew(ndims, PyArray_DIMS(b), NPY_FLOAT32);
+  PyObject* o2 = PyArray_SimpleNew(ndims, PyArray_DIMS(b), OutT::typenum);
   if (!o2) {
     Py_DECREF(o1);
     return nullptr;
   }
   
-  float* out1 = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o1)));
-  float* out2 = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o2)));
+  auto out1 = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o1)));
+  auto out2 = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o2)));
   double dFixedLast = 0;
   for(int iPath=0; iPath<nPaths; ++iPath)
     CalcSignature::sigJoinBackwards(d_out,level,sig.ptr()+iPath*sigLength,
@@ -606,10 +666,11 @@ sigScale(PyObject *self, PyObject *args){
   if(sig.read(a,nPaths*sigLength)||scales.read(b,nPaths*d))
     ERR("Out of memory");
 
-  PyObject* o = PyArray_SimpleNew(ndims, PyArray_DIMS(a),NPY_FLOAT32);
+  using OutT = UseFloat;
+  PyObject* o = PyArray_SimpleNew(ndims, PyArray_DIMS(a), OutT::typenum);
   if(!o)
     return nullptr;
-  float* out = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
+  auto out = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
   for(int iPath=0; iPath<nPaths; ++iPath)
     CalcSignature::sigScale(d,level,sig.ptr()+iPath*sigLength,
                                           scales.ptr()+iPath*d,out+iPath*sigLength);
@@ -663,17 +724,18 @@ static PyObject *
      ||derivs.read(c,nPaths*sigLength))
     ERR("Out of memory");
 
-  PyObject* o1 = PyArray_SimpleNew(ndims, PyArray_DIMS(a), NPY_FLOAT32);
+  using OutT = UseFloat;
+  PyObject* o1 = PyArray_SimpleNew(ndims, PyArray_DIMS(a), OutT::typenum);
   if (!o1)
     return nullptr;
-  PyObject* o2 = PyArray_SimpleNew(ndims, PyArray_DIMS(b), NPY_FLOAT32);
+  PyObject* o2 = PyArray_SimpleNew(ndims, PyArray_DIMS(b), OutT::typenum);
   if (!o2) {
     Py_DECREF(o1);
     return nullptr;
   }
 
-  float* out1 = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o1)));
-  float* out2 = static_cast<float*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o2)));
+  auto out1 = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o1)));
+  auto out2 = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o2)));
   for(int iPath=0; iPath<nPaths; ++iPath)
     CalcSignature::sigScaleBackwards(d,level,sig.ptr()+iPath*sigLength,
                                                   scale.ptr()+iPath*d,
@@ -1716,10 +1778,12 @@ rotinv2dcoeffs(PyObject *self, PyObject *args) {
 
 static PyMethodDef Methods[] = {
 #ifndef IISIGNATURE_NO_NUMPY
-  {"sig",  sig, METH_VARARGS, "sig(X,m,format=1)\n Returns the signature of a path X "
-   "up to level m. X must be a numpy [...x]NxD float32 or float64 array of points "
-   "making up the path in R^d. The initial 1 in the zeroth level of the signature is excluded. "
-   "If format is 1, the output is a list of arrays not a single one."},
+  {"sig",  sig, METH_VARARGS, "sig(X,m,format=0)\n Returns the signature of a path X "
+  "up to level m as an array of shape (...,siglength(D,m)). X must be convertible to a numpy [...x]NxD float32 or float64 array of points"
+  "making up the path in R^D. The initial 1 in the zeroth level of the signature is excluded. "
+   "If format is 1, the output is a tuple of arrays, one for each level, not a single one. "
+   "If format is 2, the output is an array of shape [...,N-1,siglength(D,m)] of all the cumulative signatures"
+   " from the first point to each other point."},
   {"sigmultcount", sigMultCount, METH_VARARGS, "sigmultcount(X,m)\n "
    "Returns the number of multiplications which sig(X,m) would perform."},
   {"sigjacobian", sigJacobian, METH_VARARGS, "sigjacobian(X,m)\n "

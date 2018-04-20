@@ -167,6 +167,11 @@ class TestCase(unittest.TestCase):
         def tearDownClass(cls):
             print ("\n%s.%s: %.3f" % (cls.__module__, cls.__name__, time.time() - cls.startTime))
 
+if "stack" in dir(numpy):
+    stack = numpy.stack
+else:#Old numpy may not have stack, which we only need with axis=0
+    def stack(arr):
+        return numpy.vstack([i[numpy.newaxis] for i in arr])
 
 #This test checks that basis, logsig and sig are compatible with each other by
 #calculating a signature both using sig
@@ -406,10 +411,12 @@ class SimpleCases(TestCase):
         m=4
         d=2
         s=iisignature.prepare(d,m,"cosx")
+        length=iisignature.siglength(d,m)
         loglength=iisignature.logsiglength(d,m)
         blankLogSig=numpy.zeros(loglength)
-        blankSig=numpy.zeros(iisignature.siglength(d,m))
+        blankSig=numpy.zeros(length)
         self.assertLess(diff(iisignature.sig(path1,m),blankSig),0.000000001)
+        self.assertTrue(numpy.array_equal(iisignature.sig(path1,m,2),numpy.zeros([0,length])))
         self.assertLess(diff(iisignature.logsig(path1,s,"C"),blankLogSig),0.000000001)
         self.assertLess(diff(iisignature.logsig(path1,s,"O"),blankLogSig),0.000000001)
         self.assertLess(diff(iisignature.logsig(path1,s,"S"),blankLogSig),0.000000001)
@@ -437,6 +444,20 @@ class SimpleCases(TestCase):
         self.assertLess(diff(iisignature.logsigbackprop(derivs,path,s),pathderivs),0.00001)
         self.assertLess(diff(iisignature.logsigbackprop(derivs,path,s,"X"),pathderivs),0.00001)
         self.assertLess(diff(iisignature.sigbackprop(derivs,path,m),pathderivs),0.00001)
+
+    def testCumulative(self):
+        m=3
+        d=2
+        length = 10
+        path=numpy.random.uniform(size=(length,d))
+        cumul = iisignature.sig(path,m,2)
+        expected = numpy.array([iisignature.sig(path[:(i+1)],m) for i in range(1,length)])
+        self.assertTrue(numpy.allclose(expected, cumul))
+        path=numpy.random.uniform(size=(3,2,length,d))
+        cumul = iisignature.sig(path,m,2)
+        #expected = numpy.stack([iisignature.sig(path[:,:,:(i+1)],m) for i in range(1,length)],-2)
+        expected = numpy.rollaxis(stack([iisignature.sig(path[:,:,:(i+1)],m) for i in range(1,length)]),0,3)
+        self.assertTrue(numpy.allclose(expected, cumul))
 
         
 class Scales(TestCase):
@@ -482,12 +503,6 @@ class Bases(TestCase):
             if len(word) > 1:
                 for prefixLength in range(1,len(word)):
                     self.assertLess(word[:prefixLength],word[prefixLength:])
-
-if "stack" in dir(numpy):
-    stack = numpy.stack
-else:#Old numpy may not have stack, which we only need with axis=0
-    def stack(arr):
-        return numpy.vstack([i[numpy.newaxis] for i in arr])
 
 class Batching(TestCase):
     def test_batch(self):
