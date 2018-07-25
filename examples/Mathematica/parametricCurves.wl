@@ -23,6 +23,9 @@ JoinExps[{f_,sym1_Symbol},{g_,sym2_Symbol},break_]:=
         Piecewise[{{tt[[1]],sym1<break}},diff+(tt[[2]]/.sym2->sym1-break)]],
    {tt,Transpose[{f,g}]}]
 AddTimeToExp[exp_,sym_Symbol]:=Append[exp,sym]
+SwapExps[{a_,b_}]:={b,a}
+ReflectExpsThroughOrigin[a_]:=-a
+RotateExpsAnticlockwise[{a_,b_},rad_:(Pi/2)]:={a Cos[rad]-b Sin[rad],a Sin[rad]+b Cos[rad]}
 
 (*SigExpsFull gives the signature including the initial 1 and an extra level of nesting.*)
 (*The Assuming often seems like a required thing*)
