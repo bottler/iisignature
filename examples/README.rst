@@ -46,3 +46,5 @@ All the other files are freestanding programs.
 The **Mathematica** folder contains some signature related Mathematica stuff.
 
 The **matlab** folder contains some signature related matlab stuff.
+
+The **R** folder contains some signature related R stuff.
