@@ -140,7 +140,19 @@ void slowExplicitFunction(double* a, const double* b, const FunctionData& d){
 //http://www.agner.org/optimize/
 //false dependency problems https://stackoverflow.com/questions/11177137/why-do-most-x64-instructions-zero-the-upper-part-of-a-32-bit-register
 
+//statistics from the compilation process
+struct MakerStats {
+  int m_singles = 0;
+  int m_bads = 0;
+  int m_nearlies = 0;
+  std::map<int, int> m_bads_by_register;
+
+  int m_flops = 0;
+};
+
 struct Maker{
+
+  MakerStats& m_stats;
 
   static unsigned char getRegNumber(InputArr array){
 #ifndef IISIGNATURE_LINUX_64BIT
@@ -172,10 +184,10 @@ struct Maker{
     else if(i.second<16){
       m.push(0x40+start);
       m.push((unsigned char)(8*i.second));
-      ++m_singles;
+      ++m_stats.m_singles;
     }else{
-      ++(i.second<32 ? m_nearlies : m_bads);
-      m_bads_by_register[(int)(i.first)]++;
+      ++(i.second<32 ? m_stats.m_nearlies : m_stats.m_bads);
+      m_stats.m_bads_by_register[(int)(i.first)]++;
       m.push(0x80+start);
       uint32_t ii = 8*i.second;
       m.pushLittleEndian(ii);
@@ -190,14 +202,17 @@ struct Maker{
       //First movsd the left
       m.push(0xf2, 0x0f, 0x10);
       xmmkWithRegOffset(m,d.m_formingT[i].first);
+
       //now mulsd
       m.push(0xf2, 0x0f, 0x59);
+      ++m_stats.m_flops;
       if(d.m_formingT[i].first == d.m_formingT[i].second){
         //just square it
         m.push(0xc0);//i.e. the ModR/M for xmm0 with itself
       }
       else
         xmmkWithRegOffset(m,d.m_formingT[i].second);
+
       //Now movsd back
       m.push(0xf2, 0x0f, 0x11);
       xmmkWithRegOffset(m,make_pair(InputArr::T, (int)i));
@@ -217,10 +232,12 @@ struct Maker{
       m.push(0xf2, 0x0f, 0x10);
       xmmkWithRegOffset(m,make_pair(InputArr::C, (int)l.m_const_offset),base_xmm);
       //xmmkWithRegOffset(m,make_pair(InputArr::T, l.m_rhs_offset),base_xmm);//FAKE
+
       //mulsd the t offset
       m.push(0xf2, 0x0f, 0x59);
       xmmkWithRegOffset(m,make_pair(InputArr::T, (int)l.m_rhs_offset),base_xmm);
       //xmmkWithRegOffset(m,make_pair(InputArr::T, 3),base_xmm);//FAKE
+
       if(true) //try to amalgamate with subsequent lines before writing to memory.
         while(idx+1<d.m_lines.size() && l.m_lhs_offset==d.m_lines[idx+1].m_lhs_offset){
           ++idx;
@@ -228,9 +245,12 @@ struct Maker{
           //Load next into xmm1
           m.push(0xf2, 0x0f, 0x10);
           xmmkWithRegOffset(m,make_pair(InputArr::C, (int)l2.m_const_offset),1+base_xmm);
+
           //mulsd the t offset
           m.push(0xf2, 0x0f, 0x59);
           xmmkWithRegOffset(m,make_pair(InputArr::T, (int)l2.m_rhs_offset),1+base_xmm);
+          ++m_stats.m_flops;
+
           //add it back
           if(l.m_negative == l2.m_negative)
             //add xmm(1+base_xmm) to xmm(base_xmm)
@@ -238,11 +258,14 @@ struct Maker{
           else
             //sub xmm(1+base_xmm) from xmm(base_xmm)
             m.push(0xf2, 0x0f, 0x5c, 0xc1+9*base_xmm);  
+          ++m_stats.m_flops;
         }
       if(!l.m_negative){
         //addsd
         m.push(0xf2, 0x0f, 0x58);
         xmmkWithRegOffset(m,make_pair(InputArr::A, (int)l.m_lhs_offset),base_xmm);
+        ++m_stats.m_flops;
+
         //Now movsd back
         m.push(0xf2, 0x0f, 0x11);
         xmmkWithRegOffset(m,make_pair(InputArr::A, (int)l.m_lhs_offset),base_xmm);
@@ -250,8 +273,11 @@ struct Maker{
         //Load the LHS into xmm1
         m.push(0xf2, 0x0f, 0x10);
         xmmkWithRegOffset(m,make_pair(InputArr::A, (int)l.m_lhs_offset),1+base_xmm);
+
         //subsd xmm(base_xmm) from xmm(1+base_xmm)
         m.push(0xf2, 0x0f, 0x5c, 0xc8+9*base_xmm);
+        ++m_stats.m_flops;
+
         //Now movsd back
         m.push(0xf2, 0x0f, 0x11);
         xmmkWithRegOffset(m,make_pair(InputArr::A, (int)l.m_lhs_offset),1+base_xmm);
@@ -277,10 +303,13 @@ struct Maker{
       xmmkWithRegOffset(m,make_pair(InputArr::B, (int)(len-1-i)));
       m.push(0xf2, 0x0f, 0x58);//addsd from A[len-i] to xmm0
       xmmkWithRegOffset(m,make_pair(InputArr::A, (int)(len-1-i)));
+      ++m_stats.m_flops;
       m.push(0xf2, 0x0f, 0x11);//movsd to A[len-i]
       xmmkWithRegOffset(m,make_pair(InputArr::A, (int)(len-1-i)));
     }
   }
+
+public:
 
   //pushes at most  d.m_lines.size() * 36 + m_formingT.size() * 24 + m_length_of_b * 24 + 
   //11 on linux64
@@ -295,11 +324,11 @@ struct Maker{
     m.push(0x50 + getRegNumber(InputArr::T));
     //MOV the third argument, T, from where windows sticks it, to our preferred register
 #ifdef IISIGNATURE_32BIT//_M_IX86
-	//0x44 means from SIB + 1byte displacement
-	//SIB of 0x24 means using ESP (not scaled?)
-	//mov the arg which was 4 bytes down when we were called on the stack into said register 
-	//it's now 0xC bytes down.
-	m.push(0x8B,8*getRegNumber(InputArr::T) + 0x44,0x24,0xC);
+    //0x44 means from SIB + 1byte displacement
+    //SIB of 0x24 means using ESP (not scaled?)
+    //mov the arg which was 4 bytes down when we were called on the stack into said register 
+    //it's now 0xC bytes down.
+    m.push(0x8B,8*getRegNumber(InputArr::T) + 0x44,0x24,0xC);
 #else
     //this saves using a REX byte every time we access it!
     //this REX - 4c - has a bit for 64bit and one to add to the 0 for R8
@@ -310,8 +339,8 @@ struct Maker{
     make_form_t(m,d);
     
 #ifdef IISIGNATURE_32BIT// _M_IX86
-	m.push(0xb8 + getRegNumber(InputArr::C));
-	m.pushLittleEndian((uint32_t)d.m_constants.data());
+    m.push(0xb8 + getRegNumber(InputArr::C));
+    m.pushLittleEndian((uint32_t)d.m_constants.data());
 #else
     //Load the constants pointer into a register
     //0x48 is a REX to say it's a 64 bit operand
@@ -336,18 +365,15 @@ struct Maker{
     if(0){
       std::cout<<d.m_length_of_b<<"\n";
       std::cout<<d.m_constants.size()<<"\n";
-      std::cout<<m_singles<<","<<m_bads<<","<<m_nearlies<<"\n";
-      for(auto i : m_bads_by_register)
+      std::cout<< m_stats.m_singles<<","<< m_stats.m_bads<<","<< m_stats.m_nearlies<<"\n";
+      for(auto i : m_stats.m_bads_by_register)
         std::cout<<":"<<i.first<<":"<<i.second;
       std::cout<<"\n"<<m.used() <<" out of "<<m.capacity()<<std::endl;
     }
   }
 
-  int m_singles=0;
-  int m_bads=0;
-  int m_nearlies=0;
-  std::map<int,int> m_bads_by_register;
-
+  Maker(MakerStats& s)
+    : m_stats(s){}
 };
 
 struct FunctionRunner{
@@ -355,6 +381,7 @@ struct FunctionRunner{
   std::vector<double> m_t; //working space
   ///vector<double,boost::alignment::aligned_allocator<double,64>> m_t; //makes no difference?
   Mem m_m;
+  MakerStats m_stats;
   FunctionRunner(FunctionData& d)
   : m_d(d),
     m_m(d.m_lines.size()*36+d.m_formingT.size()*24+d.m_length_of_b*24+18)
@@ -402,7 +429,7 @@ struct FunctionRunner{
     //std::cout<<"Align t "<<((size_t)m_t.data())%1024<<"\n";
     //std::cout<<"Align c "<<((size_t)m_d.m_constants.data())%1024<<"\n";
     //d.m_formingT.clear();
-    Maker maker;
+    Maker maker(m_stats);
     maker.make(m_m,m_d);
   }
   void go(double* a, const double* b){

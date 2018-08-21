@@ -51,6 +51,21 @@ void trial() {
   lsf.m_f->go(signature.data(), displacement.data());
 }
 
+void countFlopsInCompiledCode() {
+  setupGlobal();
+  WantedMethods wm;
+  wm.m_expanded = wm.m_compiled_bch = wm.m_log_of_signature = wm.m_simple_bch = false;
+  wm.m_compiled_bch = true;
+  for (int d : {2}) {
+    for (int m : {2, 3, 4, 5, 6, 7, 8, 9}) {
+      LogSigFunction lsf(LieBasis::Lyndon);
+      makeLogSigFunction(d, m, lsf, wm, interrupt);
+      auto flops = lsf.m_f->m_stats.m_flops;
+      std::cout << d << " " << m << " " << flops << std::endl;
+    }
+  }
+}
+
 void trySVD() {
   setupGlobal();
   LogSigFunction lsf(LieBasis::Lyndon);
@@ -240,7 +255,6 @@ size_t countAnagrams(const vector<Letter>& sortedLetters) {
   size_t currentDenominator = 1;
   size_t denominator = 1;
   size_t thisNumber = 1;
-  Letter lastLetter = 0;
   const size_t size = sortedLetters.size();
   for (size_t i = 0; i < size; ++i) {
     if (i == 0 || sortedLetters[i] != sortedLetters[i - 1]) {
@@ -494,13 +508,14 @@ void tryLogBackwards() {
   }
   //sig.m_data[0].at(1) = 32;
   logBackwards(der, sig);
-  for (auto d : der.m_data[0])
-    std::cout << d << "\n";
+  for (auto x : der.m_data[0])
+    std::cout << x << "\n";
 }
 
 int main() {
   restrictWorkingSet(2000);
-  tryLogBackwards();
+  //tryLogBackwards();
+  countFlopsInCompiledCode();
   //anagramSetCountings();
   //std::cout << countLyndonWords({ 3,3,4 }) << "\n";
   //printAMappingMatrix();
