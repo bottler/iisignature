@@ -56,7 +56,7 @@ void loadData(){
   g_bchLyndon20_dat = s->c_str();
 }  
 
-void doCompiled(int d, int m, LieBasis basis){
+void doCompiled(int d, int m, LieBasis basis, int pathlength=10){
   loadData();
   if(d==0){
     //special case to find the constant bch overhead
@@ -72,8 +72,13 @@ void doCompiled(int d, int m, LieBasis basis){
   std::cout << lsf.m_f->m_m.capacity() << "\n";
   //int siglength = calcSigTotalLength(d,m);
   int logsiglength = (int)LogSigLength::countNecklacesUptoLengthM(d,m);
-  vector<double> b(d), logsig(logsiglength);
-  lsf.m_f->go(logsig.data(),b.data());
+  vector<double> data (d*pathlength), logsig(logsiglength);
+  vector<double> b(d);
+  for(int i=0; i<pathlength-1; ++i){
+    for(int j=0; j<d; ++j)
+      b[j]=data[(i+1)*d+j]-data[i*d+j];
+    lsf.m_f->go(logsig.data(),b.data());
+  }
 }
 void doProjected(int d, int m, LieBasis basis, int pathlength=10){
   int logsiglength = (int)LogSigLength::countNecklacesUptoLengthM(d,m);

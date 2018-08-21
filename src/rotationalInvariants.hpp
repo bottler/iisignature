@@ -220,6 +220,9 @@ namespace RotationalInvariants {
   class Prepared {
   public:
     //stored even then odd
+    //i.e. if m is a positive even number then
+    //the even invariants at level m are in m_invariants[m-2]
+    //and the odd invariants at level m are in m_invariants[m-1]
     vector<vector<Invariant>> m_invariants, m_knownInvariants;
     int m_level;
     InvariantType m_type;

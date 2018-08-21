@@ -31,7 +31,9 @@ code, then you should be able to run the demo files once you have run
 ``python setup.py build_ext --inplace`` in the root of the tree,
 because they append ``..`` to the ``PYTHONPATH``.
 
-All the other files are freestanding programs.
+-----
+
+Many of the other files are freestanding programs.
 
 * figure8Fibonacci.py shows how to build paths which traverse a figure of 8 multiple times whose signature vanishes below level 5, 8, or 13.
 
@@ -41,6 +43,8 @@ All the other files are freestanding programs.
 
 * leak_check.py runs functions from iisignature many times - I can watch memory usage while this happens to try to diagnose memory leaks.
 
+* make_axis_path.py is a simple utility to make a path which moves single units along the axes matching a given sequence.
+  
 * protectedRotinvExperiment.py shows how you might, on Windows and Linux, experiment with high levels of some calculation (rotational invariants in this case) without fear you will stall your computer by eating all your RAM.
 
 The **Mathematica** folder contains some signature related Mathematica stuff.

@@ -11,6 +11,8 @@
 
 #include "readBCHCoeffs.hpp"
 
+using std::vector;
+
 //Uncomment this to store (the foliage of) each BasisElt as a string to aid debugging.
 //(These strings never get freed, but that's not going to matter as the number of WordPools
 //in any debugging session should be small).
@@ -40,6 +42,7 @@ typedef void (*Interrupt)();
 
 template<typename I, typename F1, typename F2>
 I amalgamate_adjacent(I a, I b, F1&& tojoin, F2&& amalgamater){
+  using std::iter_swap;
   I dest = a;
   while(a!=b){
     I temp = a;
@@ -50,12 +53,12 @@ I amalgamate_adjacent(I a, I b, F1&& tojoin, F2&& amalgamater){
     if(rangelength){
       if(amalgamater(a,temp)){
         if(dest!=a)
-          std::iter_swap(dest,a);
+          iter_swap(dest,a);
         ++dest;
       }
     }
     else if(dest!=a)
-      std::iter_swap(dest++,a);
+      iter_swap(dest++,a);
     else
       ++dest;
     a=temp;
@@ -75,6 +78,7 @@ I amalgamate_adjacent(I a, I b, F1&& tojoin, F2&& amalgamater){
 
 template<typename I, typename F1, typename F2>
 I amalgamate_adjacent_pairs(I a, I b, F1&& tojoin, F2&& amalgamater){
+  using std::iter_swap;
   I dest = a;
   while(a!=b){
     I temp = a;
@@ -85,13 +89,13 @@ I amalgamate_adjacent_pairs(I a, I b, F1&& tojoin, F2&& amalgamater){
     if(rangelength){
       if(amalgamater(*a,*temp)){
         if(dest!=a)
-          std::iter_swap(dest,a);
+          iter_swap(dest,a);
         ++dest;
       }
       ++temp;
     }
     else if(dest!=a)
-      std::iter_swap(dest++,a);
+      iter_swap(dest++,a);
     else
       ++dest;
     a=temp;
@@ -139,15 +143,15 @@ OutputIt merge3(InputIt1 first1, InputIt1 last1,
 
 //sort a vector of pairs by the first element
 template<class T>
-void sortByFirst(std::vector<T>& v) {
+void sortByFirst(vector<T>& v) {
   std::sort(v.begin(), v.end(), [](const T& a, const T& b) {
     return a.first < b.first; });
 }
 
 //look something up in a vector of pairs sorted by the first element
 template<class S, class T>
-typename std::vector<std::pair<S, T>>::const_iterator lookupByFirst(
-  const std::vector<std::pair<S, T>>& v, const S& key) {
+typename vector<std::pair<S, T>>::const_iterator lookupByFirst(
+  const vector<std::pair<S, T>>& v, const S& key) {
   return std::lower_bound(v.begin(), v.end(), key, 
     [](const std::pair<S, T>& a, const S& b) {return a.first < b; });
 }
@@ -213,7 +217,7 @@ class BasisElt {
 class BasisEltIterator : public std::iterator<std::forward_iterator_tag, Letter>{
  public:
   Letter operator*() const {return m_thisLetter->getLetter();}
-  BasisEltIterator(const BasisElt* elt, std::vector<const BasisElt*>& tempSpace){
+  BasisEltIterator(const BasisElt* elt, vector<const BasisElt*>& tempSpace){
     tempSpace.clear();
     m_vec=&tempSpace;
     while(!elt->isLetter()){
@@ -244,13 +248,13 @@ class BasisEltIterator : public std::iterator<std::forward_iterator_tag, Letter>
   }
  private:
   const BasisElt* m_thisLetter;
-  std::vector<const BasisElt*>* m_vec;
+  vector<const BasisElt*>* m_vec;
 };
 
 //Useful when debugging, for e.g. doing extra printing only in a certain case.
 //Returns true if the foliage of the BasisElt object a is ss
 bool isBasisElt(const BasisElt* a, const std::string& ss){
-  std::vector<const BasisElt*> foo;
+  vector<const BasisElt*> foo;
   BasisEltIterator x(a, foo);
   BasisEltIterator end;
   auto y=ss.begin();
@@ -302,10 +306,10 @@ class BasisPool{
     m_used += objectSize;
     return out;
   }
-  std::vector<void*> m_storage;
-  std::vector<const BasisElt*> m_spaceForIterator1, m_spaceForIterator2;
-  std::vector<std::pair<std::pair<const BasisElt*, const BasisElt*>, BasisElt*>> m_products;
-  std::vector<std::pair<const BasisElt*, size_t> > m_orderLookup;
+  vector<void*> m_storage;
+  vector<const BasisElt*> m_spaceForIterator1, m_spaceForIterator2;
+  vector<std::pair<std::pair<const BasisElt*, const BasisElt*>, BasisElt*>> m_products;
+  vector<std::pair<const BasisElt*, size_t> > m_orderLookup;
  public:
   static const int objectSize = (sizeof(BasisElt)+sizeof(void*)-1)/sizeof(void*);
   int m_used = 0;
@@ -348,7 +352,7 @@ class BasisPool{
       if(i.first.second->isLetter())
         all.insert(make_pair(i.first.second,0u));
     }
-    std::vector<const BasisElt*> all2;
+    vector<const BasisElt*> all2;
     all2.reserve(all.size());
     for(auto& i : all)
       all2.push_back(i.first);
@@ -417,9 +421,9 @@ size_t ceilingOnNumberOfBasisElts(int d, int m) {
   return total;
 }
 
-std::vector<std::vector<BasisElt*>> makeListOfBasisElts(BasisPool& s, int d,int m){
+vector<vector<BasisElt*>> makeListOfBasisElts(BasisPool& s, int d,int m){
   s.makeSpace(ceilingOnNumberOfBasisElts(d, m));
-  std::vector<std::vector<BasisElt*>> elts(m);
+  vector<vector<BasisElt*>> elts(m);
   elts[0].resize(d);
   for(Letter i=0; i<d; ++i){
     elts[0][i] = s.newBasisEltFromLetter(i);
@@ -477,7 +481,7 @@ class Coefficient{
 public:
   //This represents a sum of a product of a load of inputs and a constant.
   //the vector<Input> is sorted
-  std::vector<std::pair<std::vector<Input>,double>> m_details;
+  vector<std::pair<vector<Input>,double>> m_details;
 };
 
 void printCoefficient(const Coefficient& d, std::ostream& o){
@@ -507,8 +511,8 @@ Coefficient productCoefficients (const Coefficient& a, const Coefficient& b){
     }
   }
   std::sort(out.begin(), out.end());
-  using A = std::pair<std::vector<Input>,double>;
-  using I = std::vector<A>::iterator;
+  using A = std::pair<vector<Input>,double>;
+  using I = vector<A>::iterator;
   auto i = amalgamate_adjacent(out.begin(),out.end(),
                                 [](const A& a, const A& b){return a.first==b.first;},
                                 [](I a, I b){
@@ -545,8 +549,8 @@ void productCoefficients3 (Coefficient& a, const Coefficient& b, const Coefficie
     }
   }
   std::sort(out.begin(), out.end());
-  using A = std::pair<std::vector<Input>,double>;
-  using I = std::vector<A>::iterator;
+  using A = std::pair<vector<Input>,double>;
+  using I = vector<A>::iterator;
   auto i = amalgamate_adjacent(out.begin(),out.end(),
                                 [](const A& a, const A& b){return a.first==b.first;},
                                 [](I a, I b){
@@ -562,8 +566,8 @@ void productCoefficients3 (Coefficient& a, const Coefficient& b, const Coefficie
 void sumCoefficients(Coefficient& lhs, Coefficient&& rhs){
   auto& a = lhs.m_details;
   auto& b = rhs.m_details;
-  auto comp1st = [](const std::pair<std::vector<Input>, double>& a,
-                    const std::pair<std::vector<Input>, double>& b){
+  auto comp1st = [](const std::pair<vector<Input>, double>& a,
+                    const std::pair<vector<Input>, double>& b){
                       return a.first<b.first;  };
 
   size_t ss = a.size();
@@ -571,7 +575,7 @@ void sumCoefficients(Coefficient& lhs, Coefficient&& rhs){
   std::move(b.begin(),b.end(),std::back_inserter(a));
   std::inplace_merge(a.begin(),a.begin()+ss,a.end(), comp1st);
 
-  using A = std::pair<std::vector<Input>,double>;
+  using A = std::pair<vector<Input>,double>;
   a.erase(amalgamate_adjacent_pairs(a.begin(), a.end(),
                                     [](const A& a, const A& b){return a.first==b.first;},
                                     [](A& a, const A& b){
@@ -585,7 +589,7 @@ void sumCoefficients(Coefficient& lhs, Coefficient&& rhs){
 class Polynomial{
 public:
   //kept lexicographic within each level
-  std::vector<std::vector<std::pair<const BasisElt*,Coefficient>>> m_data;
+  vector<vector<std::pair<const BasisElt*,Coefficient>>> m_data;
 };
 
 std::ostream& printPolynomial(Polynomial& poly, std::ostream& o, bool brackets = false ){
@@ -621,7 +625,7 @@ std::unique_ptr<Polynomial> polynomialOfBasisElt(const BasisElt* w){
 
 using Term = std::pair<const BasisElt*,Coefficient>;
 
-void sumPolynomialLevels(std::vector<Term>& lhs,  std::vector<Term>& rhs) {
+void sumPolynomialLevels(vector<Term>& lhs,  vector<Term>& rhs) {
   auto& a = lhs;
   auto& b = rhs;
   size_t ss = a.size();
@@ -763,7 +767,7 @@ Polynomial bch(BasisPool& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Poly
   printPolynomial(*y,std::cout);
   */
   auto bchTable = ReadBCH::read();
-  std::vector<std::unique_ptr<Polynomial>> arr;
+  vector<std::unique_ptr<Polynomial>> arr;
   Polynomial out = *x; //deep copy except for the basis elements
   Polynomial yCopy = *y;
   sumPolynomials(out,yCopy);
