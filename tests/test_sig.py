@@ -173,6 +173,14 @@ else:#Old numpy may not have stack, which we only need with axis=0
     def stack(arr):
         return numpy.vstack([i[numpy.newaxis] for i in arr])
 
+#numpy's lstsq has a different default in different versions
+#I think this function agrees with newer versions (1.14+) 
+#and with scipy.
+#This doesn't really affect the tests anyway.
+def lstsq(a,b):
+    rcond_to_use=max(a.shape)*numpy.finfo(float).eps
+    return numpy.linalg.lstsq(a,b,rcond=rcond_to_use)
+
 #This test checks that basis, logsig and sig are compatible with each other by
 #calculating a signature both using sig
 #and using logsig and checking they are equal
@@ -217,7 +225,7 @@ class A(TestCase):
             zeros[depth - 1] = values
             basisMatrix.append(numpy.concatenate(zeros))
             zeros[depth - 1] = temp
-        calculatedLogSig = numpy.linalg.lstsq(numpy.transpose(basisMatrix),fullLogSig)[0]
+        calculatedLogSig = lstsq(numpy.transpose(basisMatrix),fullLogSig)[0]
         diff2 = numpy.max(numpy.abs(logsig - calculatedLogSig))
         self.assertLess(diff2,0.00001)
 
@@ -693,7 +701,7 @@ class RotInv2d(TestCase):
         #i.e.  every column of ck.T should be in the span of the columns of
         #ca.T
         #i.e.  there's a matrix b s.t.  ca.T b = ck.T
-        residuals = numpy.linalg.lstsq(ca.T,ck.T)[1]
+        residuals = lstsq(ca.T,ck.T)[1]
         self.assertLess(numpy.max(numpy.abs(residuals)),0.000001)
 
         sq = iisignature.rotinv2dprepare(m, "q")
@@ -701,9 +709,9 @@ class RotInv2d(TestCase):
         ss = iisignature.rotinv2dprepare(m, "s")
         cs = iisignature.rotinv2dcoeffs(ss)[-1]
         # every row of cs and cq should be in the span of the rows of ca
-        residuals2 = numpy.linalg.lstsq(ca.T, cs.T)[1]
+        residuals2 = lstsq(ca.T, cs.T)[1]
         self.assertLess(numpy.max(numpy.abs(residuals2)), 0.000001)
-        residuals2 = numpy.linalg.lstsq(ca.T, cq.T)[1]
+        residuals2 = lstsq(ca.T, cq.T)[1]
         self.assertLess(numpy.max(numpy.abs(residuals2)), 0.000001)
 
         self.assertEqual(cq.shape, cs.shape)
