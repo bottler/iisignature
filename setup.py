@@ -1,7 +1,7 @@
 from setuptools import setup, Extension
 import numpy, os
 
-version = "0.22"
+version = "0.23"
 headers = ["bch","calcSignature","logsig","logSigLength","makeCompiledFunction",
             "rotationalInvariants","readBCHCoeffs"]
 
@@ -15,7 +15,7 @@ if os.name == 'darwin' and "MACOSX_DEPLOYMENT_TARGET" not in os.environ:
         os.environ["MACOSX_DEPLOYMENT_TARGET"]=10.9
 
 xtn = Extension('iisignature', ['src/pythonsigs.cpp'], 
-                extra_compile_args=args, # '-DVERSION="'+version+'"'],
+                extra_compile_args=args,
                 define_macros=[("VERSION",version)],
                 include_dirs=[numpy.get_include()],
                 depends=["src/"+i+".hpp" for i in headers])
@@ -34,7 +34,7 @@ setup(name='iisignature',
           #   3 - Alpha
           #   4 - Beta
           #   5 - Production/Stable
-          'Development Status :: 1 - Planning',
+          'Development Status :: 4 - Beta',
 
           # Indicate who your project is intended for
           'Intended Audience :: Developers',
