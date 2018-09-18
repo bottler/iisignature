@@ -66,6 +66,12 @@ seq=[1,3,0,2,2,0,3,1,3,1,2,0,0,2,1,3]
 #zero up to 
 #seq=[1,3,0,2,2,0,3,1,3,1,2,0,0,2,1,3,0,2,1,3,3,1,2,0,2,0,3,1,1,3,0,2]
 
+#The pattern from one to the next seems to be:
+#  0 -> 2 0
+#  1 -> 1 3
+#  2 -> 3 1
+#  3 -> 0 2
+
 total=[[(0,0)]]
 for i in range(1,len(seq)):
     s={seq[i-1],seq[i]}
