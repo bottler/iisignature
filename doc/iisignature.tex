@@ -1,0 +1,406 @@
+\documentclass[a4paper]{extarticle}
+%\documentclass[a4paper,8pt]{extarticle}
+%landscape, twocolumn
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[backend=biber,backref=true]{biblatex}
+%\usepackage[backend=biber]{biblatex}
+\addbibresource{iisig.bib}
+\usepackage{parskip} %or set \parindent to 0pt
+\usepackage{graphicx}
+\usepackage{fullpage}
+\usepackage{color}
+%review 8pt and fullpage
+\usepackage{amsmath}
+%\usepackage{amssymb}
+%\usepackage{amslatex}
+\usepackage{siunitx}
+\usepackage{comment}
+\usepackage[section]{placeins}
+\usepackage{listings}
+\lstset{breaklines=true,basicstyle=\ttfamily,language=Python}
+\usepackage{arrayjobx}
+\usepackage{enumitem}
+\usepackage{tocloft}
+\setlength{\cftbeforesecskip}{0pt}
+\renewcommand{\contentsname}{}
+
+%nonewpage seems to have problems:
+%-you lose the index entries for functions on the same page as the index
+%-you have to run makeindex manually
+%\usepackage[nonewpage]{imakeidx}
+\usepackage{imakeidx}
+\DeclareFieldFormat{url}{{\small	\url{#1}}}
+\makeindex[intoc,title=Index of functions]
+
+\usepackage{hyperref} %load this late
+
+\usepackage{changepage} % for adjustwidth
+\newenvironment{defn}{\begin{adjustwidth}{1cm}{}\ignorespaces}{\end{adjustwidth}\ignorespacesafterend}
+%\newenvironment{defn}[2]{\begin{adjustwidth}{1cm}{}}{\end{adjustwidth}}
+
+%\newtheorem{theorem}{Theorem}
+%uncomment this to get borders round floats
+%\usepackage{float}\floatstyle{boxed}\restylefloat{figure}
+\begin{document}
+\title{iisignature (version 0.23)}
+\author{Jeremy Reizenstein, Centre for Complexity Science\thanks{Supported by the Engineering and Physical Sciences Research Council}
+\\Ben Graham, Department of Statistics and Centre for Complexity Science
+\\University of Warwick}
+\date{August 2018}
+\maketitle
+
+\def\ii{{\texttt{iisignature}}}
+\def\pypi{{\texttt{PyPI}}}
+\def\numpy{{\texttt{numpy}}}
+\def\scipy{{\texttt{scipy}}}
+\def\i#1{\index{#1@\texttt{#1}}}
+\def \hilite#1{\underline{\color{blue}\textbf{#1}}}
+
+\begin{abstract}
+The \ii\ Python package is designed to provide an easy-to-use reasonably efficient implementation of iterated-integral signatures and log-signatures of piecewise linear paths. Some motivation as to the usefulness of these things in machine learning may be found in \cite{OxSigIntro}.
+\end{abstract}
+
+%\section{Introduction}
+%This
+\begin{minipage}{0.6\textwidth}
+\tableofcontents
+\end{minipage}
+\section{Installation into Python}
+First ensure you have \verb|numpy| installed and available, version 1.7 (from 2013) or later. If you are not on Windows, for which prebuilt binaries are available from PyPI for Pythons 3.5, 3.6 and 3.7, you will need to be able to build \verb|C++| python extensions. 
+%Then you can install from \pypi with \verb|pip install iisignature|.
+Then \verb|pip install iisignature| will install it from \pypi. This is working in Python 3.5, 3.6 and 3.7 on Windows (where you might need to be in an Administrator command prompt), and Pythons 3.4 (and later) and 2.7 on Linux. 
+
+{\small (You can also run \verb|pip install --user iisignature| to install for your user only. On Windows, this doesn't need administrator rights, but you can't install for both 64 bit and 32 bit builds of the same version of Python in this way as doing one breaks the other.)}
+
+For Python 2.7 and older on Windows, the build is not working perfectly and you might want to get in touch if you want to use this combination.\footnote{I find it basically works building with \texttt{python setup.py build -c mingw32}, where the compiler is (MinGW from \url{https://nuwen.net/mingw.html} for 64 bit Python and standard MinGW for 32 bit Python). However, there are problems with running the tests, at least when you have no debugger attached. }
+%For example, 
+%\begin{quotation}
+%\begin{lstlisting}
+%set Path=%Path%;c:\mingw\bin
+%c:\python27-32\python.exe setup.py build --compiler=mingw32
+%\end{lstlisting}
+%\end{quotation}
+
+On a mac, you will need to have installed Xcode and the Xcode command line tools first. %You may need
+%\verb|MACOSX_DEPLOYMENT_TARGET=10.9 pip install iisignature| depending on your python version, if the bare \verb|pip| command produces compiler errors. 
+
+%https://stackoverflow.com/questions/25352389/difference-between-macosx-deployment-target-and-mmacosx-version-min-compiler-op
+%https://stackoverflow.com/questions/36960587/cython-build-cant-find-c11-stl-files-but-only-when-called-from-setup-py
+%https://stackoverflow.com/questions/33738885/python-setuptools-not-including-c-standard-library-headers
+\newpage
+\section{Quick example}
+To generate a random 3 dimensional path made up of 20 points and get its signature and log signature up to level 4 do this:
+\begin{quotation}
+\begin{lstlisting}[frame=single,language=Python,keywordstyle=\bf]
+import iisignature
+import numpy as np
+
+path = np.random.uniform(size=(20,3))
+signature = iisignature.sig(path,4)
+s = iisignature.prepare(3,4)
+logsignature = iisignature.logsig(path,s)
+\end{lstlisting}
+\end{quotation}
+\section{Usage}
+
+Many of the functions require a path as input. A path in $d$ dimensions which is specified as a series of $n$ points should be given as a \verb|numpy| array of either \verb|float32| or (preferably) \verb|float64| with shape \verb|(n,d)|, or anything (like a list) which can be converted to one.
+
+\textbf{Batching:} Many of the functions which accept arrays can do the same operation multiple times in a single call by stacking the inputs, i.e. adding extra initial dimensions. This is supported on any of the functions where this document shows an ellipsis (\verb|...|)  in a shape. If there are multiple array inputs to a function, their extra dimensions must match each other (broadcasting is not done).  The result will have all the initial dimensions in it. Having any of these extra dimensions is always optional. A few of the functions are assumed to be most useful in the case where batching is in use. %Broadcasting is not supported.
+
+\verb!version()! \i{version}
+
+\begin{defn}
+\nopagebreak Return the version number of \ii.
+\end{defn}
+
+
+\subsection{Signatures}
+For the purposes of \ii, a signature up to level $m$ is the concatenation of levels 1 to $m$ as a single one dimensional array. The constant 1 which is always level 0 of a signature is never included. 
+
+%\begin{minipage}{1\textwidth}
+\verb!siglength(d, m)! \i{siglength}
+\begin{defn}
+\nopagebreak The length of the signature up to level $m$ of a $d$-dimensional path. This has the value
+%\begin{align*}
+\[\sum_{i=1}^m d^i = \frac{d(d^m-1)}{d-1}.\]
+%\end{align*}
+\end{defn}
+%\end{minipage}
+
+\verb!sig(path, m, format=0)!\i{sig}
+
+\begin{defn}
+\nopagebreak The signature of the $d$-dimensional path \verb|path| up to level m is returned. The output is a \numpy\ array of shape \verb!(...,siglength(d,m))!.
+(If \verb|format| is supplied as \verb!1!, then the output for a single path is given as a list of \numpy\ arrays, one for each level, for the moment.) 
+(If \verb|format| is supplied as \verb|2|, then we return not just the signature of the whole path, but the signature of all the partial paths from the start to each point of the path. 
+If \verb|path| has shape \verb|(...,n,d)| then the result has shape \verb|(...,n-1,siglength(d,m))|.)
+\end{defn}
+\newpage
+\verb!sigjacobian(path, m)!\i{sigjacobian}
+\begin{defn}
+\nopagebreak This function provides the Jacobian matrix of the \verb|sig| function with respect to \verb|path|. If \verb|path| has shape \verb|(n,d)| then an array of shape \verb!(n,d,siglength(d,m))! is returned. 
+\[\verb|sigjacobian(path,m)[a,b,c]|
+ \approx
+  {\partial\,(\verb|sig(path,m)[c]|) \over 
+  \partial\,(\verb|path[a,b]|)}
+ \]
+%\verb cannot live in the argument of a function, which is why I use \[ and \over instead of e.g. align* and frac
+\end{defn}
+\verb!sigbackprop(s, path, m)!\i{sigbackprop}
+
+\begin{defn}
+\nopagebreak This function does the basic calculation necessary to backpropagate derivatives through the \verb|sig| function. If \verb|path| has shape \verb|(...,n,d)| and we are trying to calculate the derivatives of a scalar function $F$, and we have its derivatives with respect to \verb|sig(X,m)| stored in an array \verb|s| of shape \verb|(...,siglength(d,m))|, then this function returns its derivatives with respect to \verb|path| as an array of shape \verb|(...,n,d)|.
+\[\verb|sigbackprop(s,path,m)|
+ \approx
+  \verb|numpy.dot(sigjacobian(path,m),s)|
+ \]
+\[\verb|sigbackprop(array(|{\partial F \over \partial \verb|sig(path,m)|}\verb|),path,m)[a,b]| \approx {\partial F \over \partial \verb|path[a,b]|}
+ \]
+\end{defn}
+\verb!sigjoin(sigs, segments, m, fixedLast=float("nan"))!\i{sigjoin}
+
+\begin{defn}
+\nopagebreak Given the signatures of paths in dimension $d$ up to level $m$ in a shape \verb|(...,siglength(d,m))| array and an extra displacement for each path, stored as an array of shape \verb|(...,d)|, returns the signatures of each of the paths concatenated with the extra displacement as an array of shape \verb|(...,siglength(d,m))|. If the optional last argument \verb|fixedLast| is provided, then it provides a common value for the last element of each of the displacements, and \verb|segments| should have shape \verb|(...,d-1)| -- this is a way to create a time dimension automatically.
+\end{defn}
+\verb!sigjoinbackprop(derivs, sigs, segments, m, fixedLast=float("nan"))!\i{sigjoinbackprop}
+
+\begin{defn}
+\nopagebreak Returns the derivatives of some scalar function $F$ with respect to both \verb|sigs| and \verb|segments| as a tuple, given %that \verb|derivs| is 
+the derivatives of $F$ with respect to \verb!sigjoin(sigs, segments, m, fixedLast)!. Returns both an array of the same shape as \verb|sigs| and an array of the same shape as \verb|segments|. If \verb|fixedLast| is provided, also returns the derivative with respect to it in the same tuple.
+\end{defn}
+\verb!sigscale(sigs, scales, m)!\i{sigscale}
+\begin{defn}
+	\nopagebreak Given the signatures of paths in dimension $d$ up to level $m$ in a shape \verb|(...,siglength(d,m))| array and a scaling factor for each dimension for each path, stored as an array of shape \verb|(...,d)|, returns the signatures of each of the paths scaled in each dimension by the relevant scaling factor as an array of shape \verb|(...,siglength(d,m))|. 
+\end{defn}
+\verb!sigscalebackprop(derivs, sigs, segments, m)!\i{sigscalebackprop}
+
+\begin{defn}
+	\nopagebreak Returns the derivatives of some scalar function $F$ with respect to both \verb|sigs| and \verb|scales| as a tuple, given %that \verb|derivs| is 
+	the derivatives of $F$ with respect to \verb!sigscale(sigs, scales, m, fixedLast)!. Returns both an array of the same shape as \verb|sigs| and an array of the same shape as \verb|scales|. 
+\end{defn}
+\iffalse
+\verb!sigjoinbackprop1(sigs, segments, m, derivs)!\i{sigjoinbackprop1}
+
+\begin{defn}
+\nopagebreak Returns the derivatives of $F$ with respect to \verb|sigs| as an array of shape \verb|(n,siglength(d,m))| given that \verb|derivs| is the derivatives of $F$ with respect to \verb!sigjoin(sigs, segments, m)!.
+\end{defn}
+\verb!sigjoinbackprop2(sigs, segments, m, derivs)!\i{sigjoinbackprop2}
+
+\begin{defn}
+\nopagebreak Returns the derivatives of $F$ with respect to \verb|segments| as an array of shape \verb|(n, d))| given that \verb|derivs| is the derivatives of $F$ with respect to \verb!sigjoin(sigs, segments, m)!.
+\end{defn}
+\fi
+\newpage
+\subsection{Log signatures}
+\begin{center}
+\begin{minipage}{0.7\textwidth}
+\noindent\textbf{Quick summary:} To get the log signature of a \verb!d!-dimensional path \verb!p! up to level \verb!m!, there are two steps, as follows.
+\begin{quotation}
+\begin{lstlisting}[language=Python,keywordstyle=\bf]
+s=iisignature.prepare(d,m)
+logsignature=iisignature.logsig(p,s)
+\end{lstlisting}
+\end{quotation}
+The rest of this section gives more details.
+\end{minipage}
+\end{center}
+The algebra for calculating log signatures is explained in \cite{LOGSIG}. Several methods are available for calculating the log signature, which are identified by a letter.
+
+%good explanation http://tex.stackexchange.com/questions/56809/multiline-item-indent
+\begin{description}[leftmargin=1in,itemindent=0in,labelwidth=0.3in,
+labelsep=0.3in,labelindent=0.4in]
+\item[D] The \hilite{d}efault method, which is one of the methods C or S below, chosen automatically depending on the dimension and level requested.
+\item[C] The \hilite{c}ompiled method, under which machine code is generated to calculate the BCH formula explicitly. Currently, the generated code is designed for both \verb|x86| and \verb|x86-64| on both Linux (System V, Mac etc.) and Windows systems. I don't know anyone using other systems, but the result is likely to be a crash.
+\item[O] The BCH formula is expanded explicitly, but stored simply as a normal \hilite{o}bject. The object's instructions are followed to calculate the log signature. No code is written. This is simpler and potentially slower than the default method. It makes no particular assumptions about the platform, and so may be more broadly applicable. 
+\item[S] The log signature is calculated by first calculating the \hilite{s}ignature of the path, then explicitly evaluating its logarithm, and then projecting on to the basis.% using linear algebra functionality of \numpy.
+%\footnote{For the Lyndon basis, the calculation exploits the fact that if $w$ is a Lyndon word then the corresponding basis element of the free Lie algebra $\rho(\sigma(w))$ in tensor space is a linear combination of words which are all anagrams of $w$. The full projection matrix is thus quite sparse, and we only need solve smaller systems, one for each anagram class.} 
+This is observed to be faster than using the BCH formula when the log signature is large (for example level 10 with dimension 3 or higher dimension). It may be more generally faster when the path has very many steps.
+\item[X] The log signature is calculated by first calculating the signature of the path, then explicitly evaluating its logarithm. This logarithm is returned e\hilite{x}panded in tensor space. This is used for testing purposes.
+\end{description}
+%Lyndon signature, pickling
+
+Log signatures are by default reported in the Lyndon basis in ascending order of level, with alphabetical ordering of Lyndon words within each level. A version of the standard or classical Hall basis is available instead by requesting it in the \verb|prepare| function.
+
+%\vbox{
+\verb!logsiglength(d, m)!\i{logsiglength}
+\begin{defn}
+The length of the log signature up to level $m$ of a $d$-dimensional path. This value can be calculated using Witt's formula (see \cite{wikinecklace}). It is
+%\begin{align*}
+\[\sum_{l=1}^m \frac1l\sum_{x|l}\mu\left(\frac{l}{x}\right)d^x\]
+%\end{align*}
+where $\mu$ is the M\"obius function.
+\end{defn}
+%}
+
+\verb!prepare(d, m, methods=None)! \i{prepare}
+\nopagebreak \begin{defn}\nopagebreak 
+This does preliminary calculations and produces an object which is used for calculating log signatures of $d$-dimensional paths up to level $m$. The object produced is opaque. It is only used as an input to the \verb|basis|, \verb|info| and \verb|logsig| functions. 
+
+It is a capsule or, on old versions of Python, a CObject. It cannot be pickled. This means that if you are using \verb|multiprocessing|, you cannot pass it between ``threads''. You can run the function before creating the ``threads'', and use it in any thread - this works because it is fork-safe on non Windows platforms. On Windows, the function will be run separately in each background ``thread''.
+
+The calculation can take a long time when $d$ or $m$ is large. The Global Interpreter Lock is not held during most of the calculation, so you can profitably do it in the background of a slow unrelated part of the initialization of your program. For example:
+\begin{quotation}
+\begin{lstlisting}[language=Python,keywordstyle=\bf]
+import iisignature, threading
+def f():
+	global s
+	s=iisignature.prepare(2,10,"CS")
+t = threading.Thread(target=f)
+t.run()
+#slow activity: theano.function, another prepare(), 
+#               keras compile, ...
+t.join()
+\end{lstlisting}
+\end{quotation}
+
+This function by default prepares to use only the default method. You can change this by supplying a string containing the letters of the methods you wish to use. For example, for $d=3$ and $m=10$, if you really wanted all methods to be available, you might run \verb|prepare(3,10,"COSX")| -- this takes a long time, because the BCH calculation is big. 
+
+If you want results in the standard Hall basis instead of in the Lyndon word basis, add an H anywhere into the method string. For example \verb|prepare(2,4,"DH")|. When this is done, the result should be directly comparable to the output from the CoRoPa library \cite{coropa}.
+
+The object returned never changes once it is created, except that \verb!logsigbackprop! can add the preparation for the \textbf{S} method later.
+
+\end{defn}
+\verb!logsig(path, s, methods=None)! \i{logsig}
+
+\begin{defn}
+\nopagebreak The log signature of the $d$-dimensional path \verb|path| up to level $m$, returned as a \numpy\ array of shape \verb!(...,logsiglength(d,m))!, where \verb!s! is the result of calling \verb!prepare(d,m[,...])!.
+
+By default, this uses the calculation method (\textbf{C}, \textbf{O} or \textbf{S}) which is supported by \verb|s| and comes first in the table above. You can restrict this by supplying as the final argument a string containing the letters of the methods you wish to be considered, this will probably be a one-letter string. 
+
+If you wish to use the \textbf{X} method, you have to ask for it here, and the output will have shape \verb!(...,siglength(d,m))!.
+\end{defn}
+\verb!logsigbackprop(derivs, path, s, methods=None)!\i{logsigbackprop}
+
+\begin{defn}
+\nopagebreak Returns the derivatives of some scalar function $F$ with respect to \verb|path|, given %that \verb|derivs| is 
+the derivatives of $F$ with respect to \verb!logsig(path, s, methods)!. Returns an array of the same shape as \verb|path|. The only methods supported are \textbf{S} (the default) and \textbf{X} (which is only used if \verb|methods| is \verb|'X'|). If the \verb|'X'| method is not requested and \verb|s| does not support the \textbf{S} method, then \verb|s| is modified so it \emph{does} support the \textbf{S} method.
+\end{defn}
+
+\verb!basis(s)! \i{basis}
+
+\begin{defn}
+\nopagebreak The basis of bracketed expressions given as a tuple of unicode strings, for words of length no more than $m$ on $d$ letters, where \verb!s! is the result of calling \verb!prepare(d,m[,...])!. These are the bracketed expressions which the coefficients returned by \verb|logsig| refer to.
+
+If $d>9$, the output of this function is not yet fixed. An example of how to parse the output of this function can be seen in the tests.
+\end{defn}
+
+\verb!info(s)! \i{info}
+
+\begin{defn}
+	\nopagebreak If \verb!s! is the result of calling \verb!prepare(d,m[,...])!, then this returns a dictionary of properties of \verb|s|, including a list of methods which it supports. This may be a useful diagnostic.
+\end{defn}
+
+\subsection{Linear rotational invariants}
+\begin{center}
+	\begin{minipage}{0.7\textwidth}
+		\noindent\textbf{Quick summary:} To get all the linear rotational invariants of a two dimensional path \verb!p! up to level \verb!m!, there are two steps, as follows.
+		\begin{quotation}
+\begin{lstlisting}[language=Python,keywordstyle=\bf]
+s=iisignature.rotinv2dprepare(m,"a")
+invariants=iisignature.rotinv2d(p,s)
+\end{lstlisting}
+		\end{quotation}
+		The rest of this section gives more details.
+	\end{minipage}
+\end{center}
+
+The paper \cite{JD} explains how to find the linear subspace of signature space of two dimensional paths which is invariant under rotations of the path. The subspace is spanned by a set of vectors each of which lives in a single signature level, and all those levels are even. The functions in this section calculate them, and are a bit experimental. You may need to rescale them in a deep learning context. 
+
+\verb!rotinv2dprepare(m,type)! \i{rotinv2dprepare}
+\begin{defn}
+	\nopagebreak This prepares the way to find linear rotational invariants of signatures up to level \verb|m| of 2d paths. The returned opaque object is used (but not modified) by the other functions in this section. \verb|m| should be a small even number. \verb|type| should be \verb|"a"| if you want to return \textbf{a}ll the invariants.
+	
+	Some invariants do not add information, because their values are products of other invariants. Set \verb|type| to \verb|"s"| if you want to exclude them. Internally, at each level, a basis for the invariant subspace with the known elements quotiented out is found using \textbf{s}ingular value decomposition from \numpy. The exact result in this case is not guaranteed to be stable between versions. (An alternative, potentially faster, method of doing the same calculation uses the \textbf{Q}R decomposition as provided by \scipy. You can get this by setting \verb|type| to \verb|"q"|. This will only work if you have \scipy\ available, and may generate a strange but harmless warning message.\footnote{I have observed this only on Python 3.6 on Windows, and do not understand it.\url{https://stackoverflow.com/questions/45054949/calling-scipy-from-c-extension}}) (In addition, setting \verb|type| to \verb|"k"| means that \emph{only} the invariants which are already \textbf{k}nown based on lower levels will be returned. This is used for testing.)
+	
+	If $m$ exceeds 10 this function can take a lot of time and memory.
+\end{defn}
+\verb!rotinv2d(path, s)! \i{rotinv2d}
+
+\begin{defn}
+	\nopagebreak The rotational invariants of the signature of the 2-dimensional path \verb|path| up to level $m$, where \verb!s! comes from \verb!rotinv2dprepare(m,...)!. The result is returned as a \numpy\ array of shape \verb!(...,rotinv2dlength(s))!.
+\end{defn}
+\verb!rotinv2dlength(s)! \i{rotinv2dlength}
+
+\begin{defn}
+	\nopagebreak The number of rotational invariants which are found by the calculation defined by \verb!s!, where \verb!s! is the result of calling \verb!rotinv2dprepare(m,type)!. When the type is \verb|"a"|, this is just \[\sum_{i=1}^{m/2}\binom{2i}{i}.\] 
+	In common cases, the result is given in this table:
+\end{defn}
+
+
+\begin{center}
+\begin{tabular}{r|rrr}
+\verb|m|&\verb|"a"|&\verb|"s"|&\verb|"k"|\\\hline
+2&2&2&0\\
+4&8&5&3\\
+6&28&15&15\\
+8&98&46&76\\
+10&350&154&336\\
+12&1274&522&1470\\
+14&4706&1838&6230\\%took 42 mins
+\end{tabular}
+\end{center}
+
+\newpage
+\verb!rotinv2dcoeffs(s)! \i{rotinv2dcoeffs}
+\begin{defn}
+	\nopagebreak The basis of rotational invariants which are found by the calculation defined by \verb!s!, where \verb!s! is the result of calling \verb!rotinv2dprepare(...)!. The result is given as a tuple of 2d \numpy\ arrays, where each row of element \verb|i| is an element of the basis within level $(2i+2)$ of the signature.
+	\end{defn}
+
+\section{Implementation notes}
+The source code is easily found at \url{https://github.com/bottler/iisignature}. The extension module is defined in a single translation unit, \verb|src/pythonsigs.cpp|. Here I explain the structure of the implementation which is located in various header files in the same directory. If you want to use the functionality of the library from \verb!C++!, it should be easy just to include these header files.
+
+\begin{description}
+\item{\verb|calcSignature.hpp|} implements the functions \verb|sig|, \verb|sigbackprop|, \verb|sigjacobian|, \verb|sigjoin| and \\ \verb|sigjoinbackprop|, and \verb|sigscale| and \verb|sigscalebackprop|.
+
+\item{\verb|logSigLength.hpp|} implements the function \verb|siglength| and \verb|logsiglength|.
+\item{\verb|iisignature_data/bchLyndon20.dat|} is the file of Baker-Campbell-Hausdorff coefficients from Fernando Casas and Ander Murua available from \cite{bchinfo}. It was calculated using their method described in \cite{bch}. You need to open this file and point the global variable \verb|g_bchLyndon20_dat| to its entire contents.
+\item{\verb|readBCHCoeffs.hpp|} has facilities for reading the coefficients in \verb|bchLyndon20.dat|.
+\item{\verb|bch.hpp|} implements calculations which manipulate elements of the Free Lie Algebra with generic coefficient objects. This uses \verb|readBCHCoeffs.hpp|. The procedures are as explained in \cite{LOGSIG}, and the design is similar to the python code \verb|logsignature.py|.
+\item{\verb|makeCompiledFunction.hpp|} defines a structure \verb|FunctionData| which describes a function which does some arithmetic on two arrays which is generic enough to concatenate log signatures. It has the ability to run such a function (\verb|slowExplicitFunction|) and the ability to create an object \verb|FunctionRunner| which represents a compiled version of the function. Currently no particular recent CPU capability is assumed - SSE2 is being used.
+\item{\verb|logsig.hpp|} uses \verb|bch.hpp| and \verb|makeCompiledFunction.hpp| to implement the \verb|prepare| function. 
+
+The code required to solve the linear systems to convert a signature to a log signature (for the \textbf{S} method) is not provided. The addin relies on \numpy\ to do this.
+
+If you want to call this from your own \verb|C++| code, you will need to provide a value for \verb|interrupt|. A function which does nothing is fine. The idea is that it should be a function which returns if the calculation should continue and throws an exception if it wants the calculation to abort. None of these header files catch any exceptions - you can safely catch it in the calling code.
+
+\item{\verb|rotationalInvariants.hpp|} has functions to identify linear rotational invariants and their shuffle products.
+\end{description}
+
+\section{Example code, Theano, Tensorflow, Torch and Keras}
+%http://tex.stackexchange.com/questions/181118/how-to-escape-curly-braces-within-texttt - \string
+\def\Th{\texttt{Theano}}
+\def\Te{\texttt{tensorflow}}
+\def\K{\texttt{Keras}}
+Simple examples of using many of the functions are in the test file at \url{https://github.com/bottler/iisignature/blob/master/tests/test_sig.py}.
+
+\Th\ and \Te\ are Python frameworks for constructing calculation graphs, of the sort which is useful for deep learning. \K\ is a Python framework for deep learning which uses either of them for its calculations. \ii\ does not depend on these libraries. Pure Python code using \ii\ inside \Te, \Th\ and \K\ can be found in the source repository at \url{https://github.com/bottler/iisignature/tree/master/examples}.
+
+\begin{itemize}
+\def\pytorch{\texttt{PyTorch}}
+\item The modules \verb!iisignature_theano!, \verb!iisignature_tensorflow! and \verb|iisignature_torch| provide operations \verb!Sig!, \verb|LogSig|, \verb|SigJoin| and \verb!SigScale! in \Th, \Te\ and \pytorch\ respectively which mirror the functions \verb!sig!, \verb|logsig|, \verb!sigjoin! and \verb!sigscale! in \ii. The calculations are done via \ii, and therefore always on the CPU. 
+\item \verb!iisignature_recurrent_keras! is a module which provides a recurrent layer in \K\ using the \Th\ and \Te\ operations. There are variants of this file for compatibility with older versions of \K. A similar module for \pytorch\ is given in \verb!iisignature_recurrent_torch!.
+\end{itemize}
+Other files with names beginning with \verb|demo| in the same directory provide demonstrations of this functionality.
+\section{Version history}
+\begin{tabular}{rcp{0.75\textwidth}}
+Revision&Date&Highlights\\[2mm]
+0.23&2018-08-21&\verb|2| option for \verb|sig| for partial signatures, return 64 bit floats from \verb|sig|, Python 3.7 and Numpy 1.15 support\\
+0.22&2017-10-02&mac installation fix, fix issues with 0.21 release\\ %such as 0.21 doc never existed, README malformatted on PyPI
+0.21&2017-09-20&\verb|logsigbackprop|, %batching for rotinv, 
+speedups: Horner method for \verb|'S'|, store \verb|BasisElt| in order\\
+0.20&2017-08-09&Batching, triangle optimised \verb|'S'|, Mac install fix, \verb|sigjoinbackprop| to \verb|fixedLast|, \verb|logsig| bug for paths of one point, \verb|QR| method\\
+0.19&2017-06-27&Rotational invariants, 32bit linux \verb|'C'|, inputs don't have to be numpy arrays\\
+0.18&2017-03-28&Hall basis, \verb|info|, fix memory leak in \verb|sigjoinbackprop| and \verb|sigscalebackprop|, fix \verb|sigscalebackprop|\\%, examples updated to Keras2\\
+0.17&2017-01-22&\verb|sigscale|, fix \verb|sigjoinbackprop| on Windows (code was miscompiled)\\%level-by-level output, sigmultcount %can use \newline within a cell in the p{} column
+0.16&2016-08-23&Derivatives of signature%, Theano examples
+\\
+0.15&2016-06-20&Windows build\\
+\end{tabular}
+Improvements to the example code are not listed here, they can be seen on \verb|github|.
+\printindex
+
+\printbibliography[heading=bibintoc]
+\end{document}
+
+%NB - Ctrl-C seems to work, but you can get spurious SVD errors
