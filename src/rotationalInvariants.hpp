@@ -219,10 +219,10 @@ namespace RotationalInvariants {
   //of other invariants.
   class Prepared {
   public:
-    //stored even then odd
+    //stored evil then odious
     //i.e. if m is a positive even number then
-    //the even invariants at level m are in m_invariants[m-2]
-    //and the odd invariants at level m are in m_invariants[m-1]
+    //the evil invariants at level m are in m_invariants[m-2]
+    //and the odious invariants at level m are in m_invariants[m-1]
     vector<vector<Invariant>> m_invariants, m_knownInvariants;
     int m_level;
     InvariantType m_type;
