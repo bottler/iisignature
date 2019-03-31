@@ -188,7 +188,8 @@ class A(TestCase):
     def consistency(self, coropa, dim, level):
         #numpy.random.seed(21)
         s = iisignature.prepare(dim,level,"coshx" if coropa else "cosx")
-        myinfo = {"level":level,"dimension":dim,"methods":"COSX",
+        myinfo = {"level":level, "dimension":dim,
+                  "methods": ("COSAX" if level <= 2 else "COSX"),
                   "basis":("Standard Hall" if coropa else "Lyndon")}
         self.assertEqual(iisignature.info(s),myinfo)
         path = numpy.random.uniform(size=(10,dim))
@@ -238,8 +239,14 @@ class A(TestCase):
         diffs = numpy.max(numpy.abs(sigLogSig - calculatedLogSig))
         self.assertLess(diffs,0.00001)
 
+        if level < 3:
+            areaLogSig = iisignature.logsig(path,s,"a")
+            diffs = numpy.max(numpy.abs(areaLogSig - calculatedLogSig))
+            self.assertLess(diffs,0.00001)
+
     def testConsistency(self):
         self.consistency(False, 3, 6)
+        self.consistency(False, 3, 2)
 
     def testCoropa(self):
         self.consistency(True, 5, 2)
@@ -344,10 +351,9 @@ class Deriv(TestCase):
             print(manualCalcBackProp)
         self.assertLess(backDiffs,0.000001)
 
-    def logSig(self, type):
+    def logSig(self, type, m=5):
         numpy.random.seed(291)
         d=2
-        m=5
         pathLength=10
         s=iisignature.prepare(d,m,type)
         path = numpy.random.uniform(size=(pathLength,d))
@@ -368,6 +374,8 @@ class Deriv(TestCase):
         self.logSig("S")
     def testLogSig_hall(self):
         self.logSig("H")
+    def testLogSig_area(self):
+        self.logSig("A",2)
 
     def test_logsigbackwards_can_augment_s(self):
         numpy.random.seed(291)
@@ -419,9 +427,12 @@ class SimpleCases(TestCase):
         m=4
         d=2
         s=iisignature.prepare(d,m,"cosx")
+        s_a=iisignature.prepare(d,2,"cosx")
         length=iisignature.siglength(d,m)
         loglength=iisignature.logsiglength(d,m)
+        loglength_a=iisignature.logsiglength(d,2)
         blankLogSig=numpy.zeros(loglength)
+        blankLogSig_a=numpy.zeros(loglength_a)
         blankSig=numpy.zeros(length)
         self.assertLess(diff(iisignature.sig(path1,m),blankSig),0.000000001)
         self.assertTrue(numpy.array_equal(iisignature.sig(path1,m,2),numpy.zeros([0,length])))
@@ -429,12 +440,15 @@ class SimpleCases(TestCase):
         self.assertLess(diff(iisignature.logsig(path1,s,"O"),blankLogSig),0.000000001)
         self.assertLess(diff(iisignature.logsig(path1,s,"S"),blankLogSig),0.000000001)
         self.assertLess(diff(iisignature.logsig(path1,s,"X"),blankSig),0.000000001)
+        self.assertLess(diff(iisignature.logsig(path1,s_a,"A"),blankLogSig_a),0.000000001)
         blankLogSig[:d]=path2[1]-path2[0]
+        blankLogSig_a[:d]=path2[1]-path2[0]
         blankSig[:d]=path2[1]-path2[0]
         self.assertLess(diff(iisignature.logsig(path2,s,"C"),blankLogSig),0.000001)
         self.assertLess(diff(iisignature.logsig(path2,s,"O"),blankLogSig),0.000001)
         self.assertLess(diff(iisignature.logsig(path2,s,"S"),blankLogSig),0.000001)
         self.assertLess(diff(iisignature.logsig(path2,s,"X"),blankSig),0.000001)
+        self.assertLess(diff(iisignature.logsig(path2,s_a,"A"),blankLogSig_a),0.000001)
 
     def testLevel1(self):
         m=1
@@ -443,8 +457,8 @@ class SimpleCases(TestCase):
         rightSig = path[-1,:]-path[0,:]
         s=iisignature.prepare(d,m,"cosx")
         self.assertLess(diff(iisignature.sig(path,m),rightSig),0.0000001)
-        for type in ("C","O","S","X"):
-            self.assertLess(diff(iisignature.logsig(path,s,type),rightSig),0.0000001,type)
+        for type_ in ("C","O","S","X","A"):
+            self.assertLess(diff(iisignature.logsig(path,s,type_),rightSig),0.0000001,type_)
         derivs=numpy.array([2.1,3.2])
         pathderivs=numpy.zeros_like(path)
         pathderivs[-1]=derivs
@@ -453,6 +467,14 @@ class SimpleCases(TestCase):
         self.assertLess(diff(iisignature.logsigbackprop(derivs,path,s,"X"),pathderivs),0.00001)
         self.assertLess(diff(iisignature.sigbackprop(derivs,path,m),pathderivs),0.00001)
 
+    def testHighDim(self):
+        for m in [1]:
+            d=1000
+            path = numpy.random.rand(10,d)
+            s=iisignature.prepare(d,m)
+            iisignature.logsig(path,s,"A")
+            #not testing result, just that it calculates something
+        
     def testCumulative(self):
         m=3
         d=2
@@ -563,8 +585,8 @@ class Batching(TestCase):
         self.assertTrue(numpy.allclose(backscaled1315[0].reshape(n,-1),backscaledArrays[0]))
         self.assertTrue(numpy.allclose(backscaled1315[1].reshape(n,-1),backscaledArrays[1]))
 
-        s_s=(iisignature.prepare(d,m,"cosx"),iisignature.prepare(d,m,"coshx"))
-        for type in ("c","o","s","x","ch","oh","sh"):
+        s_s=(iisignature.prepare(d,m,"cosax"),iisignature.prepare(d,m,"cosahx"))
+        for type in ("c","o","s","x","a","ch","oh","sh","ah"):
             s=s_s[1 if "h" in type else 0]
             logsigs = [iisignature.logsig(i,s,type) for i in paths]
             logsigArray=stack(logsigs)

@@ -17,7 +17,9 @@ struct LogSigFunction{
   std::unique_ptr<FunctionRunner> m_f;
 
   bool canProjectToBasis() const { return m_level < 2 || !m_simples.empty(); }
-
+  bool canCalculateViaArea() const {return m_level <= 2;}
+  int logSigLength() const;
+  
   //Everything after here is used for the linear algebra calculation of sig -> logsig.
   std::vector<size_t> m_sigLevelSizes;
   std::vector<size_t> m_logLevelSizes;
@@ -70,6 +72,15 @@ struct LogSigFunction{
   };
   std::vector<std::vector<SmallTriangle>> m_smallTriangles;
 };
+
+int LogSigFunction::logSigLength() const{
+  if (!m_basisElements.empty())
+    return m_basisElements.size();
+  if (m_level == 1)
+    return m_dim;
+  //m_level == 2
+  return (m_dim*(m_dim+1))/2;
+}
 
 InputPos inputPosFromSingle(Input i){
   bool isB = i.m_index<0;
@@ -656,10 +667,57 @@ void projectExpandedLogSigToBasisBackwards(const double* derivs, const LogSigFun
   }
 }
 
+//path is N*dim
+//we are working up to level 2 so the LieBasis doesn't matter
+//should restrict out.
+void logSigUsingArea(const double* path, int N, int m, int dim, double* out){
+  for (int d = 0; d<dim; ++d){
+    *(out++) = path[(N-1)*dim+d]-path[d];
+  }
+  if(m>=2){
+    for (int d1 = 0; d1<dim; ++d1)
+      for (int d2 = d1+1; d2<dim; ++d2){
+        double area = 0;
+        const double s1 = path[d1];
+        const double s2 = path[d2];
+        for (int n=0; n+1<N; ++n){
+          area += (path[(n)*dim+d1]-s1)*(path[(n+1)*dim+d2]-s2)
+            -(path[(n)*dim+d2]-s2)*(path[(n+1)*dim+d1]-s1);
+        }
+        *(out++) = area * 0.5;
+      }
+  }
+}
+
+void logSigUsingAreaBackwards(const double* path, int N, int m, int dim, const double* result, float* out){
+  for (int d = 0; d<dim; ++d){
+    out[(N-1)*dim+d] += *result;
+    out[d] -= *result;
+    ++result;
+  }
+  if(m>=2){
+    for (int d1 = 0; d1<dim; ++d1)
+      for (int d2 = d1+1; d2<dim; ++d2){
+        const double r = 0.5*(*result++);
+        const double s1 = path[d1];
+        const double s2 = path[d2];
+        for (int n=0; n+1<N; ++n){
+          out[d1] -= (path[(n+1)*dim+d2]-path[(n)*dim+d2])*r;
+          out[d2] -= (path[(n)*dim+d1]-path[(n+1)*dim+d1])*r;
+          out[(n)*dim+d1] += (path[(n+1)*dim+d2]-s2)*r;
+          out[(n)*dim+d2] -= (path[(n+1)*dim+d1]-s1)*r;
+          out[(n+1)*dim+d2] += (path[(n)*dim+d1]-s1)*r;
+          out[(n+1)*dim+d1] -= (path[(n)*dim+d2]-s2)*r;
+        }
+      }
+  }
+}
+                    
 struct WantedMethods{
   bool m_compiled_bch = true;
   bool m_simple_bch = true;
   bool m_log_of_signature = true;
+  bool m_area = true;
   bool m_expanded = false;
 
   bool m_want_matchCoropa = false;
@@ -669,11 +727,12 @@ struct WantedMethods{
 
 //This function sets up the members of lsf. It occasionally calls interrupt
 void makeLogSigFunction(int dim, int level, LogSigFunction& lsf, const WantedMethods& wm, Interrupt interrupt){
-  using std::vector;
   lsf.m_dim = dim;
   lsf.m_level = level;
   const bool needBCH = wm.m_compiled_bch || wm.m_simple_bch;
-  makeFunctionDataForBCH(dim,level,lsf.m_s,lsf.m_fd, lsf.m_basisElements,!needBCH, interrupt);
+  if (dim <= std::numeric_limits<Letter>::max())
+    //consider...
+    makeFunctionDataForBCH(dim,level,lsf.m_s,lsf.m_fd, lsf.m_basisElements,!needBCH, interrupt);
   interrupt();
   if(wm.m_compiled_bch)
     lsf.m_f.reset(new FunctionRunner(lsf.m_fd));
@@ -687,34 +746,57 @@ void makeLogSigFunction(int dim, int level, LogSigFunction& lsf, const WantedMet
 const char* const methodError = "Invalid method string. Should be 'D' (default), 'C' (compiled), "
                                 "'O' (simple BCH object, not compiled), "
                                 "'S' (by taking the log of the signature), "
+                                "'A' (area calculations), "
                                 "or 'X' (to report the expanded log signature), "
                                 "or some combination - order ignored, possibly with 'H', or None.";
 
 const char* const inconsistentRequest = "You asked for both 'X' and another method in your request, "
                                         "which means I can't tell what output you want.";
 
+const char* const badAreaRequest = "level is too high to use the 'A' (area) method";
+
+const char* const tooBigRequest = "this dimension and level are beyond the limits of the library";
+
+const char* const tooBigNonAreaRequest = "you must use the 'A' (area) method for this dimension and level";
+
 //interpret a string as a list of wanted methods, return true on error
-bool setWantedMethods(WantedMethods& w, int dim, int level, bool consumer, const std::string& input){
+bool setWantedMethods(WantedMethods& w, int dim, int level, bool consumer, bool noBCH, const std::string& input){
   const auto npos = std::string::npos;
-  bool noInput = npos == input.find_first_of("cCdDoOsSxX"); //no method (DCOSX) is given
+  bool noInput = npos == input.find_first_of("cCdDoOsSxXaA"); //no method (DCOSXA) is given
   bool doDefault= (noInput && !consumer) || npos!=input.find_first_of("dD");
-  bool defaultIsCompiled = (dim==2 && level<10) || (dim>2 && dim<10 && level < 5);
+  bool mustUseArea = dim > std::numeric_limits<Letter>::max();
+  bool canUseArea = level < 3;
+  bool defaultIsArea = canUseArea && dim>40;
+  bool defaultIsCompiled = !noBCH && ((dim==2 && level<10) || (dim>2 && dim<10 && level < 5));
+  bool defaultIsLog = !(defaultIsCompiled || defaultIsArea);
   bool doEverything = noInput && consumer;
   bool forceCompiled = (defaultIsCompiled && doDefault) || doEverything;
-  bool forceLog = (!defaultIsCompiled && doDefault) || doEverything;
+  bool forceLog = (defaultIsLog && doDefault) || doEverything;
+  bool forceArea = (defaultIsArea && doDefault) || (canUseArea && doEverything);
 
   w.m_compiled_bch = forceCompiled || npos!=input.find_first_of("cC");
   w.m_simple_bch=doEverything || (npos!=input.find_first_of("oO"));
   w.m_log_of_signature = forceLog || (npos!=input.find_first_of("sS"));
+  w.m_area = forceArea || (npos!=input.find_first_of("aA"));
   w.m_expanded = (npos != input.find_first_of("xX"));
   w.m_want_matchCoropa = (npos != input.find_first_of("hH"));
-  bool totallyInvalid = npos!=input.find_first_not_of("cCdDhHoOsSxX ");
+  bool totallyInvalid = npos!=input.find_first_not_of("cCdDhHoOsAaSxX ");
   if (totallyInvalid) {
     w.m_errMsg = methodError;
     return true;
   }
-  if (consumer && w.m_expanded && (w.m_compiled_bch || w.m_simple_bch || w.m_log_of_signature)) {
+  if (consumer && w.m_expanded &&
+      (w.m_compiled_bch || w.m_simple_bch || w.m_log_of_signature || w.m_area)) {
     w.m_errMsg = inconsistentRequest;
+    return true;
+  }
+  if (w.m_area && !canUseArea){
+    w.m_errMsg = badAreaRequest;
+    return true;
+  }
+  bool needBCHCalculations = w.m_compiled_bch || w.m_simple_bch || w.m_log_of_signature;
+  if (mustUseArea && needBCHCalculations && !consumer){
+    w.m_errMsg = canUseArea ? tooBigNonAreaRequest : tooBigRequest;
     return true;
   }
   return false;

@@ -210,17 +210,20 @@ The algebra for calculating log signatures is explained in \cite{LOGSIG}. Severa
 %good explanation http://tex.stackexchange.com/questions/56809/multiline-item-indent
 \begin{description}[leftmargin=1in,itemindent=0in,labelwidth=0.3in,
 labelsep=0.3in,labelindent=0.4in]
-\item[D] The \hilite{d}efault method, which is one of the methods C or S below, chosen automatically depending on the dimension and level requested.
+\item[D] The \hilite{d}efault method, which is one of the methods A, C or S below, chosen automatically depending on the dimension and level requested.
 \item[C] The \hilite{c}ompiled method, under which machine code is generated to calculate the BCH formula explicitly. Currently, the generated code is designed for both \verb|x86| and \verb|x86-64| on both Linux (System V, Mac etc.) and Windows systems. I don't know anyone using other systems, but the result is likely to be a crash.
 \item[O] The BCH formula is expanded explicitly, but stored simply as a normal \hilite{o}bject. The object's instructions are followed to calculate the log signature. No code is written. This is simpler and potentially slower than the default method. It makes no particular assumptions about the platform, and so may be more broadly applicable. 
 \item[S] The log signature is calculated by first calculating the \hilite{s}ignature of the path, then explicitly evaluating its logarithm, and then projecting on to the basis.% using linear algebra functionality of \numpy.
 %\footnote{For the Lyndon basis, the calculation exploits the fact that if $w$ is a Lyndon word then the corresponding basis element of the free Lie algebra $\rho(\sigma(w))$ in tensor space is a linear combination of words which are all anagrams of $w$. The full projection matrix is thus quite sparse, and we only need solve smaller systems, one for each anagram class.} 
 This is observed to be faster than using the BCH formula when the log signature is large (for example level 10 with dimension 3 or higher dimension). It may be more generally faster when the path has very many steps.
+\item[A] The signed \hilite{a}rea is calculated explicitly by adding up the areas of triangles. This very simple method only works for level 1 and 2 of the signature, but works efficiently when the dimension of the path is large.
 \item[X] The log signature is calculated by first calculating the signature of the path, then explicitly evaluating its logarithm. This logarithm is returned e\hilite{x}panded in tensor space. This is used for testing purposes.
 \end{description}
 %Lyndon signature, pickling
 
 Log signatures are by default reported in the Lyndon basis in ascending order of level, with alphabetical ordering of Lyndon words within each level. A version of the standard or classical Hall basis is available instead by requesting it in the \verb|prepare| function.
+
+The C, O and S methods only work when the dimension of the path is below 256. The C and O methods only work up to 20 levels of signature. The A method only works up to 2 levels of signature.
 
 %\vbox{
 \verb!logsiglength(d, m)!\i{logsiglength}
@@ -266,7 +269,7 @@ The object returned never changes once it is created, except that \verb!logsigba
 \begin{defn}
 \nopagebreak The log signature of the $d$-dimensional path \verb|path| up to level $m$, returned as a \numpy\ array of shape \verb!(...,logsiglength(d,m))!, where \verb!s! is the result of calling \verb!prepare(d,m[,...])!.
 
-By default, this uses the calculation method (\textbf{C}, \textbf{O} or \textbf{S}) which is supported by \verb|s| and comes first in the table above. You can restrict this by supplying as the final argument a string containing the letters of the methods you wish to be considered, this will probably be a one-letter string. 
+By default, this uses the calculation method (\textbf{C}, \textbf{O}, \textbf{S} or \textbf{A}) which is supported by \verb|s| and comes first in the table above. You can restrict this by supplying as the final argument a string containing the letters of the methods you wish to be considered, this will probably be a one-letter string. 
 
 If you wish to use the \textbf{X} method, you have to ask for it here, and the output will have shape \verb!(...,siglength(d,m))!.
 \end{defn}
@@ -274,7 +277,7 @@ If you wish to use the \textbf{X} method, you have to ask for it here, and the o
 
 \begin{defn}
 \nopagebreak Returns the derivatives of some scalar function $F$ with respect to \verb|path|, given %that \verb|derivs| is 
-the derivatives of $F$ with respect to \verb!logsig(path, s, methods)!. Returns an array of the same shape as \verb|path|. The only methods supported are \textbf{S} (the default) and \textbf{X} (which is only used if \verb|methods| is \verb|'X'|). If the \verb|'X'| method is not requested and \verb|s| does not support the \textbf{S} method, then \verb|s| is modified so it \emph{does} support the \textbf{S} method.
+the derivatives of $F$ with respect to \verb!logsig(path, s, methods)!. Returns an array of the same shape as \verb|path|. The only methods supported are \textbf{S} and \textbf{A} (the defaults) and \textbf{X} (which is only used if \verb|methods| is \verb|'X'|). If the \verb|'X'| method is not requested, the \textbf{A} method is inapplicable, and \verb|s| does not support the \textbf{S} method, then \verb|s| is modified so it \emph{does} support the \textbf{S} method.
 \end{defn}
 
 \verb!basis(s)! \i{basis}

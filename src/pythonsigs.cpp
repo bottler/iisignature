@@ -1274,7 +1274,7 @@ prepare(PyObject *self, PyObject *args){
   std::string methodString;
   if(methods)
     methodString = methods;
-  if(setWantedMethods(wantedmethods,dim,level,false,methodString))
+  if(setWantedMethods(wantedmethods,dim,level,false,false,methodString))
     ERR(wantedmethods.m_errMsg);
   auto basis = wantedmethods.m_want_matchCoropa ? LieBasis::StandardHall : LieBasis::Lyndon;
   std::unique_ptr<LogSigFunction> lsf(new LogSigFunction(basis));
@@ -1306,6 +1306,8 @@ static PyObject* basis(PyObject *self, PyObject *args){
   if(!lsf)
     return nullptr;
   auto& elementList = lsf->m_basisElements;
+  if (elementList.empty())
+    ERR("dim too large to list basis");
   PyObject* o = PyTuple_New(elementList.size());
   if (!o)
     return nullptr;
@@ -1332,6 +1334,8 @@ static PyObject* info(PyObject *self, PyObject *args) {
     methods += 'O';
   if (lsf->canProjectToBasis())
     methods += 'S';
+  if (lsf->canCalculateViaArea())
+    methods += 'A';
   methods += 'X';
   const char* basis = (lsf->m_s.m_basis == LieBasis::StandardHall) ? 
                           "Standard Hall" : "Lyndon";
@@ -1359,7 +1363,7 @@ logsig(PyObject *self, PyObject *args){
   std::string methodString;
   if(methods)
     methodString = methods;
-  if(setWantedMethods(wantedmethods,lsf->m_dim,lsf->m_level,true,methodString))
+  if(setWantedMethods(wantedmethods,lsf->m_dim,lsf->m_level,true,false,methodString))
     ERR(wantedmethods.m_errMsg);
   PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa) ERR("data must be (convertable to) a numpy array");
@@ -1375,7 +1379,7 @@ logsig(PyObject *self, PyObject *args){
   if (d != lsf->m_dim)
     ERR(("Path has dimension " + std::to_string(d) + " but we prepared for dimension "
       + std::to_string(lsf->m_dim)).c_str());
-  size_t logsiglength = lsf->m_basisElements.size();
+  size_t logsiglength = lsf->logSigLength();
   double* data = static_cast<double*>(PyArray_DATA(a));
 
   int nPaths = 1;
@@ -1448,6 +1452,28 @@ logsig(PyObject *self, PyObject *args){
     o_.release();
     return o;
   }
+  if(wantedmethods.m_area && lsf->canCalculateViaArea()){
+    PyObject* o = simpleNew_ownLastDim(ndims - 1, a, (npy_intp)logsiglength, OutT::typenum);
+    if (!o)
+      return nullptr;
+    auto outp = static_cast<OutT::T*>(PyArray_DATA(
+      reinterpret_cast<PyArrayObject*>(o)));
+    ReleasableRefHolder o_(o);
+
+    bool ok = do_interruptible([&] {
+      for (int path = 0; path < nPaths; ++path) {
+        logSigUsingArea(data, lengthOfPath, lsf->m_level, d,
+                        outp + path * logsiglength);
+        data += eachInputLength;
+        interrupt();
+      }
+      return true;
+    });
+    if (!ok)
+      return nullptr;
+    o_.release();
+    return o;
+  }
   ERR("We had not prepare()d for this request type");
 }
 
@@ -1465,11 +1491,11 @@ logsigbackwards(PyObject *self, PyObject *args) {
   std::string methodString;
   if (methods)
     methodString = methods;
-  if (setWantedMethods(wantedmethods, 100, 100, true, methodString))
+  if (setWantedMethods(wantedmethods, lsf->m_dim, lsf->m_level, true, true, methodString))
     ERR(wantedmethods.m_errMsg);
-  if (!(wantedmethods.m_log_of_signature || wantedmethods.m_expanded))
+  if (!(wantedmethods.m_log_of_signature || wantedmethods.m_expanded || wantedmethods.m_area))
     ERR("Requested method cannot be used here");
-  bool needProjectionButDontHaveIt = !wantedmethods.m_expanded && !lsf->canProjectToBasis();
+  bool needProjectionButDontHaveIt = !wantedmethods.m_expanded && !wantedmethods.m_area && !lsf->canProjectToBasis();
   //if (needProjectionButDontHaveIt)
   //  ERR("We had not prepared the S method");
 
@@ -1493,7 +1519,6 @@ logsigbackwards(PyObject *self, PyObject *args) {
     ERR(("Path has dimension " + std::to_string(d) + " but we prepared for dimension "
       + std::to_string(lsf->m_dim)).c_str());
   if (PyArray_NDIM(derivsa) != ndims - 1) ERR("derivs has the wrong number of dimensions");
-  size_t logsiglength = lsf->m_basisElements.size();
   const double* data = static_cast<double*>(PyArray_DATA(a));
   const double* derivPtr = static_cast<double*>(PyArray_DATA(derivsa));
 
@@ -1507,7 +1532,7 @@ logsigbackwards(PyObject *self, PyObject *args) {
 
   using OutT = UseFloat;
   size_t eachOutputSize = wantedmethods.m_expanded ?
-    (size_t)getSigLength(lsf) : (npy_intp)logsiglength;
+    (size_t)getSigLength(lsf) : lsf->logSigLength();
   if (eachOutputSize != (size_t) PyArray_DIM(derivsa, ndims - 2))
     ERR("derivatives have unexpected length");
   PyObject* o = PyArray_ZEROS(ndims, PyArray_DIMS(a), OutT::typenum, 0);
@@ -1534,15 +1559,21 @@ logsigbackwards(PyObject *self, PyObject *args) {
   }
   bool ok = do_interruptible([&] {
     for (int path = 0; path < nPaths; ++path) {
-      calcSignature(sig, data, lengthOfPath, d, lsf->m_level);
-      if (wantedmethods.m_expanded)
-        sigDer.fromRaw(lsf->m_dim, lsf->m_level, derivPtr);
+      if(wantedmethods.m_area){
+        logSigUsingAreaBackwards(data, lengthOfPath, lsf->m_level, d, derivPtr, outp + path*eachInputLength);
+      }
       else
-        projectExpandedLogSigToBasisBackwards(derivPtr, lsf, sigDer);
+      {
+        calcSignature(sig, data, lengthOfPath, d, lsf->m_level);
+        if (wantedmethods.m_expanded)
+          sigDer.fromRaw(lsf->m_dim, lsf->m_level, derivPtr);
+        else
+          projectExpandedLogSigToBasisBackwards(derivPtr, lsf, sigDer);
+        logBackwards(sigDer, sig);
+        //This should use the calculated signature
+        CalcSignature::sigBackwards(lsf->m_dim, lsf->m_level, lengthOfPath, data, sigDer, outp + path*eachInputLength);
+      }
       derivPtr += eachOutputSize;
-      logBackwards(sigDer, sig);
-      //This should use the calculated signature
-      CalcSignature::sigBackwards(lsf->m_dim, lsf->m_level, lengthOfPath, data, sigDer, outp + path*eachInputLength);
       data += eachInputLength;
     }
     return true;
@@ -1772,6 +1803,7 @@ rotinv2dcoeffs(PyObject *self, PyObject *args) {
   "'c' (the bch formula compiled on the fly), "\
   "'o' (the bch formula evaluated simply and stored in an object without " \
   "on-the-fly compilation and perhaps more slowly), "\
+  "'a' (simple area calculation, useful for level <=2), "\
   "and 's' (calculating the log signature by first calculating "\
   "the signature and then taking its log, "\
   "which may be faster for high levels or long paths)"
