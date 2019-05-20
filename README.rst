@@ -3,8 +3,8 @@ The iisignature package
 
 This package provides tools for calculating the signature and log signature of a data stream. 
 These are summary statistics of piecewise linear paths, consisting of iterated integrals, inspired by rough path theory. 
-See <http://www2.warwick.ac.uk/jreizenstein/iisignature.pdf> for documentation, the page
-<http://www2.warwick.ac.uk/jreizenstein> for more information about the calculations, 
+See <https://github.com/bottler/phd-docs/blob/master/iisignature.pdf> for documentation, the page
+<https://github.com/bottler/phd-docs> for more information about the calculations, 
 and <https://github.com/bottler/iisignature> for source code.
 
 It is work in progress.
