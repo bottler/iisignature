@@ -1,21 +1,24 @@
 from setuptools import setup, Extension
-import numpy, os
+import numpy, os, sys
 
 version = "0.23"
 headers = ["bch","calcSignature","logsig","logSigLength","makeCompiledFunction",
             "rotationalInvariants","readBCHCoeffs"]
 
 args = []
+link_args=[]
 if os.name == 'posix':
     args=['-std=c++11']
 
-if os.name == 'darwin' and "MACOSX_DEPLOYMENT_TARGET" not in os.environ:
+if sys.platform == 'darwin' and "MACOSX_DEPLOYMENT_TARGET" not in os.environ:
     if "IISIGNATURE_MACOSX_DONOTBECLEVER" not in os.environ:
-        #args.append('-mmacosx-version-min=10.9')
-        os.environ["MACOSX_DEPLOYMENT_TARGET"]=10.9
+        args.append('-mmacosx-version-min=10.9')
+        link_args.append('-mmacosx-version-min=10.9')
+        #os.environ["MACOSX_DEPLOYMENT_TARGET"]="10.9"
 
 xtn = Extension('iisignature', ['src/pythonsigs.cpp'], 
                 extra_compile_args=args,
+                extra_link_args=link_args,
                 define_macros=[("VERSION",version)],
                 include_dirs=[numpy.get_include()],
                 depends=["src/"+i+".hpp" for i in headers])
