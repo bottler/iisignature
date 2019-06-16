@@ -169,6 +169,17 @@ If \verb|path| has shape \verb|(...,n,d)| then the result has shape \verb|(...,n
 \nopagebreak Returns the derivatives of some scalar function $F$ with respect to both \verb|sigs| and \verb|segments| as a tuple, given %that \verb|derivs| is 
 the derivatives of $F$ with respect to \verb!sigjoin(sigs, segments, m, fixedLast)!. Returns both an array of the same shape as \verb|sigs| and an array of the same shape as \verb|segments|. If \verb|fixedLast| is provided, also returns the derivative with respect to it in the same tuple.
 \end{defn}
+\verb!sigcombine(sigs1, sigs2, d, m)!\i{sigcombine}
+
+\begin{defn}
+\nopagebreak Given the signature of two paths in dimension $d$ up to level $m$, return the signature of the two path concatenated. This is the Chen multiplication of two signatures. Both \verb|sigs1| and \verb|sigs2| must have the same shape \verb|(...,siglength(d,m))|.
+\end{defn}
+\verb!sigcombinebackprop(derivs, sigs1, sigs2, d, m)!\i{sigcombinebackprop}
+
+\begin{defn}
+\nopagebreak Returns the derivatives of some scalar function $F$ with respect to both \verb|sigs1| and \verb|sigs2| as a tuple, given %that \verb|derivs| is 
+the derivatives of $F$ with respect to \verb!sigcombine(sigs1, sigs2, d, m)!. Returns two arrays of the same shape as \verb|sigs1|.
+\end{defn}
 \verb!sigscale(sigs, scales, m)!\i{sigscale}
 \begin{defn}
 	\nopagebreak Given the signatures of paths in dimension $d$ up to level $m$ in a shape \verb|(...,siglength(d,m))| array and a scaling factor for each dimension for each path, stored as an array of shape \verb|(...,d)|, returns the signatures of each of the paths scaled in each dimension by the relevant scaling factor as an array of shape \verb|(...,siglength(d,m))|. 

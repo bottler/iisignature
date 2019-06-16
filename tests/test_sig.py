@@ -298,6 +298,36 @@ class A(TestCase):
                 #print("\n",bump3,base, fixedPoint, bumpedFixedPoint, calculated[2])
                 self.assertLess(numpy.abs(diff3),0.00001, "diff3")
 
+    #test sigcombine is compatible with sig and also its deriv
+    def testcombining(self):
+        dim = 2
+        level = 2
+        siglength = iisignature.siglength(dim,level)
+        pathLength = 20
+        halfPathLength=10
+        numberToDo=4
+        path = numpy.random.uniform(size=(numberToDo,pathLength,dim))
+        sig = iisignature.sig(path,level)
+        sig1 = iisignature.sig(path[:,:halfPathLength],level)
+        sig2 = iisignature.sig(path[:,(halfPathLength-1):],level)
+        combined = iisignature.sigcombine(sig1,sig2,dim,level)
+        self.assertLess(diff(sig,combined),0.0001)
+
+        extra = numpy.random.uniform(size=(siglength,))
+        bumpedsig1 = 1.001 * sig1
+        bumpedsig2 = 1.001 * sig2
+        base = numpy.sum(iisignature.sigcombine(sig1,sig2,dim,level))
+        bump1 = numpy.sum(iisignature.sigcombine(bumpedsig1,sig2,dim,level))
+        bump2 = numpy.sum(iisignature.sigcombine(sig1,bumpedsig2,dim,level))
+        derivsOfSum = numpy.ones((numberToDo,siglength))
+        calculated = iisignature.sigcombinebackprop(derivsOfSum,sig1,sig2,dim,level)
+        self.assertEqual(len(calculated), 2)
+        diff1 = (bump1 - base) - numpy.sum(calculated[0] * (bumpedsig1 - sig1))
+        diff2 = (bump2 - base) - numpy.sum(calculated[1] * (bumpedsig2 - sig2))
+        #print ("\n",bump1,bump2,base,diff1,diff2)
+        self.assertLess(numpy.abs(diff1),0.000001)
+        self.assertLess(numpy.abs(diff2),0.00001)
+
 class Deriv(TestCase):
     def testSig(self):
         #test that sigjacobian and sigbackprop compatible with sig
@@ -468,7 +498,7 @@ class SimpleCases(TestCase):
         self.assertLess(diff(iisignature.sigbackprop(derivs,path,m),pathderivs),0.00001)
 
     def testHighDim(self):
-        for m in [1]:
+        for m in [1,2]:
             d=1000
             path = numpy.random.rand(10,d)
             s=iisignature.prepare(d,m)
@@ -573,6 +603,22 @@ class Batching(TestCase):
         self.assertTrue(numpy.allclose(backjoined1315[0].reshape(n,-1),backjoinedArrays[0]))
         self.assertTrue(numpy.allclose(backjoined1315[1].reshape(n,-1),backjoinedArrays[1]))
 
+        dataAsSigs=[iisignature.sig(numpy.row_stack([numpy.zeros((d,)),i]),m) for i in data]
+        dataArray13151=dataArray1315[:,:,:,:,None,:]
+        dataArray13151=numpy.repeat(dataArray13151,2,4)*[[0.0],[1.0]]
+        dataArrayAsSigs1315=iisignature.sig(dataArray13151,m)
+        combined1315=iisignature.sigcombine(sigArray1315,dataArrayAsSigs1315,d,m)
+        self.assertEqual(joined1315.shape,combined1315.shape)
+        self.assertTrue(numpy.allclose(joined1315,combined1315))
+        backcombined1315=iisignature.sigcombinebackprop(joined1315,sigArray1315,dataArrayAsSigs1315,d,m)
+        backcombined=[iisignature.sigcombinebackprop(i,j,k,d,m) for i,j,k in zip(joined,sigs,dataAsSigs)]
+        backcombinedArrays=[stack([i[j] for i in backcombined]) for j in range(2)]
+        self.assertEqual(backcombined1315[0].shape,sigArray1315.shape)
+        self.assertEqual(backcombined1315[1].shape,sigArray1315.shape)
+        self.assertTrue(numpy.allclose(backjoined1315[0],backcombined1315[0]))
+        self.assertTrue(numpy.allclose(backcombined1315[0].reshape(n,-1),backcombinedArrays[0]))
+        self.assertTrue(numpy.allclose(backcombined1315[1].reshape(n,-1),backcombinedArrays[1]))
+        
         scaled=[iisignature.sigscale(i,j,m) for i,j in zip(sigs,data)]
         scaled1315=iisignature.sigscale(sigArray1315,dataArray1315,m)
         self.assertEqual(scaled1315.shape,(1,3,1,5,siglength))

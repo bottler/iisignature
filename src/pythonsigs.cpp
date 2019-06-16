@@ -629,6 +629,130 @@ static PyObject *
 }
 
 static PyObject *
+sigCombine(PyObject *self, PyObject *args){
+  PyObject* a1;
+  PyObject* a2;
+  int d=0;
+  int level=0;
+  if (!PyArg_ParseTuple(args, "OOii", &a1, &a2, &d, &level))
+    return nullptr;
+  if(level<1) ERR("level must be positive");
+  if(d<1) ERR("dimension must be positive");
+  PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  if (!aa) ERR("first signature must be (convertable to) a numpy array");
+  RefHolder a_(aa);
+  PyArrayObject* a = (PyArrayObject*)aa;
+  PyObject* bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
+  if (!bb) ERR("second signature must be (convertable to) a numpy array");
+  RefHolder b_(bb);
+  PyArrayObject* b = (PyArrayObject*)bb;
+
+  int ndims = PyArray_NDIM(a);
+  if (ndims < 1) ERR("no signatures provided");
+  if (PyArray_NDIM(b) != ndims) ERR("signatures inputs must have the same number of dimensions");
+  size_t sigLength = calcSigTotalLength(d, level);
+  if (sigLength != (size_t)PyArray_DIM(a, ndims-1))
+    ERR("first input has unexpected length");
+  if (sigLength != (size_t)PyArray_DIM(b, ndims-1))
+    ERR("second input has unexpected length");
+
+  int nPaths = 1;
+  for (int i = 0; i + 1 < ndims; ++i) {
+    npy_intp x = PyArray_DIM(a, i);
+    if (PyArray_DIM(b, i) != x)
+      ERR("mismatched dimensions between inputs");
+    nPaths *= (int)x;
+  }
+
+  ReadArrayAsDoubles sig1, sig2;
+  if(sig1.read(a,nPaths*sigLength)||sig2.read(b,nPaths*sigLength))
+    ERR("Out of memory");
+
+  using OutT = UseFloat;
+  PyObject* o = PyArray_SimpleNew(ndims, PyArray_DIMS(a),OutT::typenum);
+  if(!o)
+    return nullptr;
+  auto out = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
+  CalcSignature::SigCombiner sc;
+  for(int iPath=0; iPath<nPaths; ++iPath)
+    sc.sigCombine(d,level,sig1.ptr()+iPath*sigLength,
+    sig2.ptr()+iPath*sigLength,out+iPath*sigLength);
+  return o;
+}
+
+static PyObject *
+  sigCombineBackwards(PyObject* self, PyObject *args){
+  PyObject* a1;
+  PyObject* a2;
+  PyObject* a3;
+  int d=0;
+  int level=0;
+  if (!PyArg_ParseTuple(args, "OOOii", &a3, &a1, &a2, &d, &level))
+    return nullptr;
+  if(level<1) ERR("level must be positive");
+  if(d<1) ERR("dimension must be positive");
+  PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  if (!aa) ERR("first signature must be (convertable to) a numpy array");
+  RefHolder a_(aa);
+  PyArrayObject* a = (PyArrayObject*)aa;
+  PyObject* bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
+  if (!bb) ERR("second signature must be (convertable to) a numpy array");
+  RefHolder b_(bb);
+  PyArrayObject* b = (PyArrayObject*)bb;
+  PyObject* cc = PyArray_ContiguousFromAny(a3, NPY_FLOAT64, 0, 0);
+  if (!cc) ERR("derivs must be (convertable to) a numpy array");
+  RefHolder c_(cc);
+  PyArrayObject* c = (PyArrayObject*)cc;
+
+  int ndims = PyArray_NDIM(a);
+  if (ndims < 1) ERR("no signatures provided");
+  if (PyArray_NDIM(b) != ndims) ERR("signature inputs must have the same number of dimensions");
+  if (PyArray_NDIM(c) != ndims) ERR("sigs and derivs must have the same number of dimensions");
+  size_t sigLength = calcSigTotalLength(d, level);
+  if (sigLength != (size_t)PyArray_DIM(a, ndims-1))
+    ERR("first input has unexpected length");
+  if (sigLength != (size_t)PyArray_DIM(b, ndims-1))
+    ERR("second input has unexpected length");
+
+  int nPaths = 1;
+  for (int i = 0; i + 1 < ndims; ++i) {
+    npy_intp x = PyArray_DIM(a, i);
+    if (PyArray_DIM(b, i) != x)
+      ERR("mismatched dimensions between inputs");
+     if (PyArray_DIM(c, i) != x)
+      ERR("mismatched dimensions between sigs and derivs");
+    nPaths *= (int)x;
+  }
+
+  ReadArrayAsDoubles sig1, sig2, derivs;
+  if(sig1.read(a,nPaths*sigLength)||sig2.read(b,nPaths*sigLength)
+     ||derivs.read(c,nPaths*sigLength))
+    ERR("Out of memory");
+
+  using OutT = UseFloat;
+  PyObject* o1 = PyArray_SimpleNew(ndims, PyArray_DIMS(a), OutT::typenum);
+  if(!o1)
+    return nullptr;
+  PyObject* o2 = PyArray_SimpleNew(ndims, PyArray_DIMS(b), OutT::typenum);
+  if (!o2) {
+    Py_DECREF(o1);
+    return nullptr;
+  }
+  
+  auto out1 = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o1)));
+  auto out2 = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o2)));
+  CalcSignature::SigCombiner sc;
+  for(int iPath=0; iPath<nPaths; ++iPath)
+    sc.sigCombineBackwards(d,level,
+			   sig1.ptr()+iPath*sigLength,
+			   sig2.ptr()+iPath*sigLength,
+			   derivs.ptr()+iPath*sigLength,
+			   out1+iPath*sigLength,
+			   out2+iPath*sigLength);
+  return Py_BuildValue("(NN)", o1, o2);
+}
+
+static PyObject *
 sigScale(PyObject *self, PyObject *args){
   PyObject* a1;
   PyObject* a2;
@@ -1836,7 +1960,15 @@ static PyMethodDef Methods[] = {
   {"sigjoinbackprop",sigJoinBackwards,METH_VARARGS, "sigjoinbackprop(s,X,D,m,f=float('nan')) \n "
    "gives the derivatives of F with respect to X and D (and f if given) where s is the derivatives"
    " of F with respect to sigjoin(X,D,m,f). The result is a tuple of two or three items."},
-  {"sigscale", sigScale, METH_VARARGS, "sigjoin(X,D,m))\n "
+  {"sigcombine", sigCombine, METH_VARARGS, "sigcombine(X1,X2,d,m)\n "
+   "If X1 and X2 are arrays of signatures of d dimensional paths of shape "
+   "(..., siglength(d,m)), then return an array of the same shape "
+   "of the signatures of each path from X1 concatenated with each path from X2. "
+   "In other words, this is the concatenation/Chen product of two signatures."},
+  {"sigcombinebackprop",sigCombineBackwards,METH_VARARGS, "sigcombinebackprop(s,X1,X2,d,m) \n "
+   "gives the derivatives of F with respect to X1 and X2 where s is the derivatives"
+   " of F with respect to sigcombine(X1,X2,d,m). The result is a tuple of two items."},
+  {"sigscale", sigScale, METH_VARARGS, "sigscale(X,D,m))\n "
    "If X is an array of signatures of d dimensional paths of shape "
    "(..., siglength(d,m)) and D is an array of d dimensional scales "
    "of shape (..., d), then return an array shaped like X "

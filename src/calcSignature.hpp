@@ -560,6 +560,31 @@ namespace CalcSignature{
       dFixedLast += localDerivs.m_data[0][d - 1];
   }
 
+  class SigCombiner{
+    Signature m_sig1, m_sig2, m_dSig1, m_dSig2;
+  public:
+    void sigCombine(int d, int m, const Number* signature1,
+		    const Number* signature2,
+		    OutputNumber* output)
+    {
+      m_sig1.fromRaw(d, m, signature1);
+      m_sig2.fromRaw(d, m, signature2);
+      m_sig1.concatenateWith(d, m, m_sig2);
+      m_sig1.writeOut(output);
+    }
+    void sigCombineBackwards(int d, int m, const Number* signature1,
+			     const Number* signature2, const Number* derivs,
+			     OutputNumber* dSig1,
+			     OutputNumber* dSig2) {
+      m_sig1.fromRaw(d, m, signature1);
+      m_sig2.fromRaw(d, m, signature2);
+      m_dSig1.fromRaw(d, m, derivs);
+      backConcatenate(d, m, m_sig1, m_sig2, m_dSig1, m_dSig2);
+      m_dSig1.writeOut(dSig1);
+      m_dSig2.writeOut(dSig2);
+    }
+  };
+
   //replace s with the signature of its path scaled by scales[.] in each dim
   //a coroutine would be great here?
   //time complexity level*(d**level) for each level 
