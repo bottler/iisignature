@@ -381,7 +381,7 @@ class Deriv(TestCase):
             print(manualCalcBackProp)
         self.assertLess(backDiffs,0.000001)
 
-    def logSig(self, type, m=5):
+    def logSig(self, type, m=7):
         numpy.random.seed(291)
         d=2
         pathLength=10
@@ -641,7 +641,7 @@ class Batching(TestCase):
             self.assertTrue(numpy.allclose(logsigArray1315.reshape(n,-1),logsigArray),type)
 
             if type in ("s","x","sh"):
-                backlogs = stack(iisignature.logsigbackprop(i,j,s,type) for i,j in zip(logsigs,paths))
+                backlogs = stack([iisignature.logsigbackprop(i,j,s,type) for i,j in zip(logsigs,paths)])
                 backlogs1315 = iisignature.logsigbackprop(logsigArray1315,pathArray1315,s,type)
                 self.assertEqual(backlogs1315.shape,backsigs1315.shape)
                 self.assertTrue(numpy.allclose(backlogs1315.reshape(n,6,d),backlogs),type)

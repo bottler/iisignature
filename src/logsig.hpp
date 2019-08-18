@@ -36,7 +36,7 @@ struct LogSigFunction{
   //m_matrix has shape sources*dests when we fill them.
   //In the python addin, they are replaced with their 
   //pseudoinverses at the end of prepare(),
-  //so that it ends up with shape dests*sources
+  //so that it ends up with shape dests*sources.
   //Todo as a performance optimization in prepare():
   // -some of these matrices are identical and should be pinv'd once, e.g. those corresponding
   //   to the sets of Lyndon words {1223, 1232, 1322} and {1224, 1242, 1422}
@@ -290,7 +290,9 @@ namespace IISignature_algebra {
     }
   }
 
-  MappingMatrix makeMappingMatrix(int /*dim*/, int level, BasisPool &basisPool,
+//In fact the basisPool argument is unused here, but there's C++ example code perhaps
+//using this function.
+  MappingMatrix makeMappingMatrix(int /*dim*/, int level, const BasisPool &basisPool,
     const std::vector<BasisElt*> &basisWords,
     const std::vector<size_t> &sigLevelSizes) {
     using P = std::pair<size_t, float>;
@@ -637,12 +639,14 @@ void projectExpandedLogSigToBasisBackwards(const double* derivs, const LogSigFun
         i.m_matrix.data();
       rhs.assign(triangleSize, 0.0);
       for (size_t dest = 0; dest < triangleSize; ++dest) {
-        for (size_t source = 0; source < dest; ++source) {
-          rhs[source] += mat[dest*triangleSize + source] * derivs[writeOffset + i.m_dests[dest]];
-        }
+        rhs[dest]=derivs[writeOffset + i.m_dests[dest]];
       }
-      for (size_t source = 0; source < triangleSize; ++source) {
-        out.m_data[l - 1][i.m_sources[source]] = (CalcSignature::Number)(derivs[writeOffset + i.m_dests[source]] -rhs[source]);
+      for (size_t dest = triangleSize; --dest < triangleSize; ) {
+        double thisDer=rhs[dest];
+        out.m_data[l - 1][i.m_sources[dest]] = (CalcSignature::Number)(thisDer);
+        for (size_t source = 0; source < dest; ++source) {
+          rhs[source] -= thisDer * mat[dest*triangleSize + source];
+        }
       }
     }
     for (auto& i : lsf->m_smallSVDs[l - 1]) {
