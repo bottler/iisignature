@@ -272,6 +272,10 @@ This function by default prepares to use only the default method. You can change
 
 If you want results in the standard Hall basis instead of in the Lyndon word basis, add an H anywhere into the method string. For example \verb|prepare(2,4,"DH")|. When this is done, the result should be directly comparable to the output from the CoRoPa library \cite{coropa}.
 
+If you want to prepare the ability to convert log signatures to signatures,
+i.e.~the functions \texttt{logsigtosig} and \texttt{logsigtosigbackprop},
+add the digit \verb!2! anywhere into the method string.
+
 The object returned never changes once it is created, except that \verb!logsigbackprop! can add the preparation for the \textbf{S} method later.
 
 \end{defn}
@@ -303,6 +307,23 @@ If $d>9$, the output of this function is not yet fixed. An example of how to par
 
 \begin{defn}
 	\nopagebreak If \verb!s! is the result of calling \verb!prepare(d,m[,...])!, then this returns a dictionary of properties of \verb|s|, including a list of methods which it supports. This may be a useful diagnostic.
+\end{defn}
+
+\verb!logsigtosig(logsig, s))! \i{logsigtosig}
+
+\begin{defn}
+\nopagebreak If \verb!s! is the result of calling \verb!prepare(d,m,methods)!,
+and \texttt{logsig} (shape \verb|(...,logsiglength(d,m))|) is a logsignature,
+then returns the corresponding signature with shape  \verb|(...,siglength(d,m))|.
+The digit \texttt{2} must be included in \texttt{methods}.
+\end{defn}
+
+\verb!logsigtosigbackprop(derivs, logsig, s)!\i{logsigtosigbackprop}
+
+\begin{defn}
+\nopagebreak Returns the derivatives of some scalar function $F$ with respect to \verb|logsig|, given
+the derivatives of $F$ with respect to \verb!logsigtosig(logsig, s)!.
+Returns an array of the same shape as \verb|logsig|.
 \end{defn}
 
 \subsection{Linear rotational invariants}
@@ -355,7 +376,7 @@ The paper \cite{JD} explains how to find the linear subspace of signature space 
 \end{tabular}
 \end{center}
 
-\newpage
+%\newpage
 \verb!rotinv2dcoeffs(s)! \i{rotinv2dcoeffs}
 \begin{defn}
 	\nopagebreak The basis of rotational invariants which are found by the calculation defined by \verb!s!, where \verb!s! is the result of calling \verb!rotinv2dprepare(...)!. The result is given as a tuple of 2d \numpy\ arrays, where each row of element \verb|i| is an element of the basis within level $(2i+2)$ of the signature.

@@ -152,6 +152,19 @@ def fdDeriv(f,x,bump,order,nosum=False):
         return o
     return numpy.sum(o)
 
+#fn takes an array to a scalar. This manually calculates its derivatives at init.
+def allSensitivities(init, fn):
+    z=numpy.zeros_like(init, dtype="float64")
+    #y=fn(init)
+    bump=0.01
+    o=numpy.zeros_like(init, dtype="float64")
+    for i in range(len(z)):
+        z[i]=bump
+        #o[i]=(fn(init+z)-y)/bump
+        #o[i]=(fn(init+z)-fn(init-z))/(2*bump)
+        o[i]=fdDeriv(fn,init,z,6)/bump
+        z[i]=0
+    return o
 
 class TestCase(unittest.TestCase):
     if sys.hexversion < 0x2070000:
@@ -190,7 +203,8 @@ class A(TestCase):
         s = iisignature.prepare(dim,level,"coshx" if coropa else "cosx")
         myinfo = {"level":level, "dimension":dim,
                   "methods": ("COSAX" if level <= 2 else "COSX"),
-                  "basis":("Standard Hall" if coropa else "Lyndon")}
+                  "basis":("Standard Hall" if coropa else "Lyndon"),
+                  "logsigtosig_supported" : False}
         self.assertEqual(iisignature.info(s),myinfo)
         path = numpy.random.uniform(size=(10,dim))
         basis = iisignature.basis(s)
@@ -327,6 +341,57 @@ class A(TestCase):
         #print ("\n",bump1,bump2,base,diff1,diff2)
         self.assertLess(numpy.abs(diff1),0.000001)
         self.assertLess(numpy.abs(diff2),0.00001)
+
+
+class LogSig2Sig(TestCase):
+    def doL2S(self, coropa):
+        numpy.random.seed(212)
+        d=3
+        m=6
+        path = numpy.random.uniform(size=(12,d))
+        sig = iisignature.sig(path,m)
+        s = iisignature.prepare(d, m, "S2H" if coropa else "S2")
+        self.assertTrue(iisignature.info(s)["logsigtosig_supported"])
+        logsig = iisignature.logsig(path,s)
+        sig_ = iisignature.logsigtosig(logsig,s)
+        self.assertEqual(sig.shape,sig_.shape)
+        self.assertTrue(numpy.allclose(sig,sig_))
+
+        #Like the other iisig functions, we check that derivatives
+        #of logsigtosig allow sum(logsigtosig) to be backproped correctly
+        #This is a boring thing to calculate, because after the first level
+        #each of the log signature elements is a lie bracket and so
+        #contributes a net total of 0 to the signature
+        derivsOfSum = numpy.ones((sig.shape[0],),dtype="float64")
+        bumpedLogSig = 1.01*logsig
+        calculated  = iisignature.logsigtosigbackprop(derivsOfSum, logsig, s)
+        #wantedbackprop = allSensitivities(logsig, lambda l: iisignature.logsigtosig(l,s).sum())
+        manualChange = fdDeriv(lambda x:iisignature.logsigtosig(x,s),
+                                logsig, bumpedLogSig-logsig,6)
+        calculatedChange = numpy.sum((bumpedLogSig-logsig)*calculated)
+        self.assertLess(numpy.abs(manualChange-calculatedChange),0.00001)
+        #beyond the first level, all zero
+        if m>1:
+            self.assertLess(numpy.max(numpy.abs(calculated[d:])),0.00001)
+        self.assertEqual(calculated.shape, logsig.shape)
+
+        #Now for a better test, we backprop sum(random*logsigtosig)
+        #specifically calculate the change in it caused by bump two ways
+        random = numpy.random.uniform(size=sig.shape[0],)
+        derivsOfSum = random
+        calculated  = iisignature.logsigtosigbackprop(derivsOfSum, logsig, s)
+        manualChange = fdDeriv(lambda x: iisignature.logsigtosig(x,s)*random,
+                                logsig, bumpedLogSig-logsig,4)
+        calculatedChange = numpy.sum((bumpedLogSig-logsig)*calculated)
+        self.assertLess(numpy.abs(manualChange-calculatedChange),0.00001)
+        self.assertEqual(calculated.shape, logsig.shape)
+
+    def testLyndon(self):
+        self.doL2S(False)
+
+    def testCoropa(self):
+        self.doL2S(True)
+
 
 class Deriv(TestCase):
     def testSig(self):
@@ -485,10 +550,11 @@ class SimpleCases(TestCase):
         d=2
         path=numpy.random.uniform(size=(10,d))
         rightSig = path[-1,:]-path[0,:]
-        s=iisignature.prepare(d,m,"cosx")
+        s=iisignature.prepare(d,m,"cosx2")
         self.assertLess(diff(iisignature.sig(path,m),rightSig),0.0000001)
         for type_ in ("C","O","S","X","A"):
             self.assertLess(diff(iisignature.logsig(path,s,type_),rightSig),0.0000001,type_)
+        self.assertLess(diff(rightSig,iisignature.logsigtosig(rightSig,s)),0.000001)
         derivs=numpy.array([2.1,3.2])
         pathderivs=numpy.zeros_like(path)
         pathderivs[-1]=derivs
@@ -631,7 +697,7 @@ class Batching(TestCase):
         self.assertTrue(numpy.allclose(backscaled1315[0].reshape(n,-1),backscaledArrays[0]))
         self.assertTrue(numpy.allclose(backscaled1315[1].reshape(n,-1),backscaledArrays[1]))
 
-        s_s=(iisignature.prepare(d,m,"cosax"),iisignature.prepare(d,m,"cosahx"))
+        s_s=(iisignature.prepare(d,m,"cosax2"),iisignature.prepare(d,m,"cosahx2"))
         for type in ("c","o","s","x","a","ch","oh","sh","ah"):
             s=s_s[1 if "h" in type else 0]
             logsigs = [iisignature.logsig(i,s,type) for i in paths]
@@ -645,6 +711,19 @@ class Batching(TestCase):
                 backlogs1315 = iisignature.logsigbackprop(logsigArray1315,pathArray1315,s,type)
                 self.assertEqual(backlogs1315.shape,backsigs1315.shape)
                 self.assertTrue(numpy.allclose(backlogs1315.reshape(n,6,d),backlogs),type)
+
+        for s in s_s:
+            logsigs1315 = iisignature.logsig(pathArray1315,s)
+            logsigs=[iisignature.logsig(p,s) for p in paths]
+            sigsFromLogSigs1315 = iisignature.logsigtosig(logsigs1315,s)
+            self.assertEqual(sigsFromLogSigs1315.shape, sigArray1315.shape)
+            self.assertTrue(numpy.allclose(sigsFromLogSigs1315, sigArray1315))
+
+            backls2s = stack([iisignature.logsigtosigbackprop(i,j,s) for i,j in zip (sigs,logsigs)])
+            backls2s1315 = iisignature.logsigtosigbackprop(sigArray1315,logsigs1315,s)
+            self.assertEqual(backls2s1315.shape, logsigs1315.shape)
+            self.assertTrue(numpy.allclose(backls2s1315.reshape(-1,logsigs[0].shape[0]),
+                                             backls2s))
 
         a=iisignature.rotinv2dprepare(m,"a")
         rots=stack([iisignature.rotinv2d(i,a) for i in paths])

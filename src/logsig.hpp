@@ -20,7 +20,8 @@ struct LogSigFunction{
   bool canCalculateViaArea() const {return m_level <= 2;}
   int logSigLength() const;
   
-  //Everything after here is used for the linear algebra calculation of sig -> logsig.
+  //Everything after here is used for the linear algebra calculation of sig -> logsig,
+  //except the last couple of members which are for the other way.
   std::vector<size_t> m_sigLevelSizes;
   std::vector<size_t> m_logLevelSizes;
   int m_siglength = 0;
@@ -71,6 +72,8 @@ struct LogSigFunction{
 #endif
   };
   std::vector<std::vector<SmallTriangle>> m_smallTriangles;
+  bool m_support_logsig2sig = false;
+  vector<vector<LogSigFunction::SmallSVD>> m_logsig2sig_data;
 };
 
 int LogSigFunction::logSigLength() const{
@@ -557,6 +560,51 @@ namespace IISignature_algebra {
       */
     }
   }
+
+  void makeSparseMatrices4LogSig2Sig(const LogSigFunction& lsf, Interrupt interrupt,
+                                      vector<vector<LogSigFunction::SmallSVD>>& out) {
+    using P = std::pair<size_t, float>;
+    using std::vector;
+    int level = lsf.m_level;
+    auto m = makeMappingMatrix(lsf.m_dim, level, lsf.m_s, lsf.m_basisElements, lsf.m_sigLevelSizes);
+
+    //We next write output based on m.
+    out.resize(level);
+    for (int lev = 2; lev <= level; ++lev) {
+      interrupt();
+      LetterOrderToBE letterOrderToBE;
+      BasisEltToIndex basisEltToIndex;
+      analyseMappingMatrixLevel(m, lev, letterOrderToBE, basisEltToIndex);
+      //Now, within lev, letterOrderToBE and basisEltToIndex have been created
+      for (auto& i : letterOrderToBE) {
+        interrupt();
+        out[lev - 1].push_back(LogSigFunction::SmallSVD{});
+        LogSigFunction::SmallSVD& mtx = out[lev - 1].back();
+        //sourceMap maps expanded (i.e. pos in level of sig) to contracted (i.e. pos in our block)
+        std::map<size_t, size_t> sourceMap;
+        for (auto& j : i.second) {
+          mtx.m_dests.push_back(lookupInFlatMap(basisEltToIndex, j));
+          for (auto& k : lookupInFlatMap(m[lev - 1],j)) {
+            sourceMap[k.first] = 0;
+          }
+        }
+        size_t idx = 0;
+        for (auto& j : sourceMap) {
+          j.second = idx++;
+          mtx.m_sources.push_back(j.first);
+        }
+        {
+          mtx.m_matrix.assign(mtx.m_dests.size()*mtx.m_sources.size(), 0);
+          for (size_t j = 0; j < i.second.size(); ++j) {
+            for (const P& k : lookupInFlatMap(m[lev - 1],i.second[j])) {
+              size_t rowBegin = sourceMap[k.first] * mtx.m_dests.size();
+              mtx.m_matrix[rowBegin + j] = k.second;
+            }
+          }
+        }
+      }
+    }
+  }
 }
 
 void projectExpandedLogSigToBasis(double* out, const LogSigFunction* lsf, 
@@ -671,6 +719,69 @@ void projectExpandedLogSigToBasisBackwards(const double* derivs, const LogSigFun
   }
 }
 
+void expandLogSigFromBasis(const double* in, const LogSigFunction& lsf, 
+    CalcSignature::Signature& sig, const vector<vector<LogSigFunction::SmallSVD>>& matrices) {
+  size_t readOffset = 0;
+  sig.sigOfNothing(lsf.m_dim, lsf.m_level);
+  for (auto& f : sig.m_data[0])
+    f=in[readOffset++];
+  for (int l = 2; l <= lsf.m_level; ++l) {
+    const size_t loglevelLength = lsf.m_logLevelSizes[l - 1];
+    for (auto& i : matrices[l - 1]) {
+      auto& mat = i.m_matrix;
+      size_t nDests = i.m_dests.size();
+      size_t nSources = i.m_sources.size();
+      for (size_t j = 0; j < nDests; ++j) {
+        for (size_t k = 0; k < nSources; ++k)
+          sig.m_data[l-1][i.m_sources[k]]
+            += mat[nDests*k + j] * in[readOffset+i.m_dests[j]];
+      }
+    }
+    readOffset += loglevelLength;
+  }
+}
+
+void expandLogSigFromBasisBackwards(const LogSigFunction& lsf, 
+    const CalcSignature::Signature& derivs,    
+    const vector<vector<LogSigFunction::SmallSVD>>& matrices,
+    double* out) {
+  size_t writeOffset = 0;
+  for (auto& f : derivs.m_data[0])
+    out[writeOffset++] = f;
+  for (int l = 2; l <= lsf.m_level; ++l) {
+    const size_t loglevelLength = lsf.m_logLevelSizes[l - 1];
+    for (auto& i : matrices[l - 1]) {
+      auto& mat = i.m_matrix;
+      size_t nDests = i.m_dests.size();
+      size_t nSources = i.m_sources.size();
+      for (size_t j = 0; j < nDests; ++j) {
+        for (size_t k = 0; k < nSources; ++k){
+          //std::cout<<"\n"<<mat[nDests*k+j]<<" , "<<derivs.m_data[l-1][i.m_sources[k]]<<"\n";
+          out[writeOffset+i.m_dests[j]]
+            += mat[nDests*k + j] * derivs.m_data[l-1][i.m_sources[k]];
+        }
+      }
+    }
+    writeOffset += loglevelLength;
+  }
+}
+
+void logsigToSig(const double* in, const LogSigFunction& lsf, double* out){
+  CalcSignature::Signature sig;
+  expandLogSigFromBasis(in, lsf, sig, lsf.m_logsig2sig_data);
+  expTensorHorner(sig);
+  //expTensorNaive(sig);
+  sig.writeOut(out);
+}
+
+void logsigToSigBackwards(const double* in, const double* derivs, const LogSigFunction& lsf, double* out){
+  CalcSignature::Signature sig, der;
+  der.fromRaw(lsf.m_dim, lsf.m_level, derivs);
+  expandLogSigFromBasis(in, lsf, sig, lsf.m_logsig2sig_data);
+  expBackwards(der,sig);
+  expandLogSigFromBasisBackwards(lsf, der, lsf.m_logsig2sig_data, out);
+}
+
 //path is N*dim
 //we are working up to level 2 so the LieBasis doesn't matter
 //should restrict out.
@@ -724,6 +835,8 @@ struct WantedMethods{
   bool m_area = true;
   bool m_expanded = false;
 
+  bool m_want_logsig2sig = false;
+
   bool m_want_matchCoropa = false;
 
   const char* m_errMsg = nullptr;
@@ -745,6 +858,10 @@ void makeLogSigFunction(int dim, int level, LogSigFunction& lsf, const WantedMet
   interrupt();
   if(wm.m_log_of_signature)
     IISignature_algebra::makeSparseLogSigMatrices(dim,level,lsf,interrupt);
+  if(wm.m_want_logsig2sig){
+    lsf.m_support_logsig2sig = true;
+    IISignature_algebra::makeSparseMatrices4LogSig2Sig(lsf, interrupt, lsf.m_logsig2sig_data);
+  }
 }
 
 const char* const methodError = "Invalid method string. Should be 'D' (default), 'C' (compiled), "
@@ -752,7 +869,7 @@ const char* const methodError = "Invalid method string. Should be 'D' (default),
                                 "'S' (by taking the log of the signature), "
                                 "'A' (area calculations), "
                                 "or 'X' (to report the expanded log signature), "
-                                "or some combination - order ignored, possibly with 'H', or None.";
+                                "or some combination - order ignored, possibly with 'H' or '2', or None.";
 
 const char* const inconsistentRequest = "You asked for both 'X' and another method in your request, "
                                         "which means I can't tell what output you want.";
@@ -767,6 +884,7 @@ const char* const tooBigNonAreaRequest = "you must use the 'A' (area) method for
 bool setWantedMethods(WantedMethods& w, int dim, int level, bool consumer, bool noBCH, const std::string& input){
   const auto npos = std::string::npos;
   bool noInput = npos == input.find_first_of("cCdDoOsSxXaA"); //no method (DCOSXA) is given
+  bool needLogsig2Sig = npos!=input.find_first_of("2");
   bool doDefault= (noInput && !consumer) || npos!=input.find_first_of("dD");
   bool mustUseArea = dim > std::numeric_limits<Letter>::max();
   bool canUseArea = level < 3;
@@ -776,7 +894,7 @@ bool setWantedMethods(WantedMethods& w, int dim, int level, bool consumer, bool 
   bool doEverything = noInput && consumer;
   bool forceCompiled = (defaultIsCompiled && doDefault) || doEverything;
   bool forceLog = (defaultIsLog && doDefault) || doEverything;
-  bool forceArea = (defaultIsArea && doDefault) || (canUseArea && doEverything);
+  bool forceArea = (defaultIsArea && doDefault) || (canUseArea && (doEverything || needLogsig2Sig));
 
   w.m_compiled_bch = forceCompiled || npos!=input.find_first_of("cC");
   w.m_simple_bch=doEverything || (npos!=input.find_first_of("oO"));
@@ -784,7 +902,8 @@ bool setWantedMethods(WantedMethods& w, int dim, int level, bool consumer, bool 
   w.m_area = forceArea || (npos!=input.find_first_of("aA"));
   w.m_expanded = (npos != input.find_first_of("xX"));
   w.m_want_matchCoropa = (npos != input.find_first_of("hH"));
-  bool totallyInvalid = npos!=input.find_first_not_of("cCdDhHoOsAaSxX ");
+  w.m_want_logsig2sig = needLogsig2Sig;
+  bool totallyInvalid = npos!=input.find_first_not_of("cCdDhHoOsSaAxX2 ");
   if (totallyInvalid) {
     w.m_errMsg = methodError;
     return true;

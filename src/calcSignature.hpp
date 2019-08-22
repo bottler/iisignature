@@ -292,6 +292,90 @@ namespace CalcSignature{
     }  
   }
 
+  //This calculates the exp of a tensor (assumed to have 0 in the zeroth level).
+  //Analogous to logTensorHorner
+  //exp(x)=1+x+x^2/2+x^3/6+...
+  //      =1+x + x/2(x+x/3(x+x/4(...)))
+  //      =1+x + x(x/2+x(x/6+x(...)))
+  //When inside p brackets, we only need the first m-p levels to be calculated,
+  //because when multiplying a tensor t by x (which has 0 in the zeroth level)
+  //level k of t only affects level k+1 and above of xt.
+  void expTensorHorner(Signature& x, vector<Signature>* save_sums=nullptr) {
+    const int m = (int)x.m_data.size();
+    const int d = (int)x.m_data[0].size();
+    if (m <= 1)
+      return;
+    Signature s, t;
+    s.sigOfNothing(d, m-1);
+    t.sigOfNothing(d, m);
+    for (int depth = m; depth > 0; --depth) {
+      Number constant = (Number) 1.0 / (1+depth);
+      //make t be constant*x*s up to level (1+m-depth). [this does nothing the first time round]
+      for (int lev = 2; lev <= 1+m - depth; ++lev) {
+        auto& tt = t.m_data[lev - 1];
+        std::fill(tt.begin(), tt.end(),(Number) 0.0);
+        for (int leftLev = 1; leftLev < lev; ++leftLev) {
+          int rightLev = lev - leftLev;
+          auto& aa = x.m_data[leftLev - 1];
+          auto& bb = s.m_data[rightLev - 1];
+          auto dest = t.m_data[lev - 1].begin();
+          for (const Number& c : aa)
+            for (const Number& dd : bb)
+              *(dest++) += dd * c;
+        }
+        for(Number& dest : t.m_data[lev-1])
+          dest *= constant;
+      }
+      //make s be x+t up to level (1+m-depth)
+      if (depth > 1) {
+        for (int lev = 1; lev <= 1 + m - depth; ++lev) {
+          auto is = s.m_data[lev - 1].begin();
+          auto ix = x.m_data[lev - 1].begin();
+          auto es = s.m_data[lev - 1].end();
+          auto it = t.m_data[lev - 1].begin();
+          for (; is != es; ++is, ++it, ++ix)
+            *is = *ix + *it;
+        }
+        if (save_sums && depth>2 && depth!=m) {
+          save_sums->push_back(s);
+        }
+      }
+    }
+    //x isn't modified until this next bit.
+    //make x be x+t
+    for (int lev = 2; lev <= m; ++lev) {
+      auto it = t.m_data[lev - 1].begin();
+      auto ix = x.m_data[lev - 1].begin();
+      auto ex = x.m_data[lev - 1].end();
+      for (; ix != ex; ++ix, ++it)
+        *ix += *it;
+    }
+    if (save_sums)
+      save_sums->push_back(std::move(s));
+  }
+
+
+  //exp(x) = 1 + x + x**2/2 + x**3/6
+  void expTensorNaive(Signature& s){
+    const int m = (int)s.m_data.size();
+    const int d = (int)s.m_data[0].size();
+    vector<Signature> powers;
+    powers.reserve(m);
+    powers.push_back(s);
+    for(int power = 2; power<=m; ++power){
+      powers.push_back(concatenateWith_zeroFirstLevel(d,m,powers.back(),s));
+    }
+    float factor = 1;
+    for(int power = 2; power<=m; ++power){
+      factor /= power;
+      powers[power-1].multiplyByConstant((Number)(factor));
+    }
+    for(int power = 2; power<=m; ++power){
+      for(int level=0; level<m; ++level)
+        for(size_t i=0; i<s.m_data[level].size(); ++i)
+          s.m_data[level][i] += powers[power-1].m_data[level][i];
+    }
+  }
   /*
   //If z is concatenateWith_zeroFirstLevel(..,x,y), set out to y (up to level m-1).
   //x must be given up to at least level m-1, z up to at least m
@@ -390,6 +474,50 @@ namespace CalcSignature{
     //Now just have to backprop level 2 of derivs from x*x/m to x
     {
       Number scalar = factor / ((Number)m);
+      for(int i=0; i<d; ++i)
+        for (int j = 0; j < d; ++j) {
+          x_derivs.m_data[0][i] += derivs.m_data[1][i + d*j] * sig.m_data[0][j] * scalar;
+          x_derivs.m_data[0][j] += derivs.m_data[1][i + d*j] * sig.m_data[0][i] * scalar;
+        }
+    }
+    derivs.swap(x_derivs);
+  }
+
+  //Given a signature sig and derivs being the derivative of F wrt exp(sig),
+  //make derivs be the derivative of F wrt sig
+  void expBackwards(Signature& derivs, const Signature& sig) {
+    auto sig_copy = sig;
+    int m = (int)sig.m_data.size();
+    if (m <= 1)
+      return;
+    int d = (int)sig.m_data[0].size();
+    auto x_derivs = derivs;
+    vector<Signature> sums;
+    sums.reserve(m-1);
+    expTensorHorner(sig_copy, &sums);
+    Signature other_derivs;
+    for (int depth = 1; depth + 1 < m; ++depth) {
+      Number scalar = 1 / ((Number) depth+1);
+      //Number scalar = (Number)(1.0) + depth;
+      auto& sum_to_use = sums[m - 2 - depth];
+      //the original product is of (sig*scalar) and sum_to_use.
+      //TODO: avoid using this extra copy?
+      sig_copy = sig;
+      sig_copy.multiplyByConstant(scalar);
+      backConcatenate_zeroFirstLevel(d, m + 1 - depth, sig_copy, sum_to_use, derivs, other_derivs);
+      for (int lev = 1; lev <= m - depth; ++lev) {
+        auto it = x_derivs.m_data[lev - 1].begin();
+        for (Number dd : derivs.m_data[lev - 1])
+          *(it++) += scalar * dd;
+        it = x_derivs.m_data[lev - 1].begin();
+        for (Number dd : other_derivs.m_data[lev - 1])//merge with other loop
+          *(it++) += dd;
+      }
+      other_derivs.swap(derivs);
+    }
+    //Now just have to backprop level 2 of derivs from x*x/m to x
+    {
+      Number scalar = 1./m;
       for(int i=0; i<d; ++i)
         for (int j = 0; j < d; ++j) {
           x_derivs.m_data[0][i] += derivs.m_data[1][i + d*j] * sig.m_data[0][j] * scalar;

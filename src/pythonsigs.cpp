@@ -947,6 +947,7 @@ class LeastSquares {
   PyObject* m_svd;
   PyObject* m_qrScipy = nullptr;
   ReleasableRefHolder m_t_, m_l_, m_p_, m_s_, m_q_; //we can do better than this
+  mutable vector<float> m_tempSpace;
 public:
   bool m_ok = false;
   LeastSquares(bool wantQR = false) {
@@ -1157,9 +1158,9 @@ public:
   //which is a c x r matrix 
   //returns true on success
   bool inplacePinvMatrix(float* matrix, size_t r, size_t c) const {
-    vector<float> input(matrix, matrix + r*c);
+    m_tempSpace.assign(matrix, matrix + r*c);
     npy_intp dims2[] = { (npy_intp)(r), (npy_intp)c };
-    PyObject* mat = PyArray_SimpleNewFromData(2, dims2, NPY_FLOAT32, input.data());
+    PyObject* mat = PyArray_SimpleNewFromData(2, dims2, NPY_FLOAT32, m_tempSpace.data());
     RefHolder m_(mat);
     PyObject* o = PyObject_CallFunctionObjArgs(m_pinv, mat, NULL);
     if (!o)
@@ -1461,10 +1462,12 @@ static PyObject* info(PyObject *self, PyObject *args) {
   if (lsf->canCalculateViaArea())
     methods += 'A';
   methods += 'X';
+  PyObject* logsig2sig = lsf->m_support_logsig2sig ? Py_True : Py_False;
   const char* basis = (lsf->m_s.m_basis == LieBasis::StandardHall) ? 
                           "Standard Hall" : "Lyndon";
-  return Py_BuildValue("{sisissss}", "dimension", lsf->m_dim, "level",
-    lsf->m_level, "methods", methods.c_str(), "basis", basis);
+  return Py_BuildValue("{sisisssssO}", "dimension", lsf->m_dim, "level",
+    lsf->m_level, "methods", methods.c_str(), "basis", basis,
+    "logsigtosig_supported", logsig2sig);
 }
 
 static int getSigLength(LogSigFunction* lsf) {
@@ -1708,6 +1711,126 @@ logsigbackwards(PyObject *self, PyObject *args) {
   return o;
 }
 
+static PyObject *
+logsigtosig(PyObject *self, PyObject *args){
+  PyObject* a1, *a2;
+  if (!PyArg_ParseTuple(args, "OO", &a1, &a2))
+    return nullptr;
+  LogSigFunction* lsf = getLogSigFunction(a2);
+  if(!lsf)
+    return nullptr;
+  WantedMethods wantedmethods;
+  std::string methodString="S";
+  if(setWantedMethods(wantedmethods,lsf->m_dim,lsf->m_level,true,false,methodString))
+    ERR(wantedmethods.m_errMsg);
+  PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  if (!aa) ERR("data must be (convertable to) a numpy array");
+  RefHolder a_(aa);
+  PyArrayObject* a = (PyArrayObject*)aa;
+
+  int ndims = PyArray_NDIM(a);
+  if (ndims < 1) ERR("no logsignatures provided");
+  const int logsiglength = (int)PyArray_DIM(a, ndims - 1);
+  if (logsiglength != lsf->logSigLength())
+    ERR(("data has length " + std::to_string(logsiglength) + " but log signatures should have length "
+	 + std::to_string(lsf->logSigLength())).c_str());
+  if(!lsf->m_support_logsig2sig)
+    ERR("We did not prepare for log sig -> sig conversion. Ensure '2' is in the method string in prepare");
+  double* data = static_cast<double*>(PyArray_DATA(a));
+
+  int nPaths = 1;
+  for (int i = 0; i + 1 < ndims; ++i) {
+    npy_intp x = PyArray_DIM(a, i);
+    nPaths *= (int)x;
+  }
+
+  using OutT=UseDouble;
+  PyObject* o = simpleNew_ownLastDim(ndims, a, lsf->m_siglength, OutT::typenum);
+  if (!o)
+    return nullptr;
+  auto outp = static_cast<OutT::T*>(PyArray_DATA(
+    reinterpret_cast<PyArrayObject*>(o)));
+  ReleasableRefHolder o_(o);
+
+  Signature sig;
+  bool ok = do_interruptible([&] {
+    for (int path = 0; path < nPaths; ++path) {
+      logsigToSig(data+path*logsiglength, *lsf, outp+path*lsf->m_siglength);
+    }
+    return true;
+  });
+  if (!ok)
+    return nullptr;
+  o_.release();
+  return o;
+}
+
+static PyObject *
+logsigtosigBackwards(PyObject *self, PyObject *args){
+  PyObject* a1, *a2, *a0;
+  if (!PyArg_ParseTuple(args, "OOO", &a0, &a1, &a2))
+    return nullptr;
+  LogSigFunction* lsf = getLogSigFunction(a2);
+  if(!lsf)
+    return nullptr;
+  WantedMethods wantedmethods;
+  std::string methodString="S";
+  if(setWantedMethods(wantedmethods,lsf->m_dim,lsf->m_level,true,false,methodString))
+    ERR(wantedmethods.m_errMsg);
+  PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  if (!aa) ERR("data must be (convertable to) a numpy array");
+  RefHolder a_(aa);
+  PyArrayObject* a = (PyArrayObject*)aa;
+
+  PyObject* derivs = PyArray_ContiguousFromAny(a0, NPY_FLOAT64, 0, 0);
+  if (!derivs) ERR("derivs must be (convertable to) a numpy array");
+  RefHolder derivs_(derivs);
+  PyArrayObject* derivsa = (PyArrayObject*)derivs;
+
+  int ndims = PyArray_NDIM(a);
+  if (ndims < 1) ERR("no logsignatures provided");
+  if (ndims != PyArray_NDIM(derivsa))
+    ERR("data and derivs must have the same number of dimensions.")
+  const int logsiglength = (int)PyArray_DIM(a, ndims - 1);
+  if (logsiglength != lsf->logSigLength())
+    ERR(("data has length " + std::to_string(logsiglength) + " but log signatures should have length "
+	 + std::to_string(lsf->logSigLength())).c_str());
+  if (lsf->m_siglength != (int)PyArray_DIM(derivsa, ndims - 1))
+    ERR("derivatives have unexpected length");
+  if(!lsf->m_support_logsig2sig)
+    ERR("We did not prepare for log sig -> sig conversion. Ensure '2' is in the method string in prepare");
+  double* data = static_cast<double*>(PyArray_DATA(a));
+  double* derivsp = static_cast<double*>(PyArray_DATA(derivsa));
+
+  int nPaths = 1;
+  for (int i = 0; i + 1 < ndims; ++i) {
+    npy_intp x = PyArray_DIM(a, i);
+    if (PyArray_DIM(derivsa, i) != x)
+      ERR("mismatched dimensions between data and derivs");
+    nPaths *= (int)x;
+  }
+
+  using OutT = UseDouble;
+  PyObject* o = PyArray_ZEROS(ndims, PyArray_DIMS(a), OutT::typenum, 0);
+  if (!o)
+    return nullptr;
+  auto outp = static_cast<OutT::T*>(PyArray_DATA(
+    reinterpret_cast<PyArrayObject*>(o)));
+  ReleasableRefHolder o_(o);
+
+  Signature sig;
+  bool ok = do_interruptible([&] {
+    for (int path = 0; path < nPaths; ++path) {
+      logsigToSigBackwards(data+path*logsiglength, derivsp+path*lsf->m_siglength, *lsf, outp+path*logsiglength);
+    }
+    return true;
+  });
+  if (!ok)
+    return nullptr;
+  o_.release();
+  return o;
+}
+
 #endif
 
 const char* const rotInv_id = "iisignature.rotInv";
@@ -1923,14 +2046,15 @@ rotinv2dcoeffs(PyObject *self, PyObject *args) {
 }
 #endif //IISIGNATURE_NO_NUMPY
 
-#define METHOD_DESC "some combination of 'd' (the default), "\
-  "'c' (the bch formula compiled on the fly), "\
-  "'o' (the bch formula evaluated simply and stored in an object without " \
+#define METHOD_DESC "some combination of 'D' (the default), "\
+  "'C' (the bch formula compiled on the fly), "\
+  "'O' (the bch formula evaluated simply and stored in an object without " \
   "on-the-fly compilation and perhaps more slowly), "\
-  "'a' (simple area calculation, useful for level <=2), "\
-  "and 's' (calculating the log signature by first calculating "\
+  "'A' (simple area calculation, useful for level <=2), "\
+  "'S' (calculating the log signature by first calculating "\
   "the signature and then taking its log, "\
-  "which may be faster for high levels or long paths)"
+  "which may be faster for high levels or long paths), "\
+  "and 'X' (which is a bit special: means the log signature returned expanded in tensor space)"
 
 static PyMethodDef Methods[] = {
 #ifndef IISIGNATURE_NO_NUMPY
@@ -1993,7 +2117,9 @@ static PyMethodDef Methods[] = {
    "This prepares the way to calculate log signatures of d dimensional paths"
    " up to level m. The returned object is used in the logsig, basis and info functions. \n"
    " By default, all methods will be prepared, but you can restrict it "
-   "by setting methods to " METHOD_DESC "."},
+   "by setting methods to " METHOD_DESC ". Adding 'H' to methods makes the basis used be "
+   "the standard Hall basis, otherwise the Lyndon basis is used. Adding '2' allows the "
+   "logsigtosig function to be used."},
   {"basis", basis, METH_VARARGS, "basis(s) \n  Returns a tuple of strings "
    "which are the basis elements of the log signature. s must have come from prepare."
    " This function is work in progress, especially for dimension greater than 8. "
@@ -2011,6 +2137,14 @@ static PyMethodDef Methods[] = {
   {"logsigbackprop", logsigbackwards, METH_VARARGS, "logsigbackprop(y, X, s, methods=None) \n"
    "gives the derivatives of F with respect to X where y is the derivatives"
    " of F with respect to logsig(X,s,methods). The result has the same shape as X." },
+  {"logsigtosig", logsigtosig, METH_VARARGS, "logsigtosig(X, s) \n "
+   "Returns the signature of the path whose log signature is X. X must be a numpy [...xL] float32 "
+   "or float64 array of log(signatures) making up the path in R^d. s must have come from "
+   "prepare(d,m,method) for some m, where L is logsiglength(d,m) and the method string contains "
+   "the number 2. The value is returned as a numpy array of shape [...,iisignature.siglength(d,m)]."},
+  {"logsigtosigbackprop", logsigtosigBackwards, METH_VARARGS, "logsigtosig(y, X, s) \n "
+   "gives the derivatives of F with respect to X where y is the derivatives"
+   " of F with respect to logsigtosig(X,s). The result has the same shape as X." },
   { "rotinv2d", rotinv2d, METH_VARARGS, "rotinv(X,s) \n "
   "Calculates the linear rotational invariants of the signature of the path X. X must be a "
   "[...x]Nx2 array of points making up the path(s) in R^2. "
