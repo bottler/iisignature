@@ -18,7 +18,7 @@ Install with::
 
 Don't install this package if you don't have numpy > 1.7 installed. 
 On Windows, this package is not usable with Python 2.x. 
-For Python 3.5, 3.6 and 3.7 on Windows, there are precompiled wheels available, you may need to do ``pip install wheel`` to use them.
+For Python 3.5, 3.6, 3.7 and 3.8 on Windows, there are precompiled wheels available, you may need to do ``pip install wheel`` to use them.
 On other platforms, you will need to be able to compile C++ extensions. 
 On a Mac, you will need to have installed Xcode and the Xcode command line tools before doing the installation.
 The fastest, on-the-fly compiled versions of the log signature calculations are for Windows, Mac and Linux, on both 32 and 64 bit.
@@ -48,7 +48,7 @@ after which you can use the package in Python in this directory, use the example
 Authors
 -------
 
-* Dr Benjamin Graham
+* Benjamin Graham
 * Jeremy Reizenstein
 
 Thanks
