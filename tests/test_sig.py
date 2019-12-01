@@ -109,7 +109,6 @@ def sigOfSegment(displacement, level):
     d = displacement.shape[0]
     sig = [displacement]
     mults = 0
-    denominator = 1
     for m in range(2,level + 1):
         other = sig[-1]
         mults += 2 * other.shape[0] * d
@@ -584,8 +583,26 @@ class SimpleCases(TestCase):
         #expected = numpy.stack([iisignature.sig(path[:,:,:(i+1)],m) for i in range(1,length)],-2)
         expected = numpy.rollaxis(stack([iisignature.sig(path[:,:,:(i+1)],m) for i in range(1,length)]),0,3)
         self.assertTrue(numpy.allclose(expected, cumul))
-
         
+    def testSquareLevel2(self):
+        path = numpy.array([[0,0],[1,0],[1,1],[0,1],[0,0]])
+        m=2
+        sig = iisignature.sig(path, m)
+        self.assertTrue(numpy.allclose(sig, [0,0,0,1,-1,0]))
+
+    def testEllLevel2(self):
+        path = numpy.array([[0,0],[1,0],[1,1]])
+        m=2
+        sig = iisignature.sig(path, m)
+        self.assertTrue(numpy.allclose(sig, [1,1,0.5,1,0,0.5]))
+
+    def test1d(self):
+        path=numpy.array([[0],[1],[3]])
+        m=3
+        sig=iisignature.sig(path,m)
+        self.assertTrue(numpy.allclose(sig, [3,4.5,4.5]))
+
+
 class Scales(TestCase):
     #check sigscale and its derivatives
     def testa(self):
