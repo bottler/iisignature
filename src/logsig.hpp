@@ -806,8 +806,8 @@ void logSigUsingArea(const double* path, int N, int m, int dim, double* out){
 
 void logSigUsingAreaBackwards(const double* path, int N, int m, int dim, const double* result, float* out){
   for (int d = 0; d<dim; ++d){
-    out[(N-1)*dim+d] += *result;
-    out[d] -= *result;
+    out[(N-1)*dim+d] += (float)*result;
+    out[d] -= (float)*result;
     ++result;
   }
   if(m>=2){
@@ -817,12 +817,12 @@ void logSigUsingAreaBackwards(const double* path, int N, int m, int dim, const d
         const double s1 = path[d1];
         const double s2 = path[d2];
         for (int n=0; n+1<N; ++n){
-          out[d1] -= (path[(n+1)*dim+d2]-path[(n)*dim+d2])*r;
-          out[d2] -= (path[(n)*dim+d1]-path[(n+1)*dim+d1])*r;
-          out[(n)*dim+d1] += (path[(n+1)*dim+d2]-s2)*r;
-          out[(n)*dim+d2] -= (path[(n+1)*dim+d1]-s1)*r;
-          out[(n+1)*dim+d2] += (path[(n)*dim+d1]-s1)*r;
-          out[(n+1)*dim+d1] -= (path[(n)*dim+d2]-s2)*r;
+          out[d1] -= (float)((path[(n+1)*dim+d2]-path[(n)*dim+d2])*r);
+          out[d2] -= (float)((path[(n)*dim+d1]-path[(n+1)*dim+d1])*r);
+          out[(n)*dim+d1] += (float)((path[(n+1)*dim+d2]-s2)*r);
+          out[(n)*dim+d2] -= (float)((path[(n+1)*dim+d1]-s1)*r);
+          out[(n+1)*dim+d2] += (float)((path[(n)*dim+d1]-s1)*r);
+          out[(n+1)*dim+d1] -= (float)((path[(n)*dim+d2]-s2)*r);
         }
       }
   }
