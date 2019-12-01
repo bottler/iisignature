@@ -1180,10 +1180,11 @@ public:
     return true;
   }
 
-  //inp is a dxm matrix and sub is a dxn matrix with n<m
+/*
+   //inp is a dxm matrix and sub is a dxn matrix with n<m
   //set out to a dx(roughly m-n) matrix whose columns are perp to colspan(sub) and each other
   //s.t. colspan(out)=colspan(inp)
-  //This current method may be a big waste of time. We shouldn't need d^2 space.
+  //This method may be a big waste of time. We shouldn't need d^2 space.
   //I wonder if qr would beat svd, but I think we'd still need two.
   bool projectAwayFrom1(const vector<double>& inp, const vector<double>& sub, npy_intp d, vector<double>& out) {
     npy_intp m = inp.size() / d;
@@ -1247,6 +1248,7 @@ public:
       }
     return true;
   }
+ */
 
   //inp is a dxm matrix and sub is a dxn matrix with n<m
   //set out to a dx(roughly m-n) matrix whose columns are perp to colspan(sub) and each other
