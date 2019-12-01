@@ -29,11 +29,11 @@ ReverseAllBrackets[{a_,b_}]:={ReverseAllBrackets[b],ReverseAllBrackets[a]};
 
 LessExpressionStandardHall[a_, b_] := 
  With[{ll = LengthOfExpression[a], lr = LengthOfExpression[b]}, 
-  If[ll == lr, 
-   If[ll == 1, b < a, 
-    If[LessExpressionStandardHall[a[[1]], b[[1]]], True, 
-     If[LessExpressionStandardHall[b[[1]], a[[1]]], False, 
-      LessExpressionStandardHall[a[[2]], b[[2]]]]]], lr < ll]];
+  Which[ll != lr, lr<ll,
+        ll == 1, b < a,
+        a[[1]]===b[[1]],LessExpressionStandardHall[a[[2]], b[[2]]],
+        True, LessExpressionStandardHall[a[[1]], b[[1]]]
+        ]];
 
 (*lexicographic on the foliage. Obvs this will go haywire if d exceeds 9.*)
 LessExpressionLyndon[a_,b_]:=
