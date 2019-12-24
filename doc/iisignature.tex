@@ -175,7 +175,7 @@ the derivatives of $F$ with respect to \verb!sigjoin(sigs, segments, m, fixedLas
 \verb!sigcombine(sigs1, sigs2, d, m)!\i{sigcombine}
 
 \begin{defn}
-\nopagebreak Given the signature of two paths in dimension $d$ up to level $m$, return the signature of the two path concatenated. This is the Chen multiplication of two signatures. Both \verb|sigs1| and \verb|sigs2| must have the same shape \verb|(...,siglength(d,m))|.
+\nopagebreak Given the signature of two paths in dimension $d$ up to level $m$, return the signature of the two paths concatenated. This is the Chen multiplication of two signatures. Both \verb|sigs1| and \verb|sigs2| must have the same shape \verb|(...,siglength(d,m))|.
 \end{defn}
 \verb!sigcombinebackprop(derivs, sigs1, sigs2, d, m)!\i{sigcombinebackprop}
 
@@ -312,7 +312,7 @@ If $d>9$, the output of this function is not yet fixed. An example of how to par
 	\nopagebreak If \verb!s! is the result of calling \verb!prepare(d,m[,...])!, then this returns a dictionary of properties of \verb|s|, including a list of methods which it supports. This may be a useful diagnostic.
 \end{defn}
 
-\verb!logsigtosig(logsig, s))! \i{logsigtosig}
+\verb!logsigtosig(logsig, s)! \i{logsigtosig}
 
 \begin{defn}
 \nopagebreak If \verb!s! is the result of calling \verb!prepare(d,m,methods)!,
