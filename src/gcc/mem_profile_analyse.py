@@ -29,8 +29,19 @@ save=1
 if save:
     mpl.use("pdf")
 import matplotlib.pyplot as plt
+useLibertine = True
 plt.rc('text', usetex=True)
-plt.rc('font', **{'family': 'serif', 'serif': ['Computer Modern'], 'monospace' : ['Computer Modern']})
+if useLibertine:
+    pre="""
+\usepackage[T1]{fontenc}
+\usepackage[tt=false,type1=true]{libertine}
+%\setmonofont{inconsolata}
+\usepackage[varqu]{zi4}
+\usepackage[libertine]{newtxmath}
+"""
+    plt.rcParams['text.latex.preamble'] = pre #'\usepackage{libertine},\usepackage[libertine]{newtxmath},\usepackage{sfmath},\usepackage[T1]{fontenc}'
+else:
+    plt.rc('font', **{'family': 'serif', 'serif': ['Computer Modern'], 'monospace' : ['Computer Modern']})
 plt.rc('xtick', labelsize=8)
 plt.rc('ytick', labelsize=8)
 plt.rc('legend', fontsize=8)
@@ -71,7 +82,7 @@ def get(d,m,method,basis):
 #print (tabulate.tabulate(b,headers=["method","d","m", "reps","time"]))
 
 Order = ["C","S"]
-d=2
+d=3
 max_m={2:11,3:10,4:6,5:6}[d]
 x=list(range(2,1+max_m))
 y=[[get(d,m,method,"L") for m in x] for method in Order]
@@ -101,7 +112,7 @@ plt.ylabel('usage(bytes) - logarithmic scale')
 #grapher.pushplot(plt)
 #plt.draw()
 #dpi doesn't change the scale in the picture
-filename = "/home/jeremyr/Dropbox/phd/graphs/memsweep"+str(d)+"d"
+filename = "/home/jeremyr/Dropbox/phd/graphs/memsweep"+str(d)+"d"+("Lib" if useLibertine else "")
 
 if save:
     fig.set_size_inches(width,height)
