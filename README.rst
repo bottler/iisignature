@@ -53,12 +53,12 @@ It can also be found on arxiv at <https://arxiv.org/abs/1802.08252>.
 If you find iisignature useful in your research then please cite:
 
 ```
-@article{iisignature,
-  title={Algorithm 1004: The iisignature Library: Efficient Calculation of Iterated-Integral Signatures and Log Signatures},
-  author={Jeremy Reizenstein and Benjamin Graham},
-  journal={ACM Transactions on Mathematical Software (TOMS)},
-  year={2020}
-}
+  @article{iisignature,
+    title={Algorithm 1004: The iisignature Library: Efficient Calculation of Iterated-Integral Signatures and Log Signatures},
+    author={Jeremy Reizenstein and Benjamin Graham},
+    journal={ACM Transactions on Mathematical Software (TOMS)},
+    year={2020}
+  }
 ```
 
 Authors
