@@ -14,6 +14,7 @@ def trySig():
     print(result.data)
     result.backward(torch.randn(result.size()))
     print(inp.grad)
+trySig()
 
 def tryLogSig():
     s=iisignature.prepare(2,2)
@@ -36,7 +37,7 @@ def trySigScale():
     result.backward(torch.randn(result.size()))
     print(inp1.grad)
     print(inp2.grad)
-#trySigScale()
+trySigScale()
 
 def trySigJoin():
     inp1 = Variable(torch.randn(12,6), requires_grad=True)
@@ -46,7 +47,7 @@ def trySigJoin():
     result.backward(torch.randn(result.size()))
     print(inp1.grad)
     print(inp2.grad)
-#trySigJoin()
+trySigJoin()
 
 def trySigJoin2():
     inp1 = Variable(torch.randn(12,12), requires_grad=True)
@@ -58,4 +59,4 @@ def trySigJoin2():
     print(inp1.grad)
     print(inp2.grad)
     print(inp3.grad)
-#trySigJoin2()
+trySigJoin2()
