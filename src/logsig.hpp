@@ -893,7 +893,7 @@ bool setWantedMethods(WantedMethods& w, int dim, int level, bool consumer, bool 
   bool defaultIsLog = !(defaultIsCompiled || defaultIsArea);
   bool doEverything = noInput && consumer;
   bool forceCompiled = (defaultIsCompiled && doDefault) || doEverything;
-  bool forceLog = (defaultIsLog && doDefault) || doEverything;
+  bool forceLog = (defaultIsLog && doDefault) || doEverything || needLogsig2Sig;
   bool forceArea = (defaultIsArea && doDefault) || (canUseArea && (doEverything || needLogsig2Sig));
 
   w.m_compiled_bch = forceCompiled || npos!=input.find_first_of("cC");

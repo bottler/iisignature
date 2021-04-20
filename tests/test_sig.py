@@ -391,6 +391,10 @@ class LogSig2Sig(TestCase):
     def testCoropa(self):
         self.doL2S(True)
 
+    def testIssue16(self):
+        # github-reported crash, issue #16
+        iisignature.prepare(3, 3, '2')
+
 
 class Deriv(TestCase):
     def testSig(self):
