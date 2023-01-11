@@ -829,7 +829,11 @@ void logSigUsingAreaBackwards(const double* path, int N, int m, int dim, const d
 }
                     
 struct WantedMethods{
-  bool m_compiled_bch = true;
+  #ifdef IISIGNATURE_NO_COMPILE
+    bool m_compiled_bch = false;
+  #else
+    bool m_compiled_bch = true;
+  #endif
   bool m_simple_bch = true;
   bool m_log_of_signature = true;
   bool m_area = true;
@@ -880,8 +884,15 @@ const char* const tooBigRequest = "this dimension and level are beyond the limit
 
 const char* const tooBigNonAreaRequest = "you must use the 'A' (area) method for this dimension and level";
 
+const char* const wrongArchRequest = "Cannot use the 'C' (compiled) method with this CPU architecture";
+
 //interpret a string as a list of wanted methods, return true on error
 bool setWantedMethods(WantedMethods& w, int dim, int level, bool consumer, bool noBCH, const std::string& input){
+  #ifdef IISIGNATURE_NO_COMPILE
+    bool cancompile = false;
+  #else
+    bool cancompile = true;
+  #endif
   const auto npos = std::string::npos;
   bool noInput = npos == input.find_first_of("cCdDoOsSxXaA"); //no method (DCOSXA) is given
   bool needLogsig2Sig = npos!=input.find_first_of("2");
@@ -889,10 +900,10 @@ bool setWantedMethods(WantedMethods& w, int dim, int level, bool consumer, bool 
   bool mustUseArea = dim > std::numeric_limits<Letter>::max();
   bool canUseArea = level < 3;
   bool defaultIsArea = canUseArea && dim>40;
-  bool defaultIsCompiled = !noBCH && ((dim==2 && level<10) || (dim>2 && dim<10 && level < 5));
+  bool defaultIsCompiled = cancompile && !noBCH && ((dim==2 && level<10) || (dim>2 && dim<10 && level < 5));
   bool defaultIsLog = !(defaultIsCompiled || defaultIsArea);
   bool doEverything = noInput && consumer;
-  bool forceCompiled = (defaultIsCompiled && doDefault) || doEverything;
+  bool forceCompiled = (defaultIsCompiled && doDefault) || (doEverything && cancompile);
   bool forceLog = (defaultIsLog && doDefault) || doEverything || needLogsig2Sig;
   bool forceArea = (defaultIsArea && doDefault) || (canUseArea && (doEverything || needLogsig2Sig));
 
@@ -906,6 +917,10 @@ bool setWantedMethods(WantedMethods& w, int dim, int level, bool consumer, bool 
   bool totallyInvalid = npos!=input.find_first_not_of("cCdDhHoOsSaAxX2 ");
   if (totallyInvalid) {
     w.m_errMsg = methodError;
+    return true;
+  }
+  if (w.m_compiled_bch && !cancompile){
+    w.m_errMsg = wrongArchRequest;
     return true;
   }
   if (consumer && w.m_expanded &&

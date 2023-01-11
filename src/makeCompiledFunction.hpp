@@ -16,6 +16,10 @@
 # include <sys/mman.h>
 #endif
 
+#ifdef __arm__
+ #define IISIGNATURE_NO_COMPILE
+#endif
+
 //#include "spacedVector.h"
 
 //Mem is a memory buffer in which you write a function in machine code.
