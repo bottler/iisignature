@@ -101,8 +101,9 @@ struct FunctionData{
   size_t m_length_of_b = 0; //to add on at end
 };
 
-//The following function is the function which Maker creates (except this function takes d as a parameter, and that function takes t as a parameter).
-void slowExplicitFunction(double* a, const double* b, const FunctionData& d){
+
+//Used by slowExplicitFunction
+static std::vector<double> make_t(const double* a, const double* b, const FunctionData& d){
   std::vector<double> t(d.m_formingT.size());
   for(size_t i=0; i<d.m_formingT.size(); ++i){
     double lhs, rhs;
@@ -114,8 +115,9 @@ void slowExplicitFunction(double* a, const double* b, const FunctionData& d){
       lhs = b[d.m_formingT[i].first.second];
       break;
     default:
+      //actually never happens
       lhs = t[d.m_formingT[i].first.second];
-    }    
+    }
     switch(d.m_formingT[i].second.first){
     case InputArr::A:
       rhs = a[d.m_formingT[i].second.second];
@@ -125,9 +127,16 @@ void slowExplicitFunction(double* a, const double* b, const FunctionData& d){
       break;
     default:
       rhs = t[d.m_formingT[i].second.second];
-    }    
+    }
     t[i] = lhs * rhs;
   }
+  return t;
+}
+
+
+//The following function is the function which Maker creates (except this function takes d as a parameter, and that function takes t as a parameter).
+void slowExplicitFunction(double* a, const double* b, const FunctionData& d){
+  std::vector<double> t = make_t(a, b, d);
   for(auto l : d.m_lines){
     a[l.m_lhs_offset] += (l.m_negative ? -1 : 1) * t[l.m_rhs_offset] * d.m_constants[l.m_const_offset];
   }
@@ -135,6 +144,49 @@ void slowExplicitFunction(double* a, const double* b, const FunctionData& d){
     a[i]+=b[i];
 }
 
+void slowExplicitFunctionBackward(const double* a, const double* b, const FunctionData& d,
+                          const double* d_out, double* d_a, double* d_b){
+  std::vector<double> t = make_t(a, b, d);
+  std::vector<double> dt (t.size());
+  //Need d_a to have been prefilled with d_out
+  for(size_t i=0; i<d.m_length_of_b; ++i)
+    d_b[i]+=d_out[i];
+  for(auto l=d.m_lines.rbegin(); l!=d.m_lines.rend(); ++l){
+    dt[l->m_rhs_offset] += (l->m_negative ? -1 : 1) * d.m_constants[l->m_const_offset] * d_out[l->m_lhs_offset];
+  }
+  for (size_t i = t.size()-1; i<t.size(); --i){
+    double lhs, rhs, *dlhs, *drhs;
+    switch(d.m_formingT[i].first.first){
+    case InputArr::A:
+      lhs = a[d.m_formingT[i].first.second];
+      dlhs = &d_a[d.m_formingT[i].first.second];
+      break;
+    case InputArr::B:
+      lhs = b[d.m_formingT[i].first.second];
+      dlhs = &d_b[d.m_formingT[i].first.second];
+      break;
+    default:
+      //actually never happens
+      lhs = t[d.m_formingT[i].first.second];
+      dlhs = &dt[d.m_formingT[i].first.second];
+    }
+    switch(d.m_formingT[i].second.first){
+    case InputArr::A:
+      rhs = a[d.m_formingT[i].second.second];
+      drhs = &d_a[d.m_formingT[i].second.second];
+      break;
+    case InputArr::B:
+      rhs = b[d.m_formingT[i].second.second];
+      drhs = &d_b[d.m_formingT[i].second.second];
+      break;
+    default:
+      rhs = t[d.m_formingT[i].second.second];
+      drhs = &dt[d.m_formingT[i].second.second];
+    }
+    *drhs += lhs * dt[i];
+    *dlhs += rhs * dt[i];
+  }
+}
 
 //To use an 8 bit offset (rather than 32) into a vector<double> 
 //you waste 3 bits, 1 is the sign, so you can move +-16 or so

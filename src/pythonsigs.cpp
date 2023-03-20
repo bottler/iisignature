@@ -1833,6 +1833,173 @@ logsigtosigBackwards(PyObject *self, PyObject *args){
   return o;
 }
 
+static PyObject *
+logsigJoin(PyObject *self, PyObject *args){
+  PyObject *a1, *a2, *a3;
+  if (!PyArg_ParseTuple(args, "OOO", &a1, &a2, &a3))
+    return nullptr;
+  LogSigFunction* lsf = getLogSigFunction(a3);
+  if(!lsf)
+    return nullptr;
+
+  PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  if (!aa) ERR("sigs must be (convertable to) a numpy array");
+  RefHolder a_(aa);
+  PyArrayObject* a = (PyArrayObject*)aa;
+  PyObject* bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
+  if (!bb) ERR("data must be (convertable to) a numpy array");
+  RefHolder b_(bb);
+  PyArrayObject* b = (PyArrayObject*)bb;
+
+  int ndims = PyArray_NDIM(a);
+  if (ndims < 1) ERR("no signatures provided");
+  if (PyArray_NDIM(b) != ndims) ERR("sigs and data must have the same number of dimensions");
+  const int d_given = (int)PyArray_DIM(b, ndims-1);
+  if (d_given != lsf->m_dim) ERR("step has wrong last dimension");
+  const int logSigLength = lsf->logSigLength();
+  if ((size_t)logSigLength != (size_t)PyArray_DIM(a, ndims-1))
+    ERR("log signatures have unexpected length");
+
+  int nPaths = 1;
+  for (int i = 0; i + 1 < ndims; ++i) {
+    npy_intp x = PyArray_DIM(a, i);
+    if (PyArray_DIM(b, i) != x)
+      ERR("mismatched dimensions between sigs and data");
+    nPaths *= (int)x;
+  }
+
+  ReadArrayAsDoubles logsig, displacement;
+  if(logsig.read(a,nPaths*logSigLength)||displacement.read(b,nPaths*d_given))
+    ERR("Out of memory");
+
+  using OutT = UseDouble;
+  PyObject* o = PyArray_SimpleNew(ndims, PyArray_DIMS(a),OutT::typenum);
+  if(!o)
+    return nullptr;
+  auto out = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
+  auto displacement_ = displacement.ptr();
+
+  FunctionRunner* f = lsf->m_f.get();
+  if (f!=nullptr || lsf->m_fd.m_length_of_b>0){
+    const bool useCompiled = f!=nullptr;
+    for(int i=0; i<nPaths * logSigLength; ++i)
+      out[i] = logsig.ptr()[i];
+    for (int path = 0; path < nPaths; ++path) {
+      if (useCompiled)
+        f->go(out, displacement_);
+      else
+        slowExplicitFunction(out, displacement_, lsf->m_fd);
+      out += logSigLength;
+      displacement_ += d_given;
+    }
+    return o;
+  }
+  if (lsf->canCalculateViaArea()){
+    for (int path = 0; path < nPaths; ++path) {
+      logSigJoinUsingArea(logsig.ptr()+path * logSigLength, displacement_, lsf->m_level, d_given, out );
+      out += logSigLength;
+      displacement_ += d_given;
+    }
+    return o;
+  }
+  ERR("no method")
+}
+
+
+static PyObject *
+logsigJoinBackwards(PyObject *self, PyObject *args){
+  PyObject *a1, *a2, *a3, *a0;
+  if (!PyArg_ParseTuple(args, "OOOO", &a0, &a1, &a2, &a3))
+    return nullptr;
+  LogSigFunction* lsf = getLogSigFunction(a3);
+  if(!lsf)
+    return nullptr;
+
+  PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  if (!aa) ERR("sigs must be (convertable to) a numpy array");
+  RefHolder a_(aa);
+  PyArrayObject* a = (PyArrayObject*)aa;
+  PyObject* bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
+  if (!bb) ERR("data must be (convertable to) a numpy array");
+  RefHolder b_(bb);
+  PyArrayObject* b = (PyArrayObject*)bb;
+  PyObject* derivs = PyArray_ContiguousFromAny(a0, NPY_FLOAT64, 0, 0);
+  if (!derivs) ERR("derivs must be (convertable to) a numpy array");
+  RefHolder derivs_(derivs);
+  PyArrayObject* derivsa = (PyArrayObject*)derivs;
+
+  int ndims = PyArray_NDIM(a);
+  if (ndims < 1) ERR("no signatures provided");
+  if (PyArray_NDIM(b) != ndims) ERR("sigs and data must have the same number of dimensions");
+  if (PyArray_NDIM(derivsa) != ndims) ERR("sigs and derivs must have the same number of dimensions");
+  const int d_given = (int)PyArray_DIM(b, ndims-1);
+  if (d_given != lsf->m_dim) ERR("step has wrong last dimension");
+  const int logSigLength = lsf->logSigLength();
+  if ((size_t)logSigLength != (size_t)PyArray_DIM(a, ndims-1))
+    ERR("log signatures have unexpected length");
+  if ((size_t)logSigLength != (size_t)PyArray_DIM(derivsa, ndims-1))
+    ERR("derivs have unexpected length");
+
+  int nPaths = 1;
+  for (int i = 0; i + 1 < ndims; ++i) {
+    npy_intp x = PyArray_DIM(a, i);
+    if (PyArray_DIM(b, i) != x)
+      ERR("mismatched dimensions between sigs and data");
+    if (PyArray_DIM(derivsa, i) != x)
+      ERR("mismatched dimensions between sigs and derivs");
+    nPaths *= (int)x;
+  }
+
+  ReadArrayAsDoubles logsig, displacement, deriv;
+  if(logsig.read(a,nPaths*logSigLength)||deriv.read(derivsa,nPaths*logSigLength)
+      ||displacement.read(b,nPaths*d_given))
+    ERR("Out of memory");
+
+  using OutT = UseDouble;
+  PyObject* o1 = PyArray_SimpleNew(ndims, PyArray_DIMS(a),OutT::typenum);
+  if(!o1)
+    return nullptr;
+  auto out1 = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o1)));
+  PyObject* o2 = PyArray_SimpleNew(ndims, PyArray_DIMS(b),OutT::typenum);
+  if(!o2)
+    return nullptr;
+  auto out2 = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o2)));
+  auto displacement_ = displacement.ptr();
+  auto logsig_p = logsig.ptr();
+  auto deriv_p = deriv.ptr();
+
+  if (lsf->m_fd.m_length_of_b>0){
+    // Using O method
+    for(int i=0; i<nPaths * logSigLength; ++i)
+      out1[i] = deriv_p[i];
+    for(int i=0; i<nPaths * d_given; ++i)
+      out2[i] = 0;
+    for (int path = 0; path < nPaths; ++path) {
+      slowExplicitFunctionBackward(logsig_p, displacement_, lsf->m_fd, deriv_p, out1, out2);
+      out1 += logSigLength;
+      out2 += d_given;
+      deriv_p += logSigLength;
+      logsig_p += logSigLength;
+      displacement_ += d_given;
+    }
+    return Py_BuildValue("(NN)", o1, o2);
+  }
+
+  if (lsf->canCalculateViaArea()){
+    for (int path = 0; path < nPaths; ++path) {
+      logSigJoinUsingAreaBackwards(logsig_p, displacement_,
+            lsf->m_level, d_given, deriv_p, out1, out2 );
+      out1 += logSigLength;
+      out2 += d_given;
+      deriv_p += logSigLength;
+      logsig_p += logSigLength;
+      displacement_ += d_given;
+    }
+    return Py_BuildValue("(NN)", o1, o2);
+  }
+  ERR("no method available: currently need level <= 2")
+}
+
 #endif
 
 const char* const rotInv_id = "iisignature.rotInv";
@@ -2147,6 +2314,16 @@ static PyMethodDef Methods[] = {
   {"logsigtosigbackprop", logsigtosigBackwards, METH_VARARGS, "logsigtosig(y, X, s) \n "
    "gives the derivatives of F with respect to X where y is the derivatives"
    " of F with respect to logsigtosig(X,s). The result has the same shape as X." },
+  {"logsigjoin", logsigJoin, METH_VARARGS, "logsigjoin(X,D,s)\n "
+   "If X is an array of log signatures of d dimensional paths of shape "
+   "(..., logsiglength(d,m)) and D is an array of d dimensional displacements "
+   "of shape (..., d), then return an array shaped like X "
+   "of the logsignatures of the paths concatenated with the displacements. "
+   "s must have come from prepare(d,m) for some m and include methods C O or A."},
+  {"logsigjoinbackprop", logsigJoinBackwards, METH_VARARGS, "logsigjoinbackprop(y,X,D,s)\n "
+   "gives the derivatives of F with respect to X and D where y is the derivatives"
+   " of F with respect to logsigjoin(X,D,s). The result is a tuple of two items. "
+   "This is only implemented for the A and O methods."},
   { "rotinv2d", rotinv2d, METH_VARARGS, "rotinv(X,s) \n "
   "Calculates the linear rotational invariants of the signature of the path X. X must be a "
   "[...x]Nx2 array of points making up the path(s) in R^2. "

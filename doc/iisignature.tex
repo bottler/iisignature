@@ -329,6 +329,19 @@ the derivatives of $F$ with respect to \verb!logsigtosig(logsig, s)!.
 Returns an array of the same shape as \verb|logsig|.
 \end{defn}
 
+\verb!logsigjoin(sigs, segments, s)!\i{logsigjoin}
+
+\begin{defn}
+\nopagebreak Given the log signatures of paths in dimension $d$ up to level $m$ in a shape \verb|(...,siglength(d,m))| array and an extra displacement for each path, stored as an array of shape \verb|(...,d)|, and \verb!s! the result of calling \verb!prepare(d,m,methods), returns the log signatures of each of the paths concatenated with the extra displacement as an array of shape \verb|(...,logsiglength(d,m))|.
+\end{defn}
+\verb!logsigjoinbackprop(derivs, sigs, segments, s)!\i{logsigjoinbackprop}
+
+\begin{defn}
+\nopagebreak Returns the derivatives of some scalar function $F$ with respect to both \verb|sigs| and \verb|segments| as a tuple, given %that \verb|derivs| is
+the derivatives of $F$ with respect to \verb!logsigjoin(sigs, segments, s)!. Returns both an array of the same shape as \verb|sigs| and an array of the same shape as \verb|segments|.
+\end{defn}
+
+
 \subsection{Linear rotational invariants}
 \begin{center}
 	\begin{minipage}{0.7\textwidth}

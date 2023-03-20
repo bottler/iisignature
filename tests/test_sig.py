@@ -493,6 +493,58 @@ class Deriv(TestCase):
             self.assertTrue(numpy.allclose(fwds[1],fwds[2]),types[1])
 
 
+class LogSigJoin(TestCase):
+    def testjoining(self):
+        for level, method in [(3, "C"), (3, "O"), (2, "A")]:
+            numberToDo = 4
+            dim = 5
+            s = iisignature.prepare(dim, level, method)
+            siglength = iisignature.logsiglength(dim,level)
+            pathLength = 10
+            def makePath():
+                p = numpy.random.uniform(size=(pathLength,dim))
+                return p
+            paths = [makePath() for i in range(numberToDo)]
+            sig = numpy.vstack([iisignature.logsig(path,s) for path in paths])
+
+            joinee = numpy.zeros((numberToDo,siglength))
+            for i in range(1,pathLength):
+                displacements = [path[i:(i + 1),:] - path[(i - 1):i,:] for path in paths]
+                displacement = numpy.vstack(displacements)
+                joinee = iisignature.logsigjoin(joinee,displacement,s)
+            self.assertLess(diff(sig,joinee),0.0001)
+
+    def test_d(self):
+        numberToDo = 20
+        dim = 2
+        pathLength = 10
+        def makePath():
+            p = numpy.random.uniform(size=(pathLength,dim))
+            return p
+        paths = [makePath() for i in range(numberToDo)]
+        for level, method in [(2, "A"), (5, "O")]:
+            siglength = iisignature.logsiglength(dim,level)
+            s = iisignature.prepare(dim, level, method)
+
+            sig = numpy.vstack([iisignature.logsig(path,s) for path in paths])
+            joinee=sig
+            extra = numpy.random.uniform(size=(numberToDo,dim))
+            bumpedExtra = 1.001 * extra
+            bumpedJoinee = 1.001 * joinee
+            base = numpy.sum(iisignature.logsigjoin(joinee,extra,s))
+            bump1 = numpy.sum(iisignature.logsigjoin(bumpedJoinee,extra,s))
+            bump2 = numpy.sum(iisignature.logsigjoin(joinee,bumpedExtra,s))
+            derivsOfSum = numpy.ones((numberToDo,siglength))
+            calculated = iisignature.logsigjoinbackprop(derivsOfSum,joinee,extra,s)
+
+            self.assertEqual(len(calculated), 2)
+            diff1 = (bump1 - base) - numpy.sum(calculated[0] * (bumpedJoinee - joinee))
+            diff2 = (bump2 - base) - numpy.sum(calculated[1] * (bumpedExtra - extra))
+            self.assertLess(numpy.abs(diff1),0.000001)
+            self.assertLess(numpy.abs(diff2),0.00001)
+
+
+
 class Counts(TestCase):
     #check sigmultcount, and also that sig matches a manual signature
     #calculation

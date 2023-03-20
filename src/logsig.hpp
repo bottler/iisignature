@@ -804,16 +804,16 @@ void logSigUsingArea(const double* path, int N, int m, int dim, double* out){
   }
 }
 
-void logSigUsingAreaBackwards(const double* path, int N, int m, int dim, const double* result, float* out){
+void logSigUsingAreaBackwards(const double* path, int N, int m, int dim, const double* dOut, float* out){
   for (int d = 0; d<dim; ++d){
-    out[(N-1)*dim+d] += (float)*result;
-    out[d] -= (float)*result;
-    ++result;
+    out[(N-1)*dim+d] += (float)*dOut;
+    out[d] -= (float)*dOut;
+    ++dOut;
   }
   if(m>=2){
     for (int d1 = 0; d1<dim; ++d1)
       for (int d2 = d1+1; d2<dim; ++d2){
-        const double r = 0.5*(*result++);
+        const double r = 0.5*(*dOut++);
         const double s1 = path[d1];
         const double s2 = path[d2];
         for (int n=0; n+1<N; ++n){
@@ -827,7 +827,44 @@ void logSigUsingAreaBackwards(const double* path, int N, int m, int dim, const d
       }
   }
 }
-                    
+
+void logSigJoinUsingArea(const double* path, const double* displacement, int m, int dim, double* out){
+  auto path_it = path;
+  for (int d = 0; d<dim; ++d){
+    *(out++) = *(path_it++) + displacement[d];
+  }
+  if(m>=2){
+    for (int d1 = 0; d1<dim; ++d1)
+      for (int d2 = d1+1; d2<dim; ++d2){
+        double area = 0;
+        area += path[d1]*displacement[d2]-path[d2]*displacement[d1];
+        *(out++) = *(path_it++) + area * 0.5;
+      }
+  }
+}
+
+
+void logSigJoinUsingAreaBackwards(const double* path, const double* displacement, int m, int dim, const double* dOut, double* dPath, double* dDisplacement){
+  auto dPath_it = dPath;
+  for (int d = 0; d<dim; ++d){
+    dDisplacement[d] += *dOut;
+    *(dPath_it++) += *dOut;
+    ++dOut;
+  }
+  if(m>=2){
+    for (int d1 = 0; d1<dim; ++d1)
+      for (int d2 = d1+1; d2<dim; ++d2){
+        *(dPath_it++) += *dOut;
+        double d_area = 0.5 * *dOut;
+        dDisplacement[d2] += d_area * path[d1];
+        dDisplacement[d1] -= d_area * path[d2];
+        dPath[d1] += d_area * displacement[d2];
+        dPath[d2] -= d_area * displacement[d1];
+        ++dOut;
+      }
+  }
+}
+
 struct WantedMethods{
   #ifdef IISIGNATURE_NO_COMPILE
     bool m_compiled_bch = false;
