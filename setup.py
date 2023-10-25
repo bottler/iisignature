@@ -1,5 +1,5 @@
 from setuptools import setup, Extension
-import numpy, os, sys
+import os, sys
 
 version = "0.24"
 headers = ["bch","calcSignature","logsig","logSigLength","makeCompiledFunction",
@@ -16,11 +16,20 @@ if sys.platform == 'darwin' and "MACOSX_DEPLOYMENT_TARGET" not in os.environ:
         link_args.append('-mmacosx-version-min=10.9')
         #os.environ["MACOSX_DEPLOYMENT_TARGET"]="10.9"
 
+# https://github.com/pybind/python_example/blob/2ed5a68759cd6ff5d2e5992a91f08616ef457b5c/setup.py#L9
+# and 
+# https://stackoverflow.com/questions/54117786/add-numpy-get-include-argument-to-setuptools-without-preinstalled-numpy
+class get_numpy_include(object):
+
+    def __str__(self):
+        import numpy
+        return numpy.get_include()
+    
 xtn = Extension('iisignature', ['src/pythonsigs.cpp'], 
                 extra_compile_args=args,
                 extra_link_args=link_args,
                 define_macros=[("VERSION",version)],
-                include_dirs=[numpy.get_include()],
+                include_dirs=[get_numpy_include()],
                 depends=["src/"+i+".hpp" for i in headers])
 
 def readme():
