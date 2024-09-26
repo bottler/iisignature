@@ -5,7 +5,7 @@
 //including calculating the length of the log signature.
 //There is no reason to think these are efficient at runtime.
 
-//Many of these functions assume their parameters are positive. 
+//Many of these functions assume their parameters are positive.
 
 namespace LogSigLength{
 
@@ -19,9 +19,9 @@ constexpr Int lowestFactorWithMin(Int i, Int min){
 //return the lowest prime factor of i
 //crude, will be wrong if i<=1
 constexpr Int lowestFactor(Int i){
-  return i<=3 ? i : 
+  return i<=3 ? i :
            i%2 ==0 ? 2 :
-              lowestFactorWithMin(i,3); 
+              lowestFactorWithMin(i,3);
 }
 
 //crude, will be wrong if i<=1
@@ -46,14 +46,14 @@ constexpr Int mobiusFactor(Int i, Int p){
 
 //internal use
 constexpr Int mobiusWithMin(Int i, Int min){
-  return i<=1 ? 1 : 
+  return i<=1 ? 1 :
     1==removeFactor(i,lowestFactorWithMin(i,min)) ? mobiusFactor(i, lowestFactorWithMin(i,min)) :
       mobiusFactor(i, lowestFactorWithMin(i,min)) * mobiusWithMin(removeFactor(i,lowestFactorWithMin(i,min)),1+min);
 }
 
 //the mobius function
 constexpr Int mobius(Int i){
-  return mobiusWithMin(i,2);  
+  return mobiusWithMin(i,2);
 }
 
 //return a^b
@@ -69,7 +69,7 @@ constexpr Int necklaceSummand(Int d, Int m, Int divisor){
 //sum of necklaceSummand for divisor ranging over all factors of m no less than from
 //internal use
 constexpr Int necklaceSum(Int d, Int m, Int from){
-  return from == m ? necklaceSummand(d,m,m) : 
+  return from == m ? necklaceSummand(d,m,m) :
     necklaceSummand(d,m,from) + necklaceSum(d,m,lowestFactorWithMin(m,from+1));
 }
 

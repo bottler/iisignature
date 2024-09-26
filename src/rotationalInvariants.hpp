@@ -2,7 +2,7 @@
 #define ROTATIONAL_INVARIANTS_HPP
 
 //This does the basic identification of raw linear rotational invariants in the signature
-//as explained in the paper 
+//as explained in the paper
 //"Rotation invariants of two dimensional curves based on iterated integrals"
 //J Diehl 2013
 
@@ -32,7 +32,7 @@ namespace RotationalInvariants {
 
   //an Idx represents a word in two variables as a binary number
   //- and therefore as an offset into a level in the signature.
-  // (If you set start1, it will be preceeded by a 1, so e.g. "112" 
+  // (If you set start1, it will be preceeded by a 1, so e.g. "112"
   // and "12" will be represented as 1001b and 101b respectively
   // instead of both being 1, which may be easier to keep track of.
   // The rest of the code would have to change though.)
@@ -40,7 +40,7 @@ namespace RotationalInvariants {
   using Invariant = vector<pair<Idx, double>>;
 
   //expression being {1,0,0,1} means (x+iy)(x-iy)(x-iy)(x+iy)
-  //this returns the real and imaginary parts 
+  //this returns the real and imaginary parts
   pair<Invariant, Invariant> multiplyOutTerm(vector<unsigned char>& expression)
   {
     bool start1 = false;
@@ -50,7 +50,7 @@ namespace RotationalInvariants {
     real.emplace_back(start1 ? 1 : 0, 1);
     for (unsigned char c : expression)
     {
-#if 0 
+#if 0
       //Some unfortunate linux setups have new GCC but a std library so old that this
       //version of insert is a void function
       auto realHalf = real.insert(real.end(), imag.begin(), imag.end());
@@ -156,7 +156,7 @@ namespace RotationalInvariants {
     bool qr = (npos != input.find_first_of("qQ"));
     if (1!=(all ?1:0)+(svd?1:0)+(qr?1:0)+(known?1:0))
       return true;
-    t = (all ? InvariantType::ALL : svd ? InvariantType::SVD : 
+    t = (all ? InvariantType::ALL : svd ? InvariantType::SVD :
           qr ? InvariantType::QR : InvariantType::KNOWN);
     return false;
   }
@@ -215,7 +215,7 @@ namespace RotationalInvariants {
   }
 
   //class which contains all the invariants up to a given level, and,
-  //if required, all the invariants which are known as they are shuffle products 
+  //if required, all the invariants which are known as they are shuffle products
   //of other invariants.
   class Prepared {
   public:
@@ -240,7 +240,7 @@ namespace RotationalInvariants {
         m_knownInvariants.assign(level, {});
         //First do all the combinations of different levels
         for(int lowerLevel=2; lowerLevel<level; lowerLevel+=2)
-          for (int upperLevel = lowerLevel+2; 
+          for (int upperLevel = lowerLevel+2;
                 upperLevel + lowerLevel <= level; upperLevel += 2) {
             for(const auto& lower: m_invariants[lowerLevel - 1])
               for (const auto& upper : m_invariants[upperLevel - 1]) {

@@ -19,7 +19,7 @@ struct LogSigFunction{
   bool canProjectToBasis() const { return m_level < 2 || !m_simples.empty(); }
   bool canCalculateViaArea() const {return m_level <= 2;}
   int logSigLength() const;
-  
+
   //Everything after here is used for the linear algebra calculation of sig -> logsig,
   //except the last couple of members which are for the other way.
   std::vector<size_t> m_sigLevelSizes;
@@ -35,7 +35,7 @@ struct LogSigFunction{
   //m_sources is the indices of the relevant elements of the level of the sig
   //m_dests is the indices of the relevant elements of the level of the logsig
   //m_matrix has shape sources*dests when we fill them.
-  //In the python addin, they are replaced with their 
+  //In the python addin, they are replaced with their
   //pseudoinverses at the end of prepare(),
   //so that it ends up with shape dests*sources.
   //Todo as a performance optimization in prepare():
@@ -45,9 +45,9 @@ struct LogSigFunction{
   //     and there are not so many of them. This is commented out with #ifdef SHAREMAT.
   // -beyond that, some are permutation similar, e.g. the above and {1123, 1132, 1213}, and
   //   could also be shared.
-  struct SmallSVD { 
-    std::vector<size_t> m_sources, m_dests; 
-    std::vector<float> m_matrix; 
+  struct SmallSVD {
+    std::vector<size_t> m_sources, m_dests;
+    std::vector<float> m_matrix;
 #ifdef SHAREMAT
     //if m_matrix is empty, look at this element of our element of m_smallSVDs instead
     size_t m_matrixToUse;
@@ -93,7 +93,7 @@ InputPos inputPosFromSingle(Input i){
 }
 
 //makes a vector of uniquified values from in, with indices saying where each of the in elements is represented.
-//I.e. calculates out_vals and out_indices such that out_vals has no repetition and 
+//I.e. calculates out_vals and out_indices such that out_vals has no repetition and
 //in[i] is approximately the same as out_vals[out_indices[i]].
 //If "being within tol" isn't transitive on your set of numbers then results will be a bit arbitrary.
 void uniquifyDoubles(const std::vector<double>& in, std::vector<size_t>& out_indices,
@@ -108,7 +108,7 @@ void uniquifyDoubles(const std::vector<double>& in, std::vector<size_t>& out_ind
   std::sort(initial.begin(), initial.end());
   auto end = amalgamate_adjacent(initial.begin(), initial.end(), [tol](P& a, P& b){return std::fabs(a.first-b.first)<tol;},
                                       [](I a, I b){
-                                        I a2 = a; 
+                                        I a2 = a;
                                         std::for_each(++a2,b,[a](P& i){a->second.push_back(i.second[0]);});
                                         return true;
                                       });
@@ -149,7 +149,7 @@ void makeFunctionDataForBCH(int dim, int level, BasisPool& s, FunctionData& fd, 
   for(auto& l : eltList)
     for(auto& k : l)
       basisWords.push_back(k);
-  
+
   if(justWords)
     return;
   //std::cout<<"bchbefore"<<std::endl;
@@ -158,7 +158,7 @@ void makeFunctionDataForBCH(int dim, int level, BasisPool& s, FunctionData& fd, 
   //std::cout<<"bchdone"<<std::endl;
 
   fd.m_length_of_b = dim;
-  
+
   using InProduct = vector<Input>;
 
   vector<vector<const vector<Input>*>> m_neededProducts;
@@ -176,7 +176,7 @@ void makeFunctionDataForBCH(int dim, int level, BasisPool& s, FunctionData& fd, 
     std::sort(v.begin(), v.end(), [](const InProduct* a, const InProduct* b){return *a<*b;});
     v.erase(std::unique(v.begin(),v.end(),[](const InProduct* a, const InProduct* b){return *a==*b;}),v.end());
   }
-  
+
   InProduct temp;
   for(size_t i = 1; i<m_neededProducts.size(); ++i)
   {
@@ -203,7 +203,7 @@ void makeFunctionDataForBCH(int dim, int level, BasisPool& s, FunctionData& fd, 
         }
         if(!found){
          //more exhaustive search not implemented
-           std::cout<<"help, not found, level="<<i+1<<std::endl; 
+           std::cout<<"help, not found, level="<<i+1<<std::endl;
            throw std::runtime_error("I couldn't find a product to make");
         }
       }
@@ -253,7 +253,7 @@ const typename V::value_type::second_type&
 lookupInFlatMap(const V& v, const A& a){
   //if (!std::is_sorted(v.begin(), v.end()))
   //  throw 0;
-  //if (!std::is_sorted(v.begin(), v.end(), [](const typename V::value_type& p, 
+  //if (!std::is_sorted(v.begin(), v.end(), [](const typename V::value_type& p,
   //                                      const typename V::value_type& q) {
   //  return p.first < q.first; }))
   //  throw 0;
@@ -270,9 +270,9 @@ namespace IISignature_algebra {
   using std::pair;
 
   //it would be nice to use a lambda and decltype here, but visual studio
-  //doesn't allow swapping two lambdas of the same type, 
+  //doesn't allow swapping two lambdas of the same type,
   //so the vector operations fail.
-  //if x is a basis element for level m, then mappingMatrix[m-1][x] is 
+  //if x is a basis element for level m, then mappingMatrix[m-1][x] is
   //the sparse vector which is its image in tensor
   //space - what we call rho(x)
   //a MappingMatrixLevel is a flat map, ordered by address.
@@ -301,7 +301,7 @@ namespace IISignature_algebra {
     using P = std::pair<size_t, float>;
     using std::vector;
     //it would be nice to use a lambda and decltype here, but visual studio
-    //doesn't allow swapping two lambdas of the same type, 
+    //doesn't allow swapping two lambdas of the same type,
     //so the vector operations fail.
     MappingMatrix m;
     m.resize(level);
@@ -347,7 +347,7 @@ namespace IISignature_algebra {
   using LetterOrderToBE = std::vector<Letters_BEs>;
   using BasisEltToIndex = std::vector<std::pair<const BasisElt*, size_t>>;
 
-  void printMappingMatrixLevelAnalysis(int lev, const LetterOrderToBE& letterOrderToBE, 
+  void printMappingMatrixLevelAnalysis(int lev, const LetterOrderToBE& letterOrderToBE,
     const BasisEltToIndex& basisEltToIndex, std::ostream& of) {
     of << "BEGIN" << lev << "\n";
     for (auto& p : letterOrderToBE) {
@@ -418,9 +418,9 @@ namespace IISignature_algebra {
 
   class SharedMatrixDetector {
     //list of alphabetical letter frequencies -> pos in m_smallSVDs[lev-1]
-    std::map<vector<size_t>, size_t> m_freq2Idx; 
+    std::map<vector<size_t>, size_t> m_freq2Idx;
   public:
-    //If a calculation has already been done for a basis element with the same letters as w, 
+    //If a calculation has already been done for a basis element with the same letters as w,
     //put its index in matrixToUse and return false.
     //If not, remember the potentialNewIndex and return true.
     bool need(const BasisElt* w, size_t& matrixToUse, size_t potentialNewIndex) {
@@ -450,7 +450,7 @@ namespace IISignature_algebra {
       lsf.m_logLevelSizes.push_back(m[lev - 1].size());
     //We next write output based on m.
     //The idea is that the coefficient of the basis element x in the log signature
-    //is affected by the coefficient of the word y in the signature only if 
+    //is affected by the coefficient of the word y in the signature only if
     //y and the foliage of x are anagrams. So within each level, we group the basis elements
     //by the alphabetical list of their letters.
     lsf.m_simples.resize(level);
@@ -607,7 +607,7 @@ namespace IISignature_algebra {
   }
 }
 
-void projectExpandedLogSigToBasis(double* out, const LogSigFunction* lsf, 
+void projectExpandedLogSigToBasis(double* out, const LogSigFunction* lsf,
     const CalcSignature::Signature& sig) {
   size_t writeOffset = 0;
   std::vector<CalcSignature::Number> rhs;
@@ -659,11 +659,11 @@ void projectExpandedLogSigToBasis(double* out, const LogSigFunction* lsf,
 }
 
 //This backpropagates the function projectExpandedLogSigToBasis.
-//Note that, when triangles are in play, projectExpandedLogSigToBasis assumes that its input is 
-//a Lie element, which simplifies the calculation. 
+//Note that, when triangles are in play, projectExpandedLogSigToBasis assumes that its input is
+//a Lie element, which simplifies the calculation.
 //Those assumptions are in play here, so you cannot assume that the output of this function is in
 //the subspace of Lie elements. It's not really a "gradient" of a varying expanded log signature.
-//This is not a problem for us where all we want to do is backpropagate further 
+//This is not a problem for us where all we want to do is backpropagate further
 // - to the signature and then to the path.
 void projectExpandedLogSigToBasisBackwards(const double* derivs, const LogSigFunction* lsf,
   CalcSignature::Signature& out) {
@@ -719,7 +719,7 @@ void projectExpandedLogSigToBasisBackwards(const double* derivs, const LogSigFun
   }
 }
 
-void expandLogSigFromBasis(const double* in, const LogSigFunction& lsf, 
+void expandLogSigFromBasis(const double* in, const LogSigFunction& lsf,
     CalcSignature::Signature& sig, const vector<vector<LogSigFunction::SmallSVD>>& matrices) {
   size_t readOffset = 0;
   sig.sigOfNothing(lsf.m_dim, lsf.m_level);
@@ -741,8 +741,8 @@ void expandLogSigFromBasis(const double* in, const LogSigFunction& lsf,
   }
 }
 
-void expandLogSigFromBasisBackwards(const LogSigFunction& lsf, 
-    const CalcSignature::Signature& derivs,    
+void expandLogSigFromBasisBackwards(const LogSigFunction& lsf,
+    const CalcSignature::Signature& derivs,
     const vector<vector<LogSigFunction::SmallSVD>>& matrices,
     double* out) {
   size_t writeOffset = 0;

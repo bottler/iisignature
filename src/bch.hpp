@@ -18,9 +18,9 @@ using std::vector;
 //in any debugging session should be small).
 //#define STORE_STRING_IN_BE
 
-//If you use StandardHall, calculations will be happen according to 
+//If you use StandardHall, calculations will be happen according to
 //the same Hall basis as is used in CoRoPa, and not using the Lyndon word basis.
-//Everything will still basically work, tests pass etc, 
+//Everything will still basically work, tests pass etc,
 //but the numbers will be different.
 
 enum class LieBasis {Lyndon, StandardHall};
@@ -30,7 +30,7 @@ typedef void (*Interrupt)();
 
 //amalgamate_adjacent(v.begin(),v.end(),tojoin,amalgamater)
 //iterates over v and when finding a range [i..j) for which
-//tojoin(*i,*n) for all n in (i,j), replaces it with 
+//tojoin(*i,*n) for all n in (i,j), replaces it with
 //  (the single element *i if amalgamater(i,j) and nothing otherwise)
 //returns one past the last - removes everything made unnecessary
 
@@ -103,7 +103,7 @@ I amalgamate_adjacent_pairs(I a, I b, F1&& tojoin, F2&& amalgamater){
   return dest;
 }
 
-//3 input version of std::merge - no care about order of equivalent elements, 
+//3 input version of std::merge - no care about order of equivalent elements,
 //it makes sense not to compare with first1 all the time because in our case
 //it will tend to be the shortest.
 //This implemention does repeat comparisons unnecessarily - but they are quick in our case.
@@ -152,7 +152,7 @@ void sortByFirst(vector<T>& v) {
 template<class S, class T>
 typename vector<std::pair<S, T>>::const_iterator lookupByFirst(
   const vector<std::pair<S, T>>& v, const S& key) {
-  return std::lower_bound(v.begin(), v.end(), key, 
+  return std::lower_bound(v.begin(), v.end(), key,
     [](const std::pair<S, T>& a, const S& b) {return a.first < b; });
 }
 
@@ -187,7 +187,7 @@ class BasisElt {
     else{
       getLeft()->iterateOverLetters(f);
       getRight()->iterateOverLetters(f);
-    }    
+    }
   }
   int length() const {
     if(isLetter())
@@ -263,7 +263,7 @@ bool isBasisElt(const BasisElt* a, const std::string& ss){
       return false;
     ++x; ++y;
   }
-  return x==end  && y==ss.end();  
+  return x==end  && y==ss.end();
 }
 
 void printLetterAsDigit(Letter l, std::ostream& o){
@@ -365,7 +365,7 @@ class BasisPool{
     m_orderLookup.reserve(all.size());
     for(auto& i : all)
       m_orderLookup.push_back(i);
-  } 
+  }
   size_t getProxy(const BasisElt* w){
     auto lookerUpper = [](const std::pair<const BasisElt*, size_t>& a, const BasisElt* b){
       return a.first<b;
@@ -408,7 +408,7 @@ class BasisPool{
 
 //Looking at the necklace counting function, it is clear that
 //d^m/m is more than the number of Lyndon words on d letters of length m.
-//This is not a bad approximation, so it is not a serious waste of memory to 
+//This is not a bad approximation, so it is not a serious waste of memory to
 //preallocate a pool of this size for the basis elements.
 
 size_t ceilingOnNumberOfBasisElts(int d, int m) {
@@ -435,7 +435,7 @@ vector<vector<BasisElt*>> makeListOfBasisElts(BasisPool& s, int d,int m){
         const int rightlength = level - leftlength;
         for (BasisElt* left : elts[leftlength - 1])
           for (BasisElt* right : elts[rightlength - 1])
-            if (s.manualLexicographicLess(left, right) && 
+            if (s.manualLexicographicLess(left, right) &&
                 (left->isLetter() || left->getRight() == right ||
                   !s.manualLexicographicLess(left->getRight(), right)))
               elts[level - 1].push_back(s.newBasisElt(*left, *right));
@@ -522,7 +522,7 @@ Coefficient productCoefficients (const Coefficient& a, const Coefficient& b){
                                   return std::fabs(total)>0.00000001;});
   out.erase(i,out.end());
   //Todo: we could have a member Coefficient::m_size which was the important bit
-  //of m_details, and not erase vectors whose memory 
+  //of m_details, and not erase vectors whose memory
   //we might want to reuse later. Same with Polynomial
   return o;
 }
@@ -613,7 +613,7 @@ std::ostream& printPolynomial(Polynomial& poly, std::ostream& o, bool brackets =
 
 std::unique_ptr<Polynomial> polynomialOfBasisElt(const BasisElt* w){
     auto a = std::unique_ptr<Polynomial>(new Polynomial);
-    auto len = w->length();   
+    auto len = w->length();
     a->m_data.resize(len);
     auto& dest = a->m_data.back();
     dest.resize(1);
@@ -643,12 +643,12 @@ void sumPolynomialLevels(vector<Term>& lhs,  vector<Term>& rhs) {
   a.erase(amalgamate_adjacent_pairs(a.begin(), a.end(),
                                     [](const Term& a, const Term& b){
                                       return a.first->isEqual(*b.first);},
-                                    [](Term& a, Term& b){ 
-                                      sumCoefficients(a.second,std::move(b.second)); 
+                                    [](Term& a, Term& b){
+                                      sumCoefficients(a.second,std::move(b.second));
                                       return !a.second.m_details.empty();})
           ,a.end());
 }
-    
+
 //make the lhs be lhs+rhs, rhs can be pilfered
 void sumPolynomials(Polynomial& lhs, Polynomial& rhs){
   if(lhs.m_data.size()<rhs.m_data.size())
@@ -657,13 +657,13 @@ void sumPolynomials(Polynomial& lhs, Polynomial& rhs){
     sumPolynomialLevels(lhs.m_data[l], rhs.m_data[l]);
 }
 
-std::unique_ptr<Polynomial> 
+std::unique_ptr<Polynomial>
 productBasisElts(BasisPool& s, const BasisElt& a, const BasisElt& b,
                    int maxLength, bool check);
 
 //returns 0 or a new Polynomial
 //Does not modify or take ownership of x and y
-std::unique_ptr<Polynomial> 
+std::unique_ptr<Polynomial>
 productPolynomials(BasisPool& s, const Polynomial* x, const Polynomial* y, int maxLength){
   if(!x || !y){
     return nullptr;
@@ -682,7 +682,7 @@ productPolynomials(BasisPool& s, const Polynomial* x, const Polynomial* y, int m
           auto t = productBasisElts(s,*keyx.first,*keyy.first,maxLength, true);
           if(t){
             auto& tt = t->m_data[targetlevel-1];
-            for(auto& key : tt)//this loop usually happens not many times I think 
+            for(auto& key : tt)//this loop usually happens not many times I think
               productCoefficients3(key.second, keyx.second, keyy.second);
             sumPolynomialLevels(out->m_data[targetlevel - 1], tt);
           }
@@ -693,7 +693,7 @@ productPolynomials(BasisPool& s, const Polynomial* x, const Polynomial* y, int m
   return out;
 }
 //returns 0 or a new Polynomial
-std::unique_ptr<Polynomial> 
+std::unique_ptr<Polynomial>
 productBasisElts(BasisPool& s, const BasisElt& a, const BasisElt& b, int maxLength, bool check){
   if(check){
     int alen = a.length(), blen=b.length();
@@ -753,7 +753,7 @@ Coefficient basicCoeff(int i){
   out.m_details.resize(1);
   out.m_details[0].first.push_back(inp);
   out.m_details[0].second = 1;
-  return out;  
+  return out;
 }
 
 Polynomial bch(BasisPool& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Polynomial> y,
@@ -780,7 +780,7 @@ Polynomial bch(BasisPool& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Poly
     arr.push_back(productPolynomials(s,arr[row.m_left-1].get(),arr[row.m_right-1].get(),m));
     interrupt();
   }
-  
+
   //printPolynomial(out,std::cout);
   /*
   int fpp = 0;
@@ -788,9 +788,9 @@ Polynomial bch(BasisPool& s, std::unique_ptr<Polynomial> x, std::unique_ptr<Poly
     std::cout<<fpp++<<": ";
     printPolynomial(*i, std::cout);
     std::cout<<"\n";
-    } 
+    }
   */
-                    
+
   for(int i=2; i<bchTable.m_totalLengths[m-1];++i){
     const auto& row = bchTable.m_rows[i];
     auto& p = arr[i];
@@ -819,7 +819,7 @@ void calcFla(int d, int m, Interrupt interrupt){
       rhs->m_data[i].push_back(std::make_pair(eltList[i][j],basicCoeff(-ii-1)));
     }
   }
-  
+
   //printPolynomial(*lhs,std::cout);
   //printPolynomial(*rhs,std::cout);
   //std::cout<<"bchbefore"<<std::endl;

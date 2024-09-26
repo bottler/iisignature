@@ -36,7 +36,7 @@ using std::vector;
 
 // for python 3.5+, we can load the new way https://www.python.org/dev/peps/pep-0489/
 
-/* 
+/*
 template<typename T> int numpyTypenum;
 template<> int numpyTypenum<float>  = NPY_FLOAT32;
 template<> int numpyTypenum<double>  = NPY_FLOAT64;
@@ -53,8 +53,8 @@ template<int i> using numpyNumToType = typename numpyTypeImpl<i>::Type;
 
 //INTERRUPTS - the following seems to be fine even on windows
 #include <signal.h>
-volatile bool g_signals_setup=false; 
-volatile bool g_signal_given=false; 
+volatile bool g_signals_setup=false;
+volatile bool g_signal_given=false;
 void catcher(int){
   g_signal_given = true;
   PyErr_SetInterrupt();
@@ -72,7 +72,7 @@ void interrupt(){if(g_signal_given) throw std::runtime_error("INTERRUPTION");}
 
 //The following 3 functions just do t, which returns true if it succeeded,
 // returning true if t succeeded.
-//When in one of the python functions (defined in this file), 
+//When in one of the python functions (defined in this file),
 //calling a function which might call interrupt needs catching like this.
 template<typename T>
 bool do_interruptible(T&& t) {
@@ -92,7 +92,7 @@ bool do_interruptible(T&& t) {
   return ok;
 }
 template<typename T>
-bool do_dummy(T&& t) {//useful for timing experiments, 
+bool do_dummy(T&& t) {//useful for timing experiments,
   return t();
 }
 //Like do_interruptible but also releases the GIL
@@ -318,7 +318,7 @@ sig(PyObject *self, PyObject *args) {
     auto od = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
     bool ok = do_interruptible([&]{
       for(int path=0; path<nPaths; ++path)
-        if(!calcCumulativeSignature(in_data + path*eachInputSize, lengthOfPath, d, level, 
+        if(!calcCumulativeSignature(in_data + path*eachInputSize, lengthOfPath, d, level,
                                     eachOutputSize, od+path*eachOutputSize*(lengthOfPath-1)))
           return false;
       return true;
@@ -333,7 +333,7 @@ sig(PyObject *self, PyObject *args) {
       return nullptr;
     out_data = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
   }
-  else if (format != 1) 
+  else if (format != 1)
     ERR("Invalid format requested");
   ReleasableRefHolder o_(o);
 
@@ -466,7 +466,7 @@ sigBackwards(PyObject *self, PyObject *args){
   auto out = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
   for(int path =0; path<nPaths; ++path)
     CalcSignature::sigBackwardsRaw(d,level,lengthOfPath,
-      input.ptr()+path*eachInputSize,derivs.ptr()+path*eachOutputSize,out+path*eachInputSize);  
+      input.ptr()+path*eachInputSize,derivs.ptr()+path*eachOutputSize,out+path*eachInputSize);
   return o;
 }
 
@@ -497,7 +497,7 @@ sigJacobian(PyObject *self, PyObject *args){
   if(!o)
     return nullptr;
   auto out = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
-  TotalDerivativeSignature::sigJacobian(input.ptr(),lengthOfPath,d,level,out);  
+  TotalDerivativeSignature::sigJacobian(input.ptr(),lengthOfPath,d,level,out);
   return o;
 }
 
@@ -551,7 +551,7 @@ sigJoin(PyObject *self, PyObject *args){
     displacement.ptr()+iPath*d_given,fixedLast,out+iPath*sigLength);
   return o;
 }
- 
+
 static PyObject *
   sigJoinBackwards(PyObject* self, PyObject *args){
   PyObject* a1;
@@ -609,7 +609,7 @@ static PyObject *
     Py_DECREF(o1);
     return nullptr;
   }
-  
+
   auto out1 = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o1)));
   auto out2 = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o2)));
   double dFixedLast = 0;
@@ -738,7 +738,7 @@ static PyObject *
     Py_DECREF(o1);
     return nullptr;
   }
-  
+
   auto out1 = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o1)));
   auto out2 = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o2)));
   CalcSignature::SigCombiner sc;
@@ -881,7 +881,7 @@ LogSigFunction* getLogSigFunction(PyObject* p){
     ERR("I have received an input which is not from iisignature.prepare()");
   return (LogSigFunction*) PyCapsule_GetPointer(p,logSigFunction_id);
 #endif
-} 
+}
 
 #ifndef NO_CAPSULES
 static void killLogSigFunction(PyObject* p){
@@ -1054,7 +1054,7 @@ public:
         std::cout << "\n";
       }
 #endif
-      PyObject* svd = PyObject_CallFunctionObjArgs(ls.m_svd, mat_.m_mat, 
+      PyObject* svd = PyObject_CallFunctionObjArgs(ls.m_svd, mat_.m_mat,
         full_matrices ? Py_True : Py_False, NULL);
       if (!svd)
         return;
@@ -1096,7 +1096,7 @@ public:
   //on failure, m_ok will be false.
   //We have r>c, and we are interested in the span of the columns.
   //So we need to use scipy's qr, which provides pivoting.
-  //The user of this class must have already checked 
+  //The user of this class must have already checked
   //that m_qrScipy is not nullptr.
   class QR {
   public:
@@ -1123,7 +1123,7 @@ public:
       PyArrayObject* qr1 = (PyArrayObject*)PyTuple_GetItem(qr, 1);
       //NB: It seems scipy returns qr0 as fortran, numpy's qr doesnt
       bool fortran = PyArray_ISFARRAY_RO(qr0);
-      bool qr0contig = fortran; 
+      bool qr0contig = fortran;
       bool ok2 = PyArray_NDIM(qr0) == 2 &&
         PyArray_TYPE(qr0) == NPY_FLOAT64 &&
         PyArray_DIM(qr0, 0) == r &&
@@ -1154,8 +1154,8 @@ public:
     }
   };
 
-  //this replaces the r x c matrix matrix by its Moore-Penrose pseudoinverse, 
-  //which is a c x r matrix 
+  //this replaces the r x c matrix matrix by its Moore-Penrose pseudoinverse,
+  //which is a c x r matrix
   //returns true on success
   bool inplacePinvMatrix(float* matrix, size_t r, size_t c) const {
     m_tempSpace.assign(matrix, matrix + r*c);
@@ -1168,7 +1168,7 @@ public:
     RefHolder o_(o);
     PyArrayObject* oa = reinterpret_cast<PyArrayObject*>(o);
     bool ok = PyArray_Check(o) && PyArray_TYPE(oa) == NPY_FLOAT32
-      && PyArray_NDIM(oa) == 2 
+      && PyArray_NDIM(oa) == 2
       && PyArray_DIM(oa, 0) == ((npy_intp)c) && PyArray_DIM(oa, 1) == ((npy_intp)r);
     if (!ok)
       ERRb("bad output from pinv");
@@ -1198,10 +1198,10 @@ public:
     int sub_rank = svd.m_rank;
     vector<double> inp_projected(d*m, 0);
     //std::cout << "!"<< d << "," << m << "," << n << "," << sub_rank << std::endl;
-    //s1 is a dxd array. If s2 is s1 without its first sub_rank columns, 
+    //s1 is a dxd array. If s2 is s1 without its first sub_rank columns,
     //then s3=s2 s2^T is a projection matrix away from sub
     //we want inp_projected= s3.inp = s2 . (s2^T.inp) =: s2.s4
-    
+
     if (0) {
       vector<double> s3(d*d, 0);
       for (int i = 0; i < d; ++i) {
@@ -1235,7 +1235,7 @@ public:
             inp_projected.at(i*m + j) += s1[i*d + sub_rank + k] * s4.at(k*s4_rows + j);
     }
 
-    SVD svd2(inp_projected, d, m, false, *this); 
+    SVD svd2(inp_projected, d, m, false, *this);
     if (!svd2.m_ok)
       return false;
 
@@ -1465,7 +1465,7 @@ static PyObject* info(PyObject *self, PyObject *args) {
     methods += 'A';
   methods += 'X';
   PyObject* logsig2sig = lsf->m_support_logsig2sig ? Py_True : Py_False;
-  const char* basis = (lsf->m_s.m_basis == LieBasis::StandardHall) ? 
+  const char* basis = (lsf->m_s.m_basis == LieBasis::StandardHall) ?
                           "Standard Hall" : "Lyndon";
   return Py_BuildValue("{sisisssssO}", "dimension", lsf->m_dim, "level",
     lsf->m_level, "methods", methods.c_str(), "basis", basis,
@@ -1519,7 +1519,7 @@ logsig(PyObject *self, PyObject *args){
 
   FunctionRunner* f = lsf->m_f.get();
   using OutT=UseDouble;
-  if ((wantedmethods.m_compiled_bch && f!=nullptr) || 
+  if ((wantedmethods.m_compiled_bch && f!=nullptr) ||
       (wantedmethods.m_simple_bch && lsf->m_fd.m_length_of_b>0)){
     vector<double> displacement(d);
     const bool useCompiled = (f!=nullptr && wantedmethods.m_compiled_bch);
@@ -2073,7 +2073,7 @@ rotinv2dprepare(PyObject *self, PyObject *args) {
   using T = RotationalInvariants::Prepared;
   auto p = std::unique_ptr<T>(new T(level,t));
 #ifndef IISIGNATURE_NO_NUMPY
-  if (t == RotationalInvariants::InvariantType::SVD || 
+  if (t == RotationalInvariants::InvariantType::SVD ||
       t==RotationalInvariants::InvariantType::QR) {
     LeastSquares ls (t == RotationalInvariants::InvariantType::QR);
     if (!ls.m_ok)
@@ -2089,7 +2089,7 @@ rotinv2dprepare(PyObject *self, PyObject *args) {
           ok = ls.projectAwayFromQR(tempa, tempb, ((npy_intp)1) << (lev - 1), tempc);
         else
           ok = ls.projectAwayFromSVD(tempa, tempb, ((npy_intp)1) << (lev - 1), tempc);
-        if (!ok) 
+        if (!ok)
           return nullptr;
         RotationalInvariants::invariantsFromMatrix(tempc, lev, parity, p->m_invariants[idx]);
       }
@@ -2210,7 +2210,7 @@ rotinv2dcoeffs(PyObject *self, PyObject *args) {
         dest[(i+source0.size())*length + p.first] = p.second;
     PyTuple_SET_ITEM(out, lev / 2 - 1, o);
   }
-  
+
   return out;
 }
 #endif //IISIGNATURE_NO_NUMPY
@@ -2387,7 +2387,7 @@ we can't distribute platform wheels on linux.
 Basically we can only distribute source.
  Therefore we won't make wheels
 
- Build just with 
+ Build just with
 python setup.py sdist
 
 */

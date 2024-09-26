@@ -24,13 +24,13 @@ namespace CalcSignature{
   using OutputNumber = float;
 
   //Simple functions for calculating arbitrary signatures at runtime
-  //- perhaps slower to run but easier to use than the template version 
+  //- perhaps slower to run but easier to use than the template version
 
- 
+
   class Signature{
   public:
     vector<vector<Number>> m_data;
-    
+
     template<typename Num>
     void sigOfSegment(int d, int m, const Num* segment){
       m_data.resize(m);
@@ -75,7 +75,7 @@ namespace CalcSignature{
       }
       return out;
     }
-    
+
     void sigOfNothing(int d, int m){
       m_data.resize(m);
       m_data[0].assign(d,0);
@@ -86,7 +86,7 @@ namespace CalcSignature{
         s.assign(size,0);
       }
     }
-  
+
     //if a is the signature of path A, b of B, then
     //a.concatenateWith(d,m,b) makes a be the signature of the concatenated path AB
     //This is also the (concatenation) product of the elements a and b in the tensor algebra.
@@ -95,7 +95,7 @@ namespace CalcSignature{
         for(int mylevel=level-1; mylevel>0; --mylevel){
           int otherlevel=level-mylevel;
           auto& oth = other.m_data[otherlevel-1];
-          for(auto dest=m_data[level-1].begin(), 
+          for(auto dest=m_data[level-1].begin(),
                 my =m_data[mylevel-1].begin(),
                 myE=m_data[mylevel-1].end(); my!=myE; ++my){
             for(const Number& dd : oth){
@@ -108,7 +108,7 @@ namespace CalcSignature{
               e=m_data[level-1].end();
             dest!=e;)
           *(dest++) += *(source++);
-        
+
       }
     }
     static double concatenateWithMultCount(int d, int m) {
@@ -168,9 +168,9 @@ namespace CalcSignature{
     void multiplyByConstant(Number c){
       for(auto& a: m_data)
         for(auto& b:a)
-          b*=c;    
+          b*=c;
     }
-    
+
     template<typename Numeric>
     void writeOut(Numeric* dest) const{
       for(auto& a: m_data)
@@ -182,10 +182,10 @@ namespace CalcSignature{
         for(auto i = a.begin(), e=a.end()-1; i!=e; ++i)
           *(dest++)=*i;
     }
-    
+
   };
 
-  //This also calculates the concatenation product in the tensor algebra, 
+  //This also calculates the concatenation product in the tensor algebra,
   //but in the case where we assume 0 instead of 1 in the zeroth level.
   //It is not in-place
   Signature concatenateWith_zeroFirstLevel(int d, int m,
@@ -289,7 +289,7 @@ namespace CalcSignature{
       for(int level=0; level<m; ++level)
         for(size_t i=0; i<s.m_data[level].size(); ++i)
           s.m_data[level][i] += powers[power-1].m_data[level][i];
-    }  
+    }
   }
 
   //This calculates the exp of a tensor (assumed to have 0 in the zeroth level).
@@ -420,7 +420,7 @@ namespace CalcSignature{
         }
       }
     }
-    //in this block, we only modify ww. 
+    //in this block, we only modify ww.
     //The level which we modify increases, and the level we read is always higher
     //so note the loops are different but equivalent to all the others
     for (int mylevel = 1; mylevel<m; ++mylevel) {
@@ -547,7 +547,7 @@ namespace CalcSignature{
         }
       }
     }
-    //in this block, we only modify ww. 
+    //in this block, we only modify ww.
     //The level which we modify increases, and the level we read is always higher
     //so note the loops are different but equivalent to all the others
     for (int mylevel = 1; mylevel<m; ++mylevel) {
@@ -607,7 +607,7 @@ namespace CalcSignature{
     }
   }
 
-  //path is a (lengthOfPath)xd path, derivs is dF/d(sig(path)) of length siglength(d,m), 
+  //path is a (lengthOfPath)xd path, derivs is dF/d(sig(path)) of length siglength(d,m),
   //output is (lengthOfPath)xd
   //this function just increments output[i,j] by dF/d(path[i,j])
   void sigBackwards(int d, int m, int lengthOfPath, const Number* path,
@@ -639,7 +639,7 @@ namespace CalcSignature{
     }
   }
 
-  //path is a (lengthOfPath)xd path, derivs is dF/d(sig(path)) of length siglength(d,m), 
+  //path is a (lengthOfPath)xd path, derivs is dF/d(sig(path)) of length siglength(d,m),
   //output is (lengthOfPath)xd
   //this function just increments output[i,j] by dF/d(path[i,j])
   void sigBackwardsRaw(int d, int m, int lengthOfPath, const Number* path,
@@ -715,7 +715,7 @@ namespace CalcSignature{
 
   //replace s with the signature of its path scaled by scales[.] in each dim
   //a coroutine would be great here?
-  //time complexity level*(d**level) for each level 
+  //time complexity level*(d**level) for each level
   void scaleSignature(Signature& s, const double* scales) {
     const size_t m = s.m_data.size();
     const size_t d = s.m_data[0].size();
@@ -831,7 +831,7 @@ namespace TotalDerivativeSignature{
     Number m_value;
     std::vector<Number> m_derivs;//these always have the same length.
   };
-  
+
   //x = x+y
   void sumInPlace(DiffVariable& x, const DiffVariable& y){
     for(size_t i=0; i<x.m_derivs.size(); ++i){
@@ -855,9 +855,9 @@ namespace TotalDerivativeSignature{
     x.m_value += y.m_value * z.m_value;
   }
   //returns x*y*scalar
-  DiffVariable multiply(const DiffVariable& x, const DiffVariable& y, 
+  DiffVariable multiply(const DiffVariable& x, const DiffVariable& y,
                         Number fixedscalar){
-    auto s = x.m_derivs.size(); 
+    auto s = x.m_derivs.size();
     DiffVariable out;
     out.m_derivs.resize(s);
     for(size_t i=0; i<s; ++i){
@@ -866,14 +866,14 @@ namespace TotalDerivativeSignature{
     out.m_value = x.m_value * y.m_value * fixedscalar;
     return out;
   }
-  
+
   struct InputSegment{
     std::vector<DiffVariable> m_segment;
   };
-  
+
   struct Signature{
     vector<vector<DiffVariable>> m_data;
-    
+
     void sigOfSegment(int d, int m, const InputSegment& segment){
       m_data.resize(m);
       auto& first = m_data[0];
@@ -928,7 +928,7 @@ namespace TotalDerivativeSignature{
   }
   //input is n*d
   //out is assumed to be readily sized inputSize*totalSiglength
-  void sigJacobian(const Number* input, 
+  void sigJacobian(const Number* input,
                    int n, int d, int m, float* out){
     size_t inputSize = n*d;
     size_t totalSigLength = calcSigTotalLength(d,m);

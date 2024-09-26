@@ -23,7 +23,7 @@ namespace ReadBCH{
     std::vector<Row> m_rows;
     std::vector<int> m_totalLengths;
   };
-  
+
   FileData read(){
     /*
     std::ifstream is(BCHFILE);

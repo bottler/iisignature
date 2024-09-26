@@ -31,13 +31,13 @@ public:
   Mem(size_t s):m_size(s){
     //we may want to use space at the beginning for double constants
 #ifdef _WIN32
-    m_p = m_buf =(unsigned char*) VirtualAllocEx( GetCurrentProcess(), 
+    m_p = m_buf =(unsigned char*) VirtualAllocEx( GetCurrentProcess(),
                                    0, s, MEM_COMMIT, PAGE_EXECUTE_READWRITE );
 #else
     m_p = m_buf =(unsigned char*) mmap(0,s,PROT_READ|PROT_EXEC|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
 #endif
     //    std::cout<<"Align "<<((size_t)m_p)%1024<<"\n"; //Looks like this is always 0, yay!
-//on windows, use 
+//on windows, use
   }
   ~Mem(){
 #ifdef _WIN32
@@ -66,13 +66,13 @@ public:
     for(int i=0; i<8; ++i){
       push(a%256);
       a=a/256;
-    }   
+    }
   }
   void pushLittleEndian(uint32_t a){
     for(int i=0; i<4; ++i){
       push(a%256);
       a=a/256;
-    }   
+    }
   }
   size_t capacity() const {return m_size;}
   size_t used() const {return m_p-m_buf;}
@@ -188,7 +188,7 @@ void slowExplicitFunctionBackward(const double* a, const double* b, const Functi
   }
 }
 
-//To use an 8 bit offset (rather than 32) into a vector<double> 
+//To use an 8 bit offset (rather than 32) into a vector<double>
 //you waste 3 bits, 1 is the sign, so you can move +-16 or so
 //could be better to use floats
 
@@ -234,7 +234,7 @@ struct Maker{
     //  const bool squashBads = true; //just to test
     start += k*8;
     if(i.second<0)
-      throw std::runtime_error("What?");  
+      throw std::runtime_error("What?");
     if(i.second==0)
       m.push(start);
     else if(i.second<16){
@@ -272,7 +272,7 @@ struct Maker{
       //Now movsd back
       m.push(0xf2, 0x0f, 0x11);
       xmmkWithRegOffset(m,make_pair(InputArr::T, (int)i));
-    }  
+    }
   }
 
   //we are making void main_multiplies(double* a, const double* b, const double* t) with no ret
@@ -313,7 +313,7 @@ struct Maker{
             m.push(0xf2, 0x0f, 0x58, 0xc1+9*base_xmm);
           else
             //sub xmm(1+base_xmm) from xmm(base_xmm)
-            m.push(0xf2, 0x0f, 0x5c, 0xc1+9*base_xmm);  
+            m.push(0xf2, 0x0f, 0x5c, 0xc1+9*base_xmm);
           ++m_stats.m_flops;
         }
       if(!l.m_negative){
@@ -367,7 +367,7 @@ struct Maker{
 
 public:
 
-  //pushes at most  d.m_lines.size() * 36 + m_formingT.size() * 24 + m_length_of_b * 24 + 
+  //pushes at most  d.m_lines.size() * 36 + m_formingT.size() * 24 + m_length_of_b * 24 +
   //11 on linux64
   //18 on Win64
   //17 on Win32
@@ -382,7 +382,7 @@ public:
 #ifdef IISIGNATURE_32BIT//_M_IX86
     //0x44 means from SIB + 1byte displacement
     //SIB of 0x24 means using ESP (not scaled?)
-    //mov the arg which was 4 bytes down when we were called on the stack into said register 
+    //mov the arg which was 4 bytes down when we were called on the stack into said register
     //it's now 0xC bytes down.
     m.push(0x8B,8*getRegNumber(InputArr::T) + 0x44,0x24,0xC);
 #else
@@ -393,7 +393,7 @@ public:
 #endif
 
     make_form_t(m,d);
-    
+
 #ifdef IISIGNATURE_32BIT// _M_IX86
     m.push(0xb8 + getRegNumber(InputArr::C));
     m.pushLittleEndian((uint32_t)d.m_constants.data());
@@ -403,10 +403,10 @@ public:
     m.push(0x48, 0xb8 + getRegNumber(InputArr::C));
     m.pushLittleEndian((uint64_t)d.m_constants.data());
 #endif
-    
+
     make_main_multiplies(m,d);
     make_final_adds(m,d);
-    
+
 #ifndef IISIGNATURE_LINUX_64BIT
     //POP the values of the nonvolatile registers we pushed
     m.push(0x58 + getRegNumber(InputArr::T));
@@ -417,7 +417,7 @@ public:
 #else
     m.push(0xc3);//retq
 #endif
-    
+
     if(0){
       std::cout<<d.m_length_of_b<<"\n";
       std::cout<<d.m_constants.size()<<"\n";
@@ -452,9 +452,9 @@ struct FunctionRunner{
                                       //||(a.m_rhs_offset==b.m_rhs_offset && a.m_lhs_offset>b.m_lhs_offset)
                                       //||(a.m_rhs_offset==b.m_rhs_offset && a.m_const_offset>b.m_const_offset)
                   ;
-                      
+
               });
-    
+
     //*/
     //perhaps we want to separate the lhs offset as much as possible
     //    for(auto& i : d.m_lines)
@@ -464,14 +464,14 @@ struct FunctionRunner{
       std::stable_sort(d.m_lines.begin(), d.m_lines.end(),[](
                                                     const FunctionData::LineData& a,
                                                     const FunctionData::LineData& b){
-                return a.m_lhs_offset<b.m_lhs_offset;                 
+                return a.m_lhs_offset<b.m_lhs_offset;
               });
       /*
       const int gap = 3;
       std::stable_sort(d.m_lines.begin(), d.m_lines.end(),[](
                                                     const FunctionData::LineData& a,
                                                     const FunctionData::LineData& b){
-                return a.m_lhs_offset%gap < b.m_lhs_offset%gap;               
+                return a.m_lhs_offset%gap < b.m_lhs_offset%gap;
               });
       */
     }
