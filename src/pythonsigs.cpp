@@ -541,7 +541,7 @@ sigJoin(PyObject *self, PyObject *args){
   if(sig.read(a,nPaths*sigLength)||displacement.read(b,nPaths*d_given))
     ERR("Out of memory");
 
-  using OutT = UseFloat;
+  using OutT = UseDouble;
   PyObject* o = PyArray_SimpleNew(ndims, PyArray_DIMS(a),OutT::typenum);
   if(!o)
     return nullptr;
@@ -668,7 +668,7 @@ sigCombine(PyObject *self, PyObject *args){
   if(sig1.read(a,nPaths*sigLength)||sig2.read(b,nPaths*sigLength))
     ERR("Out of memory");
 
-  using OutT = UseFloat;
+  using OutT = UseDouble;
   PyObject* o = PyArray_SimpleNew(ndims, PyArray_DIMS(a),OutT::typenum);
   if(!o)
     return nullptr;
