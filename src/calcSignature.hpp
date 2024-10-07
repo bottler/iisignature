@@ -12,8 +12,7 @@ int calcSigLevelLength(int d, int m){
 int calcSigTotalLength(int d, int m){
   if(d==1)
     return m;
-  //    int p = static_cast<int> (std::round(std::pow(d,m)));
-  int p = static_cast<int> (0.4 + std::pow(d,m));
+  int64_t p = static_cast<int64_t> (0.4 + std::pow(d,m));
   return d*(p-1)/(d-1);
 }
 

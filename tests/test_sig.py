@@ -658,6 +658,10 @@ class SimpleCases(TestCase):
         sig=iisignature.sig(path,m)
         self.assertTrue(numpy.allclose(sig, [3,4.5,4.5]))
 
+    def test_big_siglength(self):
+        self.assertEqual(iisignature.siglength(9,9),
+                         sum(9**i for i in range(1,10)))
+        self.assertEqual(iisignature.siglength(9500, 2), 9500**2 + 9500)
 
 class Scales(TestCase):
     #check sigscale and its derivatives
