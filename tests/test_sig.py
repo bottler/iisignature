@@ -114,7 +114,7 @@ def sigOfSegment(displacement, level):
         mults += 2 * other.shape[0] * d
         sig.append(numpy.outer(other,displacement).flatten() * (1.0 / m))
     return sig, mults
-    
+
 #inputs are values in the tensor algebra given as lists of levels (from 1 to
 #level), assumed 1 in level 0.
 #returns their concatenation product, and also the number of multiplications
@@ -136,7 +136,7 @@ def diff(a,b):
 
 #Finite difference derivative
 #estimate bump dot (the derivative of np.sum(f(X)) wrt X at X=x)
-# i.e. the change in np.sum(f(X)) caused by bump 
+# i.e. the change in np.sum(f(X)) caused by bump
 # with a finite difference approximation
 def fdDeriv(f,x,bump,order,nosum=False):
     if order==0:#SIMPLE
@@ -186,7 +186,7 @@ else:#Old numpy may not have stack, which we only need with axis=0
         return numpy.vstack([i[numpy.newaxis] for i in arr])
 
 #numpy's lstsq has a different default in different versions
-#I think this function agrees with newer versions (1.14+) 
+#I think this function agrees with newer versions (1.14+)
 #and with scipy.
 #This doesn't really affect the tests anyway.
 def lstsq(a,b):
@@ -409,7 +409,7 @@ class Deriv(TestCase):
         base_sig = iisignature.sig(path,m)
 
         target = fdDeriv(lambda x:iisignature.sig(x,m),path,increment,2, nosum=True)
-        
+
         gradient = iisignature.sigjacobian(path,m)
         calculated = numpy.tensordot(increment,gradient)
 
@@ -432,8 +432,8 @@ class Deriv(TestCase):
 
         self.assertLess(diffs,0.00001)
         self.assertLess(ratioDiffs,0.01)
-        self.assertLess(diffs1,0.001) 
-        self.assertLess(diffs2,0.00001) 
+        self.assertLess(diffs1,0.001)
+        self.assertLess(diffs2,0.00001)
 
         #compatibility between sigbackprop and sigjacobian is strong
         dFdSig = numpy.random.uniform(size=(iisignature.siglength(d,m),))
@@ -460,7 +460,7 @@ class Deriv(TestCase):
         increment = 0.1*numpy.random.uniform(size=(pathLength,d))
 
         manualChange = fdDeriv(lambda x:iisignature.logsig(x,s,type),path,increment,4)
-        
+
         dFdlogSig = numpy.ones(iisignature.siglength(d,m) if "X"==type else iisignature.logsiglength(d,m))
         calculatedChange = numpy.sum(increment*iisignature.logsigbackprop(dFdlogSig,path,s,type))
         #print(manualChange, calculatedChange)
@@ -625,7 +625,7 @@ class SimpleCases(TestCase):
             s=iisignature.prepare(d,m)
             iisignature.logsig(path,s,"A")
             #not testing result, just that it calculates something
-        
+
     def testCumulative(self):
         m=3
         d=2
@@ -639,7 +639,7 @@ class SimpleCases(TestCase):
         #expected = numpy.stack([iisignature.sig(path[:,:,:(i+1)],m) for i in range(1,length)],-2)
         expected = numpy.rollaxis(stack([iisignature.sig(path[:,:,:(i+1)],m) for i in range(1,length)]),0,3)
         self.assertTrue(numpy.allclose(expected, cumul))
-        
+
     def testSquareLevel2(self):
         path = numpy.array([[0,0],[1,0],[1,1],[0,1],[0,0]])
         m=2
@@ -757,7 +757,7 @@ class Batching(TestCase):
         self.assertTrue(numpy.allclose(backjoined1315[0],backcombined1315[0]))
         self.assertTrue(numpy.allclose(backcombined1315[0].reshape(n,-1),backcombinedArrays[0]))
         self.assertTrue(numpy.allclose(backcombined1315[1].reshape(n,-1),backcombinedArrays[1]))
-        
+
         scaled=[iisignature.sigscale(i,j,m) for i,j in zip(sigs,data)]
         scaled1315=iisignature.sigscale(sigArray1315,dataArray1315,m)
         self.assertEqual(scaled1315.shape,(1,3,1,5,siglength))
@@ -892,7 +892,7 @@ class RotInv2d(TestCase):
         if 0: #This doesn't work - the rank of the whole thing is less than
         #sigLength-totalUnspannedDimensions, which suggests that there are
         #inter-level dependencies,
-        #even though the shuffle product dependencies aren't linear. 
+        #even though the shuffle product dependencies aren't linear.
         #I don't know why this is.
             sigLength = iisignature.siglength(2,m)
             numNonInvariant = numpy.linalg.matrix_rank(numpy.row_stack(sigOffsets))
@@ -916,7 +916,7 @@ class RotInv2d(TestCase):
         sk = iisignature.rotinv2dprepare(m,"k")
         ca = iisignature.rotinv2dcoeffs(sa)[-1]
         ck = iisignature.rotinv2dcoeffs(sk)[-1]
-        
+
         #every row of ck should be in the span of the rows of ca
         #i.e.  every column of ck.T should be in the span of the columns of
         #ca.T
@@ -961,7 +961,7 @@ class RotInv2d(TestCase):
                     odiousRows.append(i)
             #print (evilRows, odiousRows)
             self.assertLess(numpy.max(evil),numpy.min(odious),"bad order of rows in " + name)
-        
+
 
 
 
