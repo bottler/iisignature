@@ -9,6 +9,25 @@ import time
 numpy.set_printoptions(suppress=True,linewidth=150)
 output_timings = False
 
+CANCOMPILE = sys.platform != "darwin"
+
+def prepare(d, m, methods):
+    return iisignature.prepare(d, m, "".join(methodfilter(methods)))
+
+def methodfilter(methods):
+    """
+    removes the unsupported methods from a list of method letters
+    """
+    if not CANCOMPILE:
+        return [i for i in methods if i.upper()!="C"]
+    return methods
+
+HAVE_SCIPY = True
+try:
+    import scipy.linalg
+except ImportError:
+    HAVE_SCIPY = False
+
 #text, index -> (either number or [res, res]), newIndex
 def parseBracketedExpression(text,index):
     if(text[index] == '['):
@@ -199,9 +218,9 @@ def lstsq(a,b):
 class A(TestCase):
     def consistency(self, coropa, dim, level):
         #numpy.random.seed(21)
-        s = iisignature.prepare(dim,level,"coshx" if coropa else "cosx")
+        s = prepare(dim,level, "coshx" if coropa else "cosx")
         myinfo = {"level":level, "dimension":dim,
-                  "methods": ("COSAX" if level <= 2 else "COSX"),
+                  "methods": "".join(methodfilter("COSAX" if level <= 2 else "COSX")),
                   "basis":("Standard Hall" if coropa else "Lyndon"),
                   "logsigtosig_supported" : False}
         self.assertEqual(iisignature.info(s),myinfo)
@@ -496,6 +515,8 @@ class Deriv(TestCase):
 class LogSigJoin(TestCase):
     def testjoining(self):
         for level, method in [(3, "C"), (3, "O"), (2, "A")]:
+            if method == "C" and not CANCOMPILE:
+                continue
             numberToDo = 4
             dim = 5
             s = iisignature.prepare(dim, level, method)
@@ -576,8 +597,8 @@ class SimpleCases(TestCase):
         path2=numpy.array([[1,2],[2,4]])
         m=4
         d=2
-        s=iisignature.prepare(d,m,"cosx")
-        s_a=iisignature.prepare(d,2,"cosx")
+        s=prepare(d,m,"cosx")
+        s_a=prepare(d,2,"cosx")
         length=iisignature.siglength(d,m)
         loglength=iisignature.logsiglength(d,m)
         loglength_a=iisignature.logsiglength(d,2)
@@ -586,7 +607,8 @@ class SimpleCases(TestCase):
         blankSig=numpy.zeros(length)
         self.assertLess(diff(iisignature.sig(path1,m),blankSig),0.000000001)
         self.assertTrue(numpy.array_equal(iisignature.sig(path1,m,2),numpy.zeros([0,length])))
-        self.assertLess(diff(iisignature.logsig(path1,s,"C"),blankLogSig),0.000000001)
+        if CANCOMPILE:
+            self.assertLess(diff(iisignature.logsig(path1,s,"C"),blankLogSig),0.000000001)
         self.assertLess(diff(iisignature.logsig(path1,s,"O"),blankLogSig),0.000000001)
         self.assertLess(diff(iisignature.logsig(path1,s,"S"),blankLogSig),0.000000001)
         self.assertLess(diff(iisignature.logsig(path1,s,"X"),blankSig),0.000000001)
@@ -594,7 +616,8 @@ class SimpleCases(TestCase):
         blankLogSig[:d]=path2[1]-path2[0]
         blankLogSig_a[:d]=path2[1]-path2[0]
         blankSig[:d]=path2[1]-path2[0]
-        self.assertLess(diff(iisignature.logsig(path2,s,"C"),blankLogSig),0.000001)
+        if CANCOMPILE:
+            self.assertLess(diff(iisignature.logsig(path2,s,"C"),blankLogSig),0.000001)
         self.assertLess(diff(iisignature.logsig(path2,s,"O"),blankLogSig),0.000001)
         self.assertLess(diff(iisignature.logsig(path2,s,"S"),blankLogSig),0.000001)
         self.assertLess(diff(iisignature.logsig(path2,s,"X"),blankSig),0.000001)
@@ -605,9 +628,9 @@ class SimpleCases(TestCase):
         d=2
         path=numpy.random.uniform(size=(10,d))
         rightSig = path[-1,:]-path[0,:]
-        s=iisignature.prepare(d,m,"cosx2")
+        s=prepare(d,m,"cosx2")
         self.assertLess(diff(iisignature.sig(path,m),rightSig),0.0000001)
-        for type_ in ("C","O","S","X","A"):
+        for type_ in methodfilter(("C","O","S","X","A")):
             self.assertLess(diff(iisignature.logsig(path,s,type_),rightSig),0.0000001,type_)
         self.assertLess(diff(rightSig,iisignature.logsigtosig(rightSig,s)),0.000001)
         derivs=numpy.array([2.1,3.2])
@@ -746,7 +769,7 @@ class Batching(TestCase):
         self.assertTrue(numpy.allclose(backjoined1315[0].reshape(n,-1),backjoinedArrays[0]))
         self.assertTrue(numpy.allclose(backjoined1315[1].reshape(n,-1),backjoinedArrays[1]))
 
-        dataAsSigs=[iisignature.sig(numpy.row_stack([numpy.zeros((d,)),i]),m) for i in data]
+        dataAsSigs=[iisignature.sig(numpy.vstack([numpy.zeros((d,)),i]),m) for i in data]
         dataArray13151=dataArray1315[:,:,:,:,None,:]
         dataArray13151=numpy.repeat(dataArray13151,2,4)*[[0.0],[1.0]]
         dataArrayAsSigs1315=iisignature.sig(dataArray13151,m)
@@ -774,8 +797,10 @@ class Batching(TestCase):
         self.assertTrue(numpy.allclose(backscaled1315[0].reshape(n,-1),backscaledArrays[0]))
         self.assertTrue(numpy.allclose(backscaled1315[1].reshape(n,-1),backscaledArrays[1]))
 
-        s_s=(iisignature.prepare(d,m,"cosax2"),iisignature.prepare(d,m,"cosahx2"))
+        s_s=(prepare(d,m,"cosax2"),prepare(d,m,"cosahx2"))
         for type in ("c","o","s","x","a","ch","oh","sh","ah"):
+            if type[0] == "c" and not CANCOMPILE:
+                continue
             s=s_s[1 if "h" in type else 0]
             logsigs = [iisignature.logsig(i,s,type) for i in paths]
             logsigArray=stack(logsigs)
@@ -866,7 +891,7 @@ class RotInv2d(TestCase):
                 samePathSigs = [iisignature.sig(numpy.dot(path,mtx),m) for mtx in rotationMatrices[1:70]]
                 samePathSigsOffsets = [i - samePathSigs[0] for i in samePathSigs[1:]]
                 sigOffsets.extend(samePathSigsOffsets)
-            #print(numpy.linalg.svd(numpy.row_stack(sigOffsets))[1])
+            #print(numpy.linalg.svd(numpy.vstack(sigOffsets))[1])
             def split(a, dim, level):
                 start = 0
                 out = []
@@ -876,7 +901,7 @@ class RotInv2d(TestCase):
                     start = start + levelLength
                 assert(start == a.shape[1])
                 return out
-            allOffsets = numpy.row_stack(sigOffsets)
+            allOffsets = numpy.vstack(sigOffsets)
             #print (allOffsets.shape)
             splits = split(allOffsets,2,m)
             #print()
@@ -899,7 +924,7 @@ class RotInv2d(TestCase):
         #even though the shuffle product dependencies aren't linear.
         #I don't know why this is.
             sigLength = iisignature.siglength(2,m)
-            numNonInvariant = numpy.linalg.matrix_rank(numpy.row_stack(sigOffsets))
+            numNonInvariant = numpy.linalg.matrix_rank(numpy.vstack(sigOffsets))
 
             predictedNumberInvariant = sigLength - numNonInvariant
             print(sigLength,length,numNonInvariant)
@@ -910,7 +935,8 @@ class RotInv2d(TestCase):
     def test_k(self):
         self.dotest("k")
     def test_q(self):
-        self.dotest("q")
+        if HAVE_SCIPY:
+            self.dotest("q")
     def test_s(self):
         self.dotest("s")
 
@@ -928,26 +954,33 @@ class RotInv2d(TestCase):
         residuals = lstsq(ca.T,ck.T)[1]
         self.assertLess(numpy.max(numpy.abs(residuals)),0.000001)
 
-        sq = iisignature.rotinv2dprepare(m, "q")
-        cq = iisignature.rotinv2dcoeffs(sq)[-1]
         ss = iisignature.rotinv2dprepare(m, "s")
         cs = iisignature.rotinv2dcoeffs(ss)[-1]
         # every row of cs and cq should be in the span of the rows of ca
         residuals2 = lstsq(ca.T, cs.T)[1]
         self.assertLess(numpy.max(numpy.abs(residuals2)), 0.000001)
-        residuals2 = lstsq(ca.T, cq.T)[1]
-        self.assertLess(numpy.max(numpy.abs(residuals2)), 0.000001)
+        if HAVE_SCIPY:
+            sq = iisignature.rotinv2dprepare(m, "q")
+            cq = iisignature.rotinv2dcoeffs(sq)[-1]
+            residuals2 = lstsq(ca.T, cq.T)[1]
+            self.assertLess(numpy.max(numpy.abs(residuals2)), 0.000001)
 
-        self.assertEqual(cq.shape, cs.shape)
+            self.assertEqual(cq.shape, cs.shape)
+        else:
+            cq = None
 
         #check that the invariants are linearly independent (not for k)
         for c, name in ((cs, "s"), (ca, "a"), (cq, "q")):
+            if not HAVE_SCIPY and name == "q":
+                continue
             self.assertEqual(numpy.linalg.matrix_rank(c),c.shape[0],name)
 
         #check that rows with nonzeros in evil columns are all before
         #rows with nonzeros in odious columns
         #print ((numpy.abs(ca)>0.00000001).astype("int8"))
         for c, name in ((cs, "s"), (ck, "k"), (ca, "a"), (cq, "q")):
+            if not HAVE_SCIPY and name == "q":
+                continue
             evilRows = []
             odiousRows = []
             for i in range(c.shape[0]):
