@@ -16,7 +16,7 @@
 # include <sys/mman.h>
 #endif
 
-#ifdef __arm__
+#ifdef __ARM_ARCH
  #define IISIGNATURE_NO_COMPILE
 #endif
 
