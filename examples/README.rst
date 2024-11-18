@@ -7,9 +7,11 @@ They are not part of the iisignature package build.
 They can have dependencies on other python packages which iisignature
 does not depend on - e.g. Theano and tensorflow.
 
-* iisignature_theano.py and iisignature_tensorflow.py provide theano and tensorflow operations
+* iisignature_theano.py and iisignature_tensorflow.py provide theano and tensorflow 1 operations
   which mirror sig, sigjoin and sigscale from iisignature. demo_keras.py shows how
   they might be used very simply in a Keras layer.
+
+* For tensorflow 2, see https://github.com/remigenet/iisignature-tensorflow-2 .
 
 * iisignature_recurrent_keras.py shows a recurrent network keras layer which uses signatures of the history of
   its units
@@ -44,7 +46,7 @@ Many of the other files are freestanding programs.
 * leak_check.py runs functions from iisignature many times - I can watch memory usage while this happens to try to diagnose memory leaks.
 
 * make_axis_path.py is a simple utility to make a path which moves single units along the axes matching a given sequence.
-  
+
 * protectedRotinvExperiment.py shows how you might, on Windows and Linux, experiment with high levels of some calculation (rotational invariants in this case) without fear you will stall your computer by eating all your RAM.
 
 The **Mathematica** folder contains some signature related Mathematica stuff.
