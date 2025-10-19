@@ -61,7 +61,15 @@ setup(name='iisignature',
           # Specify the Python versions you support here. In particular, ensure
           # that you indicate whether you support Python 2, Python 3 or both.
           'Programming Language :: Python :: 2',
+          'Programming Language :: Python :: 2.7',
           'Programming Language :: Python :: 3',
+          'Programming Language :: Python :: 3.6',
+          'Programming Language :: Python :: 3.7',
+          'Programming Language :: Python :: 3.8',
+          'Programming Language :: Python :: 3.9',
+          'Programming Language :: Python :: 3.10',
+          'Programming Language :: Python :: 3.11',
+          'Programming Language :: Python :: 3.12',
           ],
       url='https://github.com/bottler/iisignature',
       author='Jeremy Reizenstein',
@@ -73,7 +81,8 @@ setup(name='iisignature',
       #data_files=[("iisignature_data",["src/bchLyndon20.dat"])],
       package_data={"iisignature_data": ["bchLyndon20.dat"]},
       zip_safe=False,
-      install_requires=['numpy>1.7'], #For now, this is redundant as we've died above here on an import statement
-      setup_requires=['numpy>1.7'],
+      install_requires=['numpy>=1.7'], #For now, this is redundant as we've died above here on an import statement
+      setup_requires=['numpy>=1.7'],
+      python_requires='>=2.7, !=3.0.*, !=3.1.*, !=3.2.*, !=3.3.*, !=3.4.*, !=3.5.*',
 )
 #should add source url from github like at https://www.python.org/dev/peps/pep-0426/
