@@ -256,6 +256,46 @@ static bool calcSignature(Signature& s2, const double* data, int lengthOfPath, i
   return true;
 }
 
+static bool calcSignaturePrefix(Signature& s2, const double* data, int lengthOfPath, int d, int level) {
+    Signature s1;
+
+    if (lengthOfPath == 1) {
+        s2.sigOfNothing(d, level);
+        return true;
+    }
+
+    std::vector<double> displacement(d);
+    for (int i = 1; i < lengthOfPath; ++i) {
+        // Calcul du déplacement du segment i
+        for (int j = 0; j < d; ++j)
+            displacement[j] = data[i * d + j] - data[(i - 1) * d + j];
+
+        // Calcul de la signature du segment
+        if (i == lengthOfPath - 1) {
+            // Dernier segment appliquer le filtre spécial
+            s1.sigOfSegmentPrefix(d, level, &displacement[0]);
+        }
+        else {
+            // Segments précédents  signature normale
+            s1.sigOfSegment(d, level, &displacement[0]);
+        }
+
+        if (interrupt_wanted())
+            return false;
+
+        // Concaténation avec la signature cumulée
+        if (i == 1) {
+            s2.swap(s1);
+        }
+        else {
+            s2.concatenateWith(d, level, s1);
+            if (interrupt_wanted())
+                return false;
+        }
+    }
+    return true;
+}
+
 //data is (lengthOfPath x d)
 //out is ((lengthOfPath-1) x siglength)
 //sets out[i] to signature of data[0:i,:]
@@ -284,26 +324,37 @@ static bool calcCumulativeSignature(const double* data, int lengthOfPath, int d,
 
 static bool calcCumulativeSignaturePrefix(const double* data, int lengthOfPath, int d, int level, size_t siglength, double* out) {
     Signature s1, s2;
-
     vector<double> displacement(d);
+
     for (int i = 1; i < lengthOfPath; ++i) {
+        // calcul du vecteur déplacement
         for (int j = 0; j < d; ++j)
             displacement[j] = data[i * d + j] - data[(i - 1) * d + j];
-        s1.sigOfSegment(d, level, &displacement[0]);
-        if (interrupt_wanted())
-            return false;
-        if (i == 1) {
-            s2.swap(s1);
-        }
-        else if (i < lengthOfPath - 1) {
-            s2.concatenateWith(d, level, s1);
+
+        // signature du segment courant
+        if (i < lengthOfPath - 1) {
+            s1.sigOfSegment(d, level, &displacement[0]);
         }
         else {
-            
-            s2.concatenateWithPrefix(d, level, s1, 0); // 0 = première coordonnée
+            // dernier segment : filtre la première coordonnée
+            s1.sigOfSegmentPrefix(d, level, &displacement[0]); // 0 = coordonnée à ignorer
         }
+
+        if (interrupt_wanted())
+            return false;
+
+        // concaténation
+        if (i == 1) {
+            s2.swap(s1); // premier segment
+        }
+        else {
+            s2.concatenateWith(d, level, s1); // concat normale pour tous les segments
+        }
+
+        // écriture dans le tableau de sortie
         s2.writeOut(out + (i - 1) * siglength);
     }
+
     return true;
 }
 
@@ -2357,7 +2408,7 @@ static PyMethodDef Methods[] = {
    "If format is 1, the output is a tuple of arrays, one for each level, not a single one. "
    "If format is 2, the output is an array of shape [...,N-1,siglength(D,m)] of all the cumulative signatures"
    " from the first point to each other point."},
-    {"sig_prefix", sig_prefix, METH_VARARGS, "Compute signature terms on the prefix basis"}
+  {"sig_prefix", sig_prefix, METH_VARARGS, "Compute signature terms on the prefix basis"},
   {"sigmultcount", sigMultCount, METH_VARARGS, "sigmultcount(X,m)\n "
    "Returns the number of multiplications which sig(X,m) would perform."},
   {"sigjacobian", sigJacobian, METH_VARARGS, "sigjacobian(X,m)\n "
