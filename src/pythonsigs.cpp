@@ -281,6 +281,32 @@ static bool calcCumulativeSignature(const double* data, int lengthOfPath, int d,
   return true;
 }
 
+
+static bool calcCumulativeSignaturePrefix(const double* data, int lengthOfPath, int d, int level, size_t siglength, double* out) {
+    Signature s1, s2;
+
+    vector<double> displacement(d);
+    for (int i = 1; i < lengthOfPath; ++i) {
+        for (int j = 0; j < d; ++j)
+            displacement[j] = data[i * d + j] - data[(i - 1) * d + j];
+        s1.sigOfSegment(d, level, &displacement[0]);
+        if (interrupt_wanted())
+            return false;
+        if (i == 1) {
+            s2.swap(s1);
+        }
+        else if (i < lengthOfPath - 1) {
+            s2.concatenateWith(d, level, s1);
+        }
+        else {
+            
+            s2.concatenateWithPrefix(d, level, s1, 0); // 0 = première coordonnée
+        }
+        s2.writeOut(out + (i - 1) * siglength);
+    }
+    return true;
+}
+
 static PyObject *
 sig(PyObject *self, PyObject *args) {
   PyObject* a1;
@@ -365,6 +391,104 @@ sig(PyObject *self, PyObject *args) {
   }
   o_.release();
   return o;
+}
+
+// add signature calculation in the basis of prefix (see Theorem 2)
+static PyObject *
+sig_prefix(PyObject* self, PyObject* args){
+
+    //lecture et validation des arguments Python
+    PyObject* a1;
+    int level = 0;
+    int format = 0;
+    if (!PyArg_ParseTuple(args, "Oi|i", &a1, &level, &format))
+        return nullptr;
+    if (level < 1) ERR("level must be positive");
+
+    //conversion de l’entrée Python en tableau NumPy C - contigu
+    //could have a shortcut here if a1 is a contiguous array of float32
+    PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+    if (!aa) ERR("data must be (convertable to) a numpy array");
+    RefHolder a_(aa);
+    PyArrayObject* a = (PyArrayObject*)aa;
+    //lecture des dimensions du tableau
+    int ndims = PyArray_NDIM(a);
+    if (ndims < 2) ERR("data must be 2d");
+    const int lengthOfPath = (int)PyArray_DIM(a, ndims - 2);
+    const int d = (int)PyArray_DIM(a, ndims - 1);
+    if (lengthOfPath < 1) ERR("Path has no length");
+    if (d < 1) ERR("Path must have positive dimension");
+    //gestion du cas multi - paths
+    int nPaths = 1;
+    for (int i = 0; i + 2 < ndims; ++i) {
+        npy_intp x = PyArray_DIM(a, i);
+        nPaths *= (int)x;
+    }
+
+    //calcul des tailles internes 
+    size_t eachInputSize = (size_t)(lengthOfPath * d);
+    size_t eachOutputSize = (size_t)calcSigTotalLength(d, level);
+
+    //prépare le tableau de sortie NumPy
+    PyObject* o = nullptr;
+    using OutT = UseDouble;
+    OutT::T* out_data = nullptr;
+    double* in_data = (double*)PyArray_DATA(a);
+    if (format == 2) {
+        o = simpleNew_ownLast2Dims(ndims, a, (size_t)(lengthOfPath - 1u), eachOutputSize, OutT::typenum);
+        if (!o)
+            return nullptr;
+        auto od = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
+        bool ok = do_interruptible([&] {
+            for (int path = 0; path < nPaths; ++path)
+                if (!calcCumulativeSignaturePrefix(in_data + path * eachInputSize, lengthOfPath, d, level,
+                    eachOutputSize, od + path * eachOutputSize * (lengthOfPath - 1)))
+                    return false;
+            return true;
+            });
+        if (!ok)
+            return nullptr;
+        return o;
+    }
+    if (format == 0) {
+        o = simpleNew_ownLastDim(ndims - 1, a, eachOutputSize, OutT::typenum);
+        if (!o)
+            return nullptr;
+        out_data = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
+    }
+    else if (format != 1)
+        ERR("Invalid format requested");
+    ReleasableRefHolder o_(o);
+
+    // computation of the signature components on the basis of prefix words
+    Signature s;
+    bool ok = do_interruptible([&] {
+        for (int path = 0; path < nPaths; ++path) {
+            if (!calcSignaturePrefix(s, in_data + path * eachInputSize, lengthOfPath, d, level))
+                return false;
+            if (format == 0)
+                s.writeOut(out_data + path * eachOutputSize);
+        }
+        return true;
+        });
+    if (!ok)
+        return nullptr;
+
+    if (format == 1) {
+        o = PyTuple_New(level);
+        for (int m = 0; m < level; ++m) {
+            npy_intp dims[] = { (npy_intp)calcSigLevelLength(d,m + 1) };
+            PyObject* p = PyArray_SimpleNew(1, dims, OutT::typenum);
+            if (!p)
+                return nullptr;
+            auto ptr = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(p)));
+            for (auto f : s.m_data[m])
+                *(ptr++) = (OutT::T)f;
+            PyTuple_SET_ITEM(o, m, p);
+        }
+    }
+    o_.release();
+    return o;
 }
 
 static PyObject *
@@ -2233,6 +2357,7 @@ static PyMethodDef Methods[] = {
    "If format is 1, the output is a tuple of arrays, one for each level, not a single one. "
    "If format is 2, the output is an array of shape [...,N-1,siglength(D,m)] of all the cumulative signatures"
    " from the first point to each other point."},
+    {"sig_prefix", sig_prefix, METH_VARARGS, "Compute signature terms on the prefix basis"}
   {"sigmultcount", sigMultCount, METH_VARARGS, "sigmultcount(X,m)\n "
    "Returns the number of multiplications which sig(X,m) would perform."},
   {"sigjacobian", sigJacobian, METH_VARARGS, "sigjacobian(X,m)\n "

@@ -48,6 +48,33 @@ namespace CalcSignature{
       }
     }
     template<typename Num>
+    void sigOfSegmentPrefix(int d, int m, const Num* segment) {
+        m_data.resize(m);
+        auto& first = m_data[0];
+        first.resize(d);
+        for (int i = 0; i < d; ++i)
+            first[i] = (Number)segment[i];
+        for (int level = 2; level <= m; ++level) {
+            const auto& last = m_data[level - 2];
+            auto& s = m_data[level - 1];
+            s.assign(calcSigLevelLength(d, level), 0);
+            int idx = 0;
+            for (auto l : last) {
+                // pour chaque composante j du segment
+                for (int j = 0; j < d; ++j) {
+                    if (j == 0) {
+                        // on ne veut pas les termes dont le dernier intégrateur est la composante 0
+                        s[idx++] = (Number)0;
+                    }
+                    else {
+                        s[idx++] = (Number)(segment[j] * l * (1.0 / level));
+                    }
+                }
+            }
+        }
+    }
+
+    template<typename Num>
     void sigOfSegmentWitFixedLast(int d, int m, const Num* segment, double fixedLast) {
       m_data.resize(m);
       auto& first = m_data[0];
@@ -65,6 +92,33 @@ namespace CalcSignature{
             s[i++] = (Number)(p * l * (1.0 / level));
       }
     }
+
+    template<typename Num>
+    void sigOfSegmentWitFixedLastPrefix(int d, int m, const Num* segment, double fixedLast) {
+        m_data.resize(m);
+        auto& first = m_data[0];
+        first.resize(d);
+        for (int i = 0; i < d - 1; ++i)
+            first[i] = (Number)segment[i];
+        first[d - 1] = fixedLast;
+        for (int level = 2; level <= m; ++level) {
+            const auto& last = m_data[level - 2];
+            auto& s = m_data[level - 1];
+            s.assign(calcSigLevelLength(d, level), 0);
+            int idx = 0;
+            for (auto l : last) {
+                for (int j = 0; j < d; ++j) {
+                    if (j == 0) {
+                        s[idx++] = (Number)0;
+                    }
+                    else {
+                        s[idx++] = (Number)(first[j] * l * (1.0 / level));
+                    }
+                }
+            }
+        }
+    }
+
     static double sigOfSegmentMultCount(int d, int m) {
       double out = 0;
       int prevLevelLength = d;
@@ -110,6 +164,45 @@ namespace CalcSignature{
 
       }
     }
+
+    void concatenateWithPrefix(int d, int m, const Signature& other, int forbidden_dim = 0) {
+        for (int level = m; level > 0; --level) {
+            for (int mylevel = level - 1; mylevel > 0; --mylevel) {
+                int otherlevel = level - mylevel;
+                auto& oth = other.m_data[otherlevel - 1];
+                auto& mySig = m_data[mylevel - 1];
+                auto& destSig = m_data[level - 1];
+
+                auto dest = destSig.begin();
+                for (auto my = mySig.begin(); my != mySig.end(); ++my) {
+                    for (size_t j = 0; j < oth.size(); ++j) {
+
+                        // on détermine le "dernier intégrateur" du mot correspondant à j
+                        int last_coord = j % d;
+
+                        // ? si c’est la composante interdite, on saute
+                        if (last_coord == forbidden_dim) {
+                            ++dest;
+                            continue;
+                        }
+
+                        *(dest++) += oth[j] * (*my);
+                    }
+                }
+            }
+
+            auto source = other.m_data[level - 1].begin();
+            auto dest = m_data[level - 1].begin();
+            auto end = m_data[level - 1].end();
+            for (; dest != end; ++dest, ++source) {
+                int last_coord = (dest - m_data[level - 1].begin()) % d;
+                if (last_coord == forbidden_dim)
+                    continue;
+                *dest += *source;
+            }
+        }
+    }
+
     static double concatenateWithMultCount(int d, int m) {
       double out = 0;
       int levelLength = 1;
@@ -604,6 +697,20 @@ namespace CalcSignature{
       else
         s2.concatenateWith(d, m, s1);
     }
+  }
+
+  void calcSignaturePrefix(int d, int m, int lengthOfPath, const Number* data, Signature& s2) {
+      Signature s1;
+      vector<Number> displacement(d);
+      for (int i = 1; i < lengthOfPath; ++i) {
+          for (int j = 0; j < d; ++j)
+              displacement[j] = data[i * d + j] - data[(i - 1) * d + j];
+          s1.sigOfSegmentPrefix(d, m, &displacement[0]);
+          if (i == 1)
+              s2.swap(s1);
+          else
+              s2.concatenateWith(d, m, s1);
+      }
   }
 
   //path is a (lengthOfPath)xd path, derivs is dF/d(sig(path)) of length siglength(d,m),
