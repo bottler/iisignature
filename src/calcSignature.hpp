@@ -170,7 +170,6 @@ namespace CalcSignature{
 
                 if (word[level - 1] != 0) {
 
-                    std::cout << "Ok" << std::endl;
                     // Applying Chen relation
                     
                     // Correspond to extreme levels
