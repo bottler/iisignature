@@ -17,30 +17,22 @@ int calcSigTotalLength(int d, int m){
 }
 
 
-int wordToIndex(std::vector<int> word, int d) {
+int wordToIndex(std::vector<int> word, int d, int level) {
 
-    int index = 1;
+    int index = 0;
     int base = d + 1;
-    int a;
     int n = word.size();
-    if (n == 0)
-        return 0;
+    int a;
+    int pow = 1;
 
+    for (int i = n-1;i>= 0;--i) {
+        a = word[n - i - 1];
+        index += a * pow;
+        pow *= base;
 
-    int power = base;
-    for (int k = 1; k < n; ++k) {
-        index += power;
-        power *= base;
     }
-
-
-    int power2 = 1;
-    for (int i = n - 1; i >= 0; --i) {
-        index += word[i] * power2;
-        power2 *= base;
-    }
-
     return index;
+
 }
 
 std::vector<int> indexToWord(const int index, const int d, const int level) {
