@@ -482,7 +482,7 @@ sig_prefix_naive(PyObject* self, PyObject* args){
     Signature s;
     bool ok = do_interruptible([&] {
         for (int path = 0; path < nPaths; ++path) {
-            if (!calcSignatureUntilLast(s, in_data + path * eachInputSize, lengthOfPath, d, level))
+            if (!calcSignaturePrefixNaive(s, in_data + path * eachInputSize, lengthOfPath, d, level))
                 return false;
             s.writeOut(out_data + path * eachOutputSize);
         }
