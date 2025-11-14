@@ -295,7 +295,7 @@ static bool calcSignatureUntilLast(Signature& s2,
 
 static bool calcSignaturePrefixNaive(Signature& s2, const double* data, int lengthOfPath, int d, int level) {
 
-    if (!calcSignatureUntilLast(s2, data, lengthOfPath, d, level) {
+    if (!calcSignatureUntilLast(s2, data, lengthOfPath, d, level)) {
         return false;
     }
     else {
@@ -303,6 +303,7 @@ static bool calcSignaturePrefixNaive(Signature& s2, const double* data, int leng
         // Now we only compute terms associated to prefix words
 
         // last linar displacement and its signature
+        const int i = lengthOfPath - 1;
         std::vector<double> displacement(d);
         Signature s1;
         for (int j = 0; j < d; ++j)

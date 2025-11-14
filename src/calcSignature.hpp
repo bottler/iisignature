@@ -17,40 +17,40 @@ int calcSigTotalLength(int d, int m){
 }
 
 
-int wordToIndex(std::vector<int> word, int d, int level) {
-
-    int index = 0;
-    int base = d + 1;
+int wordToIndex(const std::vector<int>& word, int d, int N)
+{
     int n = word.size();
-    int a;
-    int pow = 1;
+    if (n != N)
+        throw std::invalid_argument("the length of the word does not match");
 
-    for (int i = n-1;i>= 0;--i) {
-        a = word[n - i - 1];
-        index += a * pow;
-        pow *= base;
+    int base = d;
+    int index = 0;
 
+    for (int i = 0; i < n; ++i) {
+        index = index * base + word[i];
     }
-    return index;
 
+    return index;
 }
 
-std::vector<int> indexToWord(const int index, const int d, const int level) {
-
-    int base = d + 1;
+std::vector<int> indexToWord(int index, int d, int level)
+{
+    int base = d;
     std::vector<int> word(level);
-    int remaining = index;
-    int power =1;
-    int q;
-    for (int i = level-1; i >= 0; --i) {
-        q = remaining / power;
-        remaining = remaining % power;
-        power *= base;
-        word[level - 1 - i] = q;
 
+    int power = 1;
+    for (int i = 1; i < level; ++i)
+        power *= base; // power = base^(level-1)
+
+    for (int i = 0; i < level; ++i) {
+        int q = index / power;
+        index %= power;
+
+        word[i] = q;
+        power /= base;
     }
-    return word;
 
+    return word;
 }
 
 namespace CalcSignature{
@@ -150,40 +150,44 @@ namespace CalcSignature{
       }
     }
 
-    void concatenateWithPrefix(int /*d*/, int m, const Signature& other) {
+    void concatenateWithPrefix(int d, int m, const Signature& other) {
     //This method does the Chen concatenation product but construct only prefix words
 
-        int d = m_data[0].size();
-        int size_loc = d + 1;
-        vector<vector<Number>>* const m_datacopy_ptr = new vector<vector<Number>>;
-        *m_datacopy_ptr = m_data;
+        int size_loc = 1;
+        auto m_datacopy = m_data;
         int index1;
         int index2;
         
-        for (int level = 1, level < m; ++level) {
+        for (int level = 1; level <= m; ++level) {
             
             std::vector<int> word(level);
-            for (index = 0; index < size_loc; ++index {
+            size_loc *= d;
+            for (int index = 0; index < size_loc; ++index){
                 m_data[level - 1][index] = 0;
                 
+
                 word = indexToWord(index,d,level);
-                
+
                 if (word[level - 1] != 0) {
+
+                    std::cout << "Ok" << std::endl;
                     // Applying Chen relation
                     
                     // Correspond to extreme levels
-                    m_data[level - 1][index] += *m_datacopy_ptr[level - 1][index];
+                    m_data[level - 1][index] += m_datacopy[level - 1][index];
                     m_data[level - 1][index] += other.m_data[level - 1][index];
 
                     // intermediate levels
-                    for (int other_level = 1; other_level < level - 1; ++other_level){
+                    for (int other_level = 1; other_level < level; ++other_level){
 
-                        std::vector<int> word_1(word.begin(), word.begin() + other_level);
-                        std::vector<int> word_2(word.begin()+other_level, word.end());
-                        index1 = wordToIndex(word1);
-                        index2 = wordToIndex(word2);
+                        
 
-                        m_data[level - 1][index] += *m_datacopy_ptr[other_level-1][index1] * other.m_data[level-other_level-1][index2];
+                        std::vector<int> word1(word.begin(), word.begin() + other_level);
+                        std::vector<int> word2(word.begin()+other_level, word.end());
+                        index1 = wordToIndex(word1,d,other_level);
+                        index2 = wordToIndex(word2,d,level-other_level);
+
+                        m_data[level - 1][index] += m_datacopy[other_level-1][index1] * other.m_data[level-other_level-1][index2];
 
 
                     }
@@ -191,10 +195,8 @@ namespace CalcSignature{
 
                 }
             }
-            size_loc*=d+1;
+            
         }
-        delete m_datacopy_ptr;
-        m_datacopy_ptr = nullptr;
 
     }
 
