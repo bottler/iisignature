@@ -157,50 +157,55 @@ namespace CalcSignature{
         for (int l = 1; l < m; ++l)
             level_sizes[l] = level_sizes[l - 1] * d;
 
-        // Copie unique du m_data initial
         const auto m_datacopy = m_data;
 
-        // Parcours de tous les niveaux
+        // Buffer fixe pour le mot
+        std::vector<int> word(m);
+
         for (int level = 1; level <= m; ++level) {
-            double invLevel = 1.0 / level;
             int size_loc = level_sizes[level - 1];
+            double invLevel = 1.0 / level;
 
             for (int index = 0; index < size_loc; ++index) {
-                m_data[level - 1][index] = 0;
-
-                // Conversion index -> word sans vecteur temporaire
+                // Génération du mot directement à partir de l'index
                 int remaining = index;
-                int base = d;
-                std::vector<int> word(level); // tu peux réutiliser un buffer global si tu veux encore plus rapide
+                bool endsWithZero = false;
+
+                // Calcul des symboles du mot
                 for (int i = level - 1; i >= 0; --i) {
-                    word[i] = remaining % base;
-                    remaining /= base;
+                    word[i] = remaining % d;
+                    if (i == level - 1 && word[i] == 0)
+                        endsWithZero = true;
+                    remaining /= d;
                 }
 
-                if (word[level - 1] != 0) {
-                    // Extrêmes
-                    m_data[level - 1][index] += m_datacopy[level - 1][index];
-                    m_data[level - 1][index] += other.m_data[level - 1][index];
+                // Si le mot finit par 0, mettre à zéro et passer
+                if (endsWithZero) {
+                    m_data[level - 1][index] = 0.0;
+                    continue;
+                }
 
-                    // Intermédiaires
-                    for (int other_level = 1; other_level < level; ++other_level) {
-                        int left_index = 0;
-                        int right_index = 0;
+                // Extrêmes : contribution directe
+                m_data[level - 1][index] = m_datacopy[level - 1][index] + other.m_data[level - 1][index];
 
-                        // Calcul direct de l'index à partir des portions du mot
-                        for (int i = 0; i < other_level; ++i)
-                            left_index = left_index * base + word[i];
-                        for (int i = other_level; i < level; ++i)
-                            right_index = right_index * base + word[i];
+                // Intermédiaires : Chen relation
+                for (int other_level = 1; other_level < level; ++other_level) {
+                    int left_index = 0;
+                    int right_index = 0;
+                    for (int i = 0; i < other_level; ++i)
+                        left_index = left_index * d + word[i];
+                    for (int i = other_level; i < level; ++i)
+                        right_index = right_index * d + word[i];
 
-                        m_data[level - 1][index] +=
-                            m_datacopy[other_level - 1][left_index] *
-                            other.m_data[level - other_level - 1][right_index];
-                    }
+                    m_data[level - 1][index] +=
+                        m_datacopy[other_level - 1][left_index] *
+                        other.m_data[level - other_level - 1][right_index];
                 }
             }
         }
     }
+
+
 
     static double concatenateWithMultCount(int d, int m) {
       double out = 0;
