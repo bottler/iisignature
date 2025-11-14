@@ -151,52 +151,55 @@ namespace CalcSignature{
     }
 
     void concatenateWithPrefix(int d, int m, const Signature& other) {
-    //This method does the Chen concatenation product but construct only prefix words
+        // Pré-calcul des tailles des niveaux
+        std::vector<int> level_sizes(m);
+        level_sizes[0] = d;
+        for (int l = 1; l < m; ++l)
+            level_sizes[l] = level_sizes[l - 1] * d;
 
-        int size_loc = 1;
-        auto m_datacopy = m_data;
-        int index1;
-        int index2;
-        
+        // Copie unique du m_data initial
+        const auto m_datacopy = m_data;
+
+        // Parcours de tous les niveaux
         for (int level = 1; level <= m; ++level) {
-            
-            std::vector<int> word(level);
-            size_loc *= d;
-            for (int index = 0; index < size_loc; ++index){
-                m_data[level - 1][index] = 0;
-                
+            double invLevel = 1.0 / level;
+            int size_loc = level_sizes[level - 1];
 
-                word = indexToWord(index,d,level);
+            for (int index = 0; index < size_loc; ++index) {
+                m_data[level - 1][index] = 0;
+
+                // Conversion index -> word sans vecteur temporaire
+                int remaining = index;
+                int base = d;
+                std::vector<int> word(level); // tu peux réutiliser un buffer global si tu veux encore plus rapide
+                for (int i = level - 1; i >= 0; --i) {
+                    word[i] = remaining % base;
+                    remaining /= base;
+                }
 
                 if (word[level - 1] != 0) {
-
-                    // Applying Chen relation
-                    
-                    // Correspond to extreme levels
+                    // Extrêmes
                     m_data[level - 1][index] += m_datacopy[level - 1][index];
                     m_data[level - 1][index] += other.m_data[level - 1][index];
 
-                    // intermediate levels
-                    for (int other_level = 1; other_level < level; ++other_level){
+                    // Intermédiaires
+                    for (int other_level = 1; other_level < level; ++other_level) {
+                        int left_index = 0;
+                        int right_index = 0;
 
-                        
+                        // Calcul direct de l'index à partir des portions du mot
+                        for (int i = 0; i < other_level; ++i)
+                            left_index = left_index * base + word[i];
+                        for (int i = other_level; i < level; ++i)
+                            right_index = right_index * base + word[i];
 
-                        std::vector<int> word1(word.begin(), word.begin() + other_level);
-                        std::vector<int> word2(word.begin()+other_level, word.end());
-                        index1 = wordToIndex(word1,d,other_level);
-                        index2 = wordToIndex(word2,d,level-other_level);
-
-                        m_data[level - 1][index] += m_datacopy[other_level-1][index1] * other.m_data[level-other_level-1][index2];
-
-
+                        m_data[level - 1][index] +=
+                            m_datacopy[other_level - 1][left_index] *
+                            other.m_data[level - other_level - 1][right_index];
                     }
-
-
                 }
             }
-            
         }
-
     }
 
     static double concatenateWithMultCount(int d, int m) {
