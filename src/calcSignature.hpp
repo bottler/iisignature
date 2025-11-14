@@ -17,31 +17,31 @@ int calcSigTotalLength(int d, int m){
 }
 
 
-//int wordToIndex(std::vector<int> word, int d) {
-//
-//    int index = 1;
-//    int base = d + 1;
-//    int a;
-//    int n = word.size();
-//    if (n == 0)
-//        return 0;
-//
-//
-//    int power = base;
-//    for (int k = 1; k < n; ++k) {
-//        index += power;
-//        power *= base;
-//    }
-//
-//
-//    int power2 = 1;
-//    for (int i = n - 1; i >= 0; --i) {
-//        index += word[i] * power2;
-//        power2 *= base;
-//    }
-//
-//    return index;
-//}
+int wordToIndex(std::vector<int> word, int d) {
+
+    int index = 1;
+    int base = d + 1;
+    int a;
+    int n = word.size();
+    if (n == 0)
+        return 0;
+
+
+    int power = base;
+    for (int k = 1; k < n; ++k) {
+        index += power;
+        power *= base;
+    }
+
+
+    int power2 = 1;
+    for (int i = n - 1; i >= 0; --i) {
+        index += word[i] * power2;
+        power2 *= base;
+    }
+
+    return index;
+}
 
 std::vector<int> indexToWord(const int index, const int d, const int level) {
 
@@ -163,25 +163,46 @@ namespace CalcSignature{
 
         int d = m_data[0].size();
         int size_loc = d + 1;
+        vector<vector<Number>>* const m_datacopy_ptr = new vector<vector<Number>>;
+        *m_datacopy_ptr = m_data;
+        int index1;
+        int index2;
         
-
         for (int level = 1, level < m; ++level) {
             
             std::vector<int> word(level);
             for (index = 0; index < size_loc; ++index {
+                m_data[level - 1][index] = 0;
                 
                 word = indexToWord(index,d,level);
+                
                 if (word[level - 1] != 0) {
+                    // Applying Chen relation
+                    
+                    // Correspond to extreme levels
+                    m_data[level - 1][index] += *m_datacopy_ptr[level - 1][index];
+                    m_data[level - 1][index] += other.m_data[level - 1][index];
+
+                    // intermediate levels
+                    for (int other_level = 1; other_level < level - 1; ++other_level){
+
+                        std::vector<int> word_1(word.begin(), word.begin() + other_level);
+                        std::vector<int> word_2(word.begin()+other_level, word.end());
+                        index1 = wordToIndex(word1);
+                        index2 = wordToIndex(word2);
+
+                        m_data[level - 1][index] += *m_datacopy_ptr[other_level-1][index1] * other.m_data[level-other_level-1][index2];
 
 
-                }
-                else {
-                    // we attribute 0 to signature components associated to words which end with 0
-                    m_data[level-1][index]=0;
+                    }
+
+
                 }
             }
             size_loc*=d+1;
         }
+        delete m_datacopy_ptr;
+        m_datacopy_ptr = nullptr;
 
     }
 
