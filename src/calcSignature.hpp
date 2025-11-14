@@ -16,6 +16,51 @@ int calcSigTotalLength(int d, int m){
   return d*(p-1)/(d-1);
 }
 
+
+//int wordToIndex(std::vector<int> word, int d) {
+//
+//    int index = 1;
+//    int base = d + 1;
+//    int a;
+//    int n = word.size();
+//    if (n == 0)
+//        return 0;
+//
+//
+//    int power = base;
+//    for (int k = 1; k < n; ++k) {
+//        index += power;
+//        power *= base;
+//    }
+//
+//
+//    int power2 = 1;
+//    for (int i = n - 1; i >= 0; --i) {
+//        index += word[i] * power2;
+//        power2 *= base;
+//    }
+//
+//    return index;
+//}
+
+std::vector<int> indexToWord(const int index, const int d, const int level) {
+
+    int base = d + 1;
+    std::vector<int> word(level);
+    int remaining = index;
+    int power =1;
+    int q;
+    for (int i = level-1; i >= 0; --i) {
+        q = remaining / power;
+        remaining = remaining % power;
+        power *= base;
+        word[level - 1 - i] = q;
+
+    }
+    return word;
+
+}
+
 namespace CalcSignature{
   using std::vector;
 
@@ -46,32 +91,6 @@ namespace CalcSignature{
           for(auto p=segment; p<segment+d; ++p)
             s[i++]=(Number)(*p * l * (1.0/level));
       }
-    }
-    template<typename Num>
-    void sigOfSegmentPrefix(int d, int m, const Num* segment) {
-        m_data.resize(m);
-        auto& first = m_data[0];
-        first.resize(d);
-        for (int i = 0; i < d; ++i)
-            first[i] = (Number)segment[i];
-        for (int level = 2; level <= m; ++level) {
-            const auto& last = m_data[level - 2];
-            auto& s = m_data[level - 1];
-            s.assign(calcSigLevelLength(d, level), 0);
-            int idx = 0;
-            for (auto l : last) {
-                // pour chaque composante j du segment
-                for (int j = 0; j < d; ++j) {
-                    if (j == 0) {
-                        // on ne veut pas les termes dont le dernier intégrateur est la composante 0
-                        s[idx++] = (Number)0;
-                    }
-                    else {
-                        s[idx++] = (Number)(segment[j] * l * (1.0 / level));
-                    }
-                }
-            }
-        }
     }
 
     template<typename Num>
@@ -137,6 +156,33 @@ namespace CalcSignature{
           *(dest++) += *(source++);
 
       }
+    }
+
+    void concatenateWithPrefix(int /*d*/, int m, const Signature& other) {
+    //This method does the Chen concatenation product but construct only prefix words
+
+        int d = m_data[0].size();
+        int size_loc = d + 1;
+        
+
+        for (int level = 1, level < m; ++level) {
+            
+            std::vector<int> word(level);
+            for (index = 0; index < size_loc; ++index {
+                
+                word = indexToWord(index,d,level);
+                if (word[level - 1] != 0) {
+
+
+                }
+                else {
+                    // we attribute 0 to signature components associated to words which end with 0
+                    m_data[level-1][index]=0;
+                }
+            }
+            size_loc*=d+1;
+        }
+
     }
 
     static double concatenateWithMultCount(int d, int m) {
