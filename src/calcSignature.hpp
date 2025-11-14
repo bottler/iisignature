@@ -157,45 +157,45 @@ namespace CalcSignature{
         for (int l = 1; l < m; ++l)
             level_sizes[l] = level_sizes[l - 1] * d;
 
+        // Copie unique du m_data initial
         const auto m_datacopy = m_data;
 
-        // Buffer fixe pour le mot
+        // Buffer pour les mots (réutilisé)
         std::vector<int> word(m);
 
         for (int level = 1; level <= m; ++level) {
             int size_loc = level_sizes[level - 1];
-            double invLevel = 1.0 / level;
 
             for (int index = 0; index < size_loc; ++index) {
-                // Génération du mot directement à partir de l'index
-                int remaining = index;
-                bool endsWithZero = false;
+                m_data[level - 1][index] = 0;
 
-                // Calcul des symboles du mot
+                // Génération du mot à partir de l'indice (pas de modulo)
+                int tmp = index;
                 for (int i = level - 1; i >= 0; --i) {
-                    word[i] = remaining % d;
-                    if (i == level - 1 && word[i] == 0)
-                        endsWithZero = true;
-                    remaining /= d;
+                    word[i] = tmp % d;
+                    tmp /= d;
                 }
 
-                // Si le mot finit par 0, mettre à zéro et passer
-                if (endsWithZero) {
-                    m_data[level - 1][index] = 0.0;
-                    continue;
-                }
+                if (word[level - 1] == 0)
+                    continue; // mot ignoré
 
-                // Extrêmes : contribution directe
-                m_data[level - 1][index] = m_datacopy[level - 1][index] + other.m_data[level - 1][index];
+                // Extrêmes
+                m_data[level - 1][index] += m_datacopy[level - 1][index];
+                m_data[level - 1][index] += other.m_data[level - 1][index];
 
-                // Intermédiaires : Chen relation
+                // Intermédiaires
                 for (int other_level = 1; other_level < level; ++other_level) {
                     int left_index = 0;
                     int right_index = 0;
+
                     for (int i = 0; i < other_level; ++i)
                         left_index = left_index * d + word[i];
                     for (int i = other_level; i < level; ++i)
                         right_index = right_index * d + word[i];
+
+                    // Sécurité : assertions
+                    assert(left_index >= 0 && left_index < m_datacopy[other_level - 1].size());
+                    assert(right_index >= 0 && right_index < other.m_data[level - other_level - 1].size());
 
                     m_data[level - 1][index] +=
                         m_datacopy[other_level - 1][left_index] *
@@ -204,6 +204,7 @@ namespace CalcSignature{
             }
         }
     }
+
 
 
 
