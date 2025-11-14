@@ -311,10 +311,9 @@ static bool calcSignaturePrefixNaive(Signature& s2, const double* data, int leng
 
         // We can use the Chen property to construct components associated to prefix
 
+        s2.concatenateWithPrefix(d, level, s1);
 
-
-        
-
+        return true;
 
     }
 
