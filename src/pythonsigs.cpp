@@ -256,45 +256,70 @@ static bool calcSignature(Signature& s2, const double* data, int lengthOfPath, i
   return true;
 }
 
-static bool calcSignaturePrefix(Signature& s2, const double* data, int lengthOfPath, int d, int level) {
+
+
+static bool calcSignatureUntilLast(Signature& s2,
+    const double* data,
+    int lengthOfPath,
+    int d,
+    int level)
+{
     Signature s1;
 
-    if (lengthOfPath == 1) {
+    if (lengthOfPath <= 2) {
+        
         s2.sigOfNothing(d, level);
         return true;
     }
 
     std::vector<double> displacement(d);
-    for (int i = 1; i < lengthOfPath; ++i) {
-        // Calcul du déplacement du segment i
+
+    for (int i = 1; i < lengthOfPath - 1; ++i) {
+        // we stop at lengthOfPath - 2
         for (int j = 0; j < d; ++j)
             displacement[j] = data[i * d + j] - data[(i - 1) * d + j];
 
-        // Calcul de la signature du segment
-        if (i == lengthOfPath - 1) {
-            // Dernier segment appliquer le filtre spécial
-            s1.sigOfSegmentPrefix(d, level, &displacement[0]);
-        }
-        else {
-            // Segments précédents  signature normale
-            s1.sigOfSegment(d, level, &displacement[0]);
-        }
-
+        s1.sigOfSegment(d, level, &displacement[0]); 
         if (interrupt_wanted())
             return false;
 
-        // Concaténation avec la signature cumulée
-        if (i == 1) {
+        if (i == 1)
             s2.swap(s1);
-        }
-        else {
+        else
             s2.concatenateWith(d, level, s1);
-            if (interrupt_wanted())
-                return false;
-        }
     }
+
     return true;
 }
+
+
+static bool calcSignaturePrefixNaive(Signature& s2, const double* data, int lengthOfPath, int d, int level) {
+
+    if (!calcSignatureUntilLast(s2, data, lengthOfPath, d, level) {
+        return false;
+    }
+    else {
+        // the computation of the whole signature of the path until the last concatenation succed
+        // Now we only compute terms associated to prefix words
+
+        // last linar displacement and its signature
+        std::vector<double> displacement(d);
+        Signature s1;
+        for (int j = 0; j < d; ++j)
+            displacement[j] = data[i * d + j] - data[(i - 1) * d + j];
+        s1.sigOfSegment(d, level, &displacement[0]);
+
+        // We can use the Chen property to construct components associated to prefix
+
+
+
+        
+
+
+    }
+
+}
+
 
 //data is (lengthOfPath x d)
 //out is ((lengthOfPath-1) x siglength)
@@ -319,43 +344,6 @@ static bool calcCumulativeSignature(const double* data, int lengthOfPath, int d,
     s2.writeOut(out + (i - 1)*siglength);
   }
   return true;
-}
-
-
-static bool calcCumulativeSignaturePrefix(const double* data, int lengthOfPath, int d, int level, size_t siglength, double* out) {
-    Signature s1, s2;
-    vector<double> displacement(d);
-
-    for (int i = 1; i < lengthOfPath; ++i) {
-        // calcul du vecteur déplacement
-        for (int j = 0; j < d; ++j)
-            displacement[j] = data[i * d + j] - data[(i - 1) * d + j];
-
-        // signature du segment courant
-        if (i < lengthOfPath - 1) {
-            s1.sigOfSegment(d, level, &displacement[0]);
-        }
-        else {
-            // dernier segment : filtre la première coordonnée
-            s1.sigOfSegmentPrefix(d, level, &displacement[0]); // 0 = coordonnée à ignorer
-        }
-
-        if (interrupt_wanted())
-            return false;
-
-        // concaténation
-        if (i == 1) {
-            s2.swap(s1); // premier segment
-        }
-        else {
-            s2.concatenateWith(d, level, s1); // concat normale pour tous les segments
-        }
-
-        // écriture dans le tableau de sortie
-        s2.writeOut(out + (i - 1) * siglength);
-    }
-
-    return true;
 }
 
 static PyObject *
@@ -446,13 +434,13 @@ sig(PyObject *self, PyObject *args) {
 
 // add signature calculation in the basis of prefix (see Theorem 2)
 static PyObject *
-sig_prefix(PyObject* self, PyObject* args){
+sig_prefix_naive(PyObject* self, PyObject* args){
 
     //lecture et validation des arguments Python
     PyObject* a1;
     int level = 0;
     int format = 0;
-    if (!PyArg_ParseTuple(args, "Oi|i", &a1, &level, &format))
+    if (!PyArg_ParseTuple(args, "Oi", &a1, &level))
         return nullptr;
     if (level < 1) ERR("level must be positive");
 
@@ -485,59 +473,24 @@ sig_prefix(PyObject* self, PyObject* args){
     using OutT = UseDouble;
     OutT::T* out_data = nullptr;
     double* in_data = (double*)PyArray_DATA(a);
-    if (format == 2) {
-        o = simpleNew_ownLast2Dims(ndims, a, (size_t)(lengthOfPath - 1u), eachOutputSize, OutT::typenum);
-        if (!o)
-            return nullptr;
-        auto od = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
-        bool ok = do_interruptible([&] {
-            for (int path = 0; path < nPaths; ++path)
-                if (!calcCumulativeSignaturePrefix(in_data + path * eachInputSize, lengthOfPath, d, level,
-                    eachOutputSize, od + path * eachOutputSize * (lengthOfPath - 1)))
-                    return false;
-            return true;
-            });
-        if (!ok)
-            return nullptr;
-        return o;
-    }
-    if (format == 0) {
-        o = simpleNew_ownLastDim(ndims - 1, a, eachOutputSize, OutT::typenum);
-        if (!o)
-            return nullptr;
-        out_data = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
-    }
-    else if (format != 1)
-        ERR("Invalid format requested");
+    o = simpleNew_ownLastDim(ndims - 1, a, eachOutputSize, OutT::typenum);
+    if (!o)
+        return nullptr;
+    out_data = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(o)));
     ReleasableRefHolder o_(o);
 
     // computation of the signature components on the basis of prefix words
     Signature s;
     bool ok = do_interruptible([&] {
         for (int path = 0; path < nPaths; ++path) {
-            if (!calcSignaturePrefix(s, in_data + path * eachInputSize, lengthOfPath, d, level))
+            if (!calcSignatureUntilLast(s, in_data + path * eachInputSize, lengthOfPath, d, level))
                 return false;
-            if (format == 0)
-                s.writeOut(out_data + path * eachOutputSize);
+            s.writeOut(out_data + path * eachOutputSize);
         }
         return true;
         });
     if (!ok)
         return nullptr;
-
-    if (format == 1) {
-        o = PyTuple_New(level);
-        for (int m = 0; m < level; ++m) {
-            npy_intp dims[] = { (npy_intp)calcSigLevelLength(d,m + 1) };
-            PyObject* p = PyArray_SimpleNew(1, dims, OutT::typenum);
-            if (!p)
-                return nullptr;
-            auto ptr = static_cast<OutT::T*>(PyArray_DATA(reinterpret_cast<PyArrayObject*>(p)));
-            for (auto f : s.m_data[m])
-                *(ptr++) = (OutT::T)f;
-            PyTuple_SET_ITEM(o, m, p);
-        }
-    }
     o_.release();
     return o;
 }
@@ -2408,7 +2361,7 @@ static PyMethodDef Methods[] = {
    "If format is 1, the output is a tuple of arrays, one for each level, not a single one. "
    "If format is 2, the output is an array of shape [...,N-1,siglength(D,m)] of all the cumulative signatures"
    " from the first point to each other point."},
-  {"sig_prefix", sig_prefix, METH_VARARGS, "Compute signature terms on the prefix basis"},
+  {"sig_prefix_naive", sig_prefix_naive, METH_VARARGS, "Compute signature terms on the prefix basis"},
   {"sigmultcount", sigMultCount, METH_VARARGS, "sigmultcount(X,m)\n "
    "Returns the number of multiplications which sig(X,m) would perform."},
   {"sigjacobian", sigJacobian, METH_VARARGS, "sigjacobian(X,m)\n "
