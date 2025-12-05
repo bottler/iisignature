@@ -17,42 +17,6 @@ int calcSigTotalLength(int d, int m){
 }
 
 
-int wordToIndex(const std::vector<int>& word, int d, int N)
-{
-    int n = word.size();
-    if (n != N)
-        throw std::invalid_argument("the length of the word does not match");
-
-    int base = d;
-    int index = 0;
-
-    for (int i = 0; i < n; ++i) {
-        index = index * base + word[i];
-    }
-
-    return index;
-}
-
-std::vector<int> indexToWord(int index, int d, int level)
-{
-    int base = d;
-    std::vector<int> word(level);
-
-    int power = 1;
-    for (int i = 1; i < level; ++i)
-        power *= base; // power = base^(level-1)
-
-    for (int i = 0; i < level; ++i) {
-        int q = index / power;
-        index %= power;
-
-        word[i] = q;
-        power /= base;
-    }
-
-    return word;
-}
-
 namespace CalcSignature{
   using std::vector;
 
@@ -149,62 +113,6 @@ namespace CalcSignature{
 
       }
     }
-
-    void concatenateWithPrefix(int d, int m, const Signature& other) {
-        // Pré-calcul des tailles des niveaux
-        std::vector<int> level_sizes(m);
-        level_sizes[0] = d;
-        for (int l = 1; l < m; ++l)
-            level_sizes[l] = level_sizes[l - 1] * d;
-
-        // Copie unique du m_data initial
-        const auto m_datacopy = m_data;
-
-        // Buffer pour les mots (réutilisé)
-        std::vector<int> word(m);
-
-        for (int level = 1; level <= m; ++level) {
-            int size_loc = level_sizes[level - 1];
-
-            for (int index = 0; index < size_loc; ++index) {
-                m_data[level - 1][index] = 0;
-
-                // Génération du mot à partir de l'indice (pas de modulo)
-                int tmp = index;
-                for (int i = level - 1; i >= 0; --i) {
-                    word[i] = tmp % d;
-                    tmp /= d;
-                }
-
-                if (word[level - 1] == 0)
-                    continue; // mot ignoré
-
-                // Extrêmes
-                m_data[level - 1][index] += m_datacopy[level - 1][index];
-                m_data[level - 1][index] += other.m_data[level - 1][index];
-
-                // Intermédiaires
-                for (int other_level = 1; other_level < level; ++other_level) {
-                    int left_index = 0;
-                    int right_index = 0;
-
-                    for (int i = 0; i < other_level; ++i)
-                        left_index = left_index * d + word[i];
-                    for (int i = other_level; i < level; ++i)
-                        right_index = right_index * d + word[i];
-
-                    // Sécurité : assertions
-                    assert(left_index >= 0 && left_index < m_datacopy[other_level - 1].size());
-                    assert(right_index >= 0 && right_index < other.m_data[level - other_level - 1].size());
-
-                    m_data[level - 1][index] +=
-                        m_datacopy[other_level - 1][left_index] *
-                        other.m_data[level - other_level - 1][right_index];
-                }
-            }
-        }
-    }
-
 
 
 
