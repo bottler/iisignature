@@ -17,4 +17,4 @@ Debug
 x64
 *.vcxproj.user
 *.VC.db
-.vs
+.vs"*.pyd" 
