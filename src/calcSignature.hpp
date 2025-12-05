@@ -827,6 +827,105 @@ namespace CalcSignature{
     d_s.writeOut(d_sig);
   }
 
+
+  //        Implementation of SuffixSignature and its "adjoint" for the tensor product
+  //
+  // Minimal construction for this class to work : sigOfSegment, sigOfNothing, concatenateWith
+
+  class SuffixSignature {
+  public:
+      vector<vector<Number>> m_data;
+
+      template<typename Num>
+      void sigOfSegment(int d, int m, const Num* segment) {
+          m_data.resize(m);
+          auto& first = m_data[0];
+          first.resize(d);
+          for (int i = 0; i < d; ++i)
+              first[i] = (Number)segment[i];
+          for (int level = 2; level <= m; ++level) {
+              const auto& last = m_data[level - 2];
+              auto& s = m_data[level - 1];
+              s.assign(calcSigLevelLength(d, level), 0);
+              int i = 0;
+              for (auto l : last)
+                  for (auto p = segment; p < segment + d; ++p)
+                      s[i++] = (Number)(*p * l * (1.0 / level));
+          }
+      }
+
+      void sigOfNothing(int d, int m) {
+          m_data.resize(m);
+          m_data[0].assign(d, 0);
+          size_t size = (size_t)d;
+          for (int level = 2; level <= m; ++level) {
+              auto& s = m_data[level - 1];
+              size *= (size_t)d;
+              s.assign(size, 0);
+          }
+      }
+
+     
+      //This is also the (concatenation) product of the elements a and b where a is a Suffix signature and b an adjoint.
+      void concatenateWith(int /*d*/, int m, const AdjointSuffixSignature& other) {
+          for (int level = m; level > 0; --level) {
+              for (int mylevel = level - 1; mylevel > 0; --mylevel) {
+                  int otherlevel = level - mylevel;
+                  auto& oth = other.m_data[otherlevel - 1];
+                  for (auto dest = m_data[level - 1].begin(),
+                      my = m_data[mylevel - 1].begin(),
+                      myE = m_data[mylevel - 1].end(); my != myE; ++my) {
+                      for (const Number& dd : oth) {
+                          *(dest++) += dd * *my;
+                      }
+                  }
+              }
+              auto source = other.m_data[level - 1].begin();
+              for (auto dest = m_data[level - 1].begin(),
+                  e = m_data[level - 1].end();
+                  dest != e;)
+                  *(dest++) += *(source++);
+
+          }
+      }
+  };
+
+  class AdjointSuffixSignature {
+  public:
+      vector<vector<Number>> m_data;
+
+      template<typename Num>
+      void sigOfSegment(int d, int m, const Num* segment) {
+          m_data.resize(m);
+          auto& first = m_data[0];
+          first.resize(d);
+          for (int i = 0; i < d; ++i)
+              first[i] = (Number)segment[i];
+          for (int level = 2; level <= m; ++level) {
+              const auto& last = m_data[level - 2];
+              auto& s = m_data[level - 1];
+              s.assign(calcSigLevelLength(d, level), 0);
+              int i = 0;
+              for (auto l : last)
+                  for (auto p = segment; p < segment + d; ++p)
+                      s[i++] = (Number)(*p * l * (1.0 / level));
+          }
+      }
+
+      void sigOfNothing(int d, int m) {
+          m_data.resize(m);
+          m_data[0].assign(d, 0);
+          size_t size = (size_t)d;
+          for (int level = 2; level <= m; ++level) {
+              auto& s = m_data[level - 1];
+              size *= (size_t)d;
+              s.assign(size, 0);
+          }
+      }
+  };
+
+
+
 }
 
 namespace TotalDerivativeSignature{
