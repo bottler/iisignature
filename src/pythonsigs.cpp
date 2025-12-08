@@ -262,25 +262,22 @@ static bool calcSignature(Signature& s2, const double* data, int lengthOfPath, i
 static bool calcSignatureSuffix(SuffixSignature& s2, const double* data, int lengthOfPath, int d, int level) {
     
     AdjointSuffixSignature s1;
-
-    if (lengthOfPath == 1) {
-        s2.sigOfNothing(d, level);
-    }
+    s2.sigOfNothing(d, level);
+    
 
     vector<double> displacement(d);
     for (int i = 1; i < lengthOfPath; ++i) {
         for (int j = 0;j < d; ++j)
             displacement[j] = data[i * d + j] - data[(i - 1) * d + j];
-        s1.sigOfSegment(d, level, &displacement[0]);
-        if (interrupt_wanted())
+        if (interrupt_wanted()) {
             return false;
-        if (i == 1)
-            s2.sigOfSegment(d, level, &displacement[0]);
-        else {
-            s2.concatenateWith(d, level, s1);
-            if (interrupt_wanted())
-                return false;
         }
+        
+        s2.concatenateWith(d, level, s1);
+        if (interrupt_wanted()){
+            return false;
+        }
+        
     }
     return true;
 }
