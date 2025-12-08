@@ -16,6 +16,13 @@ int calcSigTotalLength(int d, int m){
   return d*(p-1)/(d-1);
 }
 
+int calcSigTotalLengthSuffix(int d, int m) {
+    if (d == 1)
+        return m;
+    int64_t p = static_cast<int64_t> (0.4 + std::pow(d, m));
+    return (int)p - 1;
+}
+
 
 namespace CalcSignature{
   using std::vector;
@@ -832,97 +839,198 @@ namespace CalcSignature{
   //
   // Minimal construction for this class to work : sigOfSegment, sigOfNothing, concatenateWith
 
-  class SuffixSignature {
-  public:
-      vector<vector<Number>> m_data;
-
-      template<typename Num>
-      void sigOfSegment(int d, int m, const Num* segment) {
-          m_data.resize(m);
-          auto& first = m_data[0];
-          first.resize(d);
-          for (int i = 0; i < d; ++i)
-              first[i] = (Number)segment[i];
-          for (int level = 2; level <= m; ++level) {
-              const auto& last = m_data[level - 2];
-              auto& s = m_data[level - 1];
-              s.assign(calcSigLevelLength(d, level), 0);
-              int i = 0;
-              for (auto l : last)
-                  for (auto p = segment; p < segment + d; ++p)
-                      s[i++] = (Number)(*p * l * (1.0 / level));
-          }
-      }
-
-      void sigOfNothing(int d, int m) {
-          m_data.resize(m);
-          m_data[0].assign(d, 0);
-          size_t size = (size_t)d;
-          for (int level = 2; level <= m; ++level) {
-              auto& s = m_data[level - 1];
-              size *= (size_t)d;
-              s.assign(size, 0);
-          }
-      }
-
-     
-      //This is also the (concatenation) product of the elements a and b where a is a Suffix signature and b an adjoint.
-      void concatenateWith(int /*d*/, int m, const AdjointSuffixSignature& other) {
-          for (int level = m; level > 0; --level) {
-              for (int mylevel = level - 1; mylevel > 0; --mylevel) {
-                  int otherlevel = level - mylevel;
-                  auto& oth = other.m_data[otherlevel - 1];
-                  for (auto dest = m_data[level - 1].begin(),
-                      my = m_data[mylevel - 1].begin(),
-                      myE = m_data[mylevel - 1].end(); my != myE; ++my) {
-                      for (const Number& dd : oth) {
-                          *(dest++) += dd * *my;
-                      }
-                  }
-              }
-              auto source = other.m_data[level - 1].begin();
-              for (auto dest = m_data[level - 1].begin(),
-                  e = m_data[level - 1].end();
-                  dest != e;)
-                  *(dest++) += *(source++);
-
-          }
-      }
-  };
-
   class AdjointSuffixSignature {
   public:
       vector<vector<Number>> m_data;
 
       template<typename Num>
-      void sigOfSegment(int d, int m, const Num* segment) {
-          m_data.resize(m);
-          auto& first = m_data[0];
-          first.resize(d);
+      void sigOfSegment(int d, int N, const Num* segment)
+      {
+          m_data.resize(N);
+
+          // level 1 : tous les mots de longueur 1
+          vector<Number>& level1 = m_data[0];
+          level1.resize(d);
           for (int i = 0; i < d; ++i)
-              first[i] = (Number)segment[i];
-          for (int level = 2; level <= m; ++level) {
-              const auto& last = m_data[level - 2];
-              auto& s = m_data[level - 1];
-              s.assign(calcSigLevelLength(d, level), 0);
-              int i = 0;
-              for (auto l : last)
-                  for (auto p = segment; p < segment + d; ++p)
-                      s[i++] = (Number)(*p * l * (1.0 / level));
+              level1[i] = static_cast<Number>(segment[i]);
+
+          // levels 2..N-1
+          for (int level = 2; level < N; ++level)
+          {
+              const vector<Number>& prev = m_data[level - 2];
+              vector<Number>& curr = m_data[level - 1];
+
+              size_t L = 1;
+              for (int t = 0; t < level; ++t) L *= d;  // d^level
+              curr.assign(L, 0);
+
+              size_t idx = 0;
+              double factor = 1.0 / level;
+
+              for (size_t vi = 0; vi < prev.size(); ++vi)
+              {
+                  Number v = prev[vi];
+                  for (int a = 0; a < d; ++a)  // tous les caractères pour les niveaux intermédiaires
+                      curr[idx++] = static_cast<Number>(v * segment[a] * factor);
+              }
+          }
+
+          // level N : suffix, ignorer le leading 0
+          if (N >= 2)
+          {
+              const vector<Number>& prev = m_data[N - 2];
+              vector<Number>& curr = m_data[N - 1];
+
+              size_t fullLen = 1;
+              for (int t = 0; t < N; ++t) fullLen *= d;
+              size_t block = fullLen / d;
+              size_t keptLen = (d - 1) * block;  // mots de longueur N sans leading 0
+              curr.assign(keptLen, 0);
+
+              size_t idx = 0;
+              double factor = 1.0 / N;
+
+              // on commence à 1 pour ignorer les mots commençant par 0
+              for (int a = 1; a < d; ++a)
+              {
+                  for (size_t vi = 0; vi < prev.size(); ++vi)
+                  {
+                      Number v = prev[vi];
+                      for (int b = 0; b < d; ++b)  // tous les caractères suivants
+                          curr[idx++] = static_cast<Number>(v * segment[b] * factor);
+                  }
+              }
           }
       }
 
-      void sigOfNothing(int d, int m) {
-          m_data.resize(m);
+      void sigOfNothing(int d, int N)
+      {
+          m_data.resize(N);
+
+          // level 1
           m_data[0].assign(d, 0);
-          size_t size = (size_t)d;
-          for (int level = 2; level <= m; ++level) {
-              auto& s = m_data[level - 1];
-              size *= (size_t)d;
-              s.assign(size, 0);
+
+          // levels 2..N-1
+          size_t size = d;
+          for (int level = 2; level < N; ++level)
+          {
+              size *= static_cast<size_t>(d);
+              m_data[level - 1].assign(size, 0);
+          }
+
+          // level N : suffix
+          if (N >= 2)
+          {
+              size_t fullLen = size * static_cast<size_t>(d);
+              size_t block = fullLen / d;
+              size_t keptLen = (d - 1) * block;
+              m_data[N - 1].assign(keptLen, 0);
           }
       }
   };
+
+  class SuffixSignature {
+  public:
+      vector<vector<Number>> m_data;
+
+      template<typename Num>
+      void sigOfSegment(int d, int m, const Num* segment)
+      {
+          m_data.resize(m);
+
+          // level 1 : suffix (ignore leading 0)
+          vector<Number>& first = m_data[0];
+          first.resize(d - 1);  // mots de longueur 1 sauf premier caractère = 0
+          for (int i = 1; i < d; ++i)
+              first[i - 1] = static_cast<Number>(segment[i]);
+
+          // levels >= 2
+          for (int level = 2; level <= m; ++level)
+          {
+              const vector<Number>& last = m_data[level - 2];
+
+              size_t full_size = 1;
+              for (int t = 0; t < level; ++t) full_size *= d;
+
+              size_t skip = full_size / d;  // nombre de mots commençant par 0
+              size_t keep = full_size - skip;
+
+              vector<Number>& s = m_data[level - 1];
+              s.assign(keep, 0);
+
+              const double inv = 1.0 / level;
+              size_t idx = 0;
+
+              for (size_t li = 0; li < last.size(); ++li)
+              {
+                  Number l = last[li];
+                  // ici, on inclut tous les caractères pour construire les mots
+                  for (int p = 0; p < d; ++p)
+                  {
+                      s[idx++] = static_cast<Number>(segment[p] * l * inv);
+                  }
+              }
+          }
+      }
+
+      void sigOfNothing(int d, int m)
+      {
+          m_data.resize(m);
+
+          // level 1 : suffix
+          m_data[0].assign(d - 1, 0);
+
+          // levels >= 2
+          size_t size = d - 1;
+          for (int level = 2; level <= m; ++level)
+          {
+              size *= static_cast<size_t>(d);
+              m_data[level - 1].assign(size, 0);
+          }
+      }
+
+      void concatenateWith(int /*d*/, int m, const AdjointSuffixSignature& other)
+      {
+          for (int level = m; level > 0; --level)
+          {
+              for (int mylevel = level - 1; mylevel > 0; --mylevel)
+              {
+                  int otherlevel = level - mylevel;
+
+                  vector<Number>& myVec = m_data[mylevel - 1];
+                  const vector<Number>& oth = other.m_data[otherlevel - 1];
+                  vector<Number>& destVec = m_data[level - 1];
+
+                  size_t idx = 0;
+                  for (size_t i = 0; i < myVec.size(); ++i)
+                  {
+                      Number myVal = myVec[i];
+                      for (size_t j = 0; j < oth.size(); ++j)
+                      {
+                          destVec[idx++] += myVal * oth[j];
+                      }
+                  }
+              }
+
+              // add level from other
+              vector<Number>& destVec = m_data[level - 1];
+              const vector<Number>& source = other.m_data[level - 1];
+              for (size_t i = 0; i < destVec.size(); ++i)
+              {
+                  destVec[i] += source[i];
+              }
+          }
+      }
+
+      template<typename Numeric>
+      void writeOut(Numeric* dest) const {
+          for (auto& a : m_data)
+              for (auto& b : a)
+                  *(dest++) = (Numeric)b;
+      }
+  };
+
+  
 
 
 
