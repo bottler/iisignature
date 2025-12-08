@@ -989,35 +989,84 @@ namespace CalcSignature{
           }
       }
 
-      void concatenateWith(int /*d*/, int m, const AdjointSuffixSignature& other)
-      {
-          for (int level = m; level > 0; --level)
-          {
-              for (int mylevel = level - 1; mylevel > 0; --mylevel)
-              {
-                  int otherlevel = level - mylevel;
+      void concatenateWith(int d, int m, const AdjointSuffixSignature& other) {
+          // pour chaque niveau L on calcule la contribution Chen correctement
+          for (int L = m; L > 0; --L) {
+              // contributions intermédiaires : pour chaque partition mylevel + otherlevel = L
+              for (int mylevel = L - 1; mylevel > 0; --mylevel) {
+                  int otherlevel = L - mylevel;
 
-                  vector<Number>& myVec = m_data[mylevel - 1];
-                  const vector<Number>& oth = other.m_data[otherlevel - 1];
-                  vector<Number>& destVec = m_data[level - 1];
+                  const auto& myVec = m_data[mylevel - 1];               // compact (no leading 0)
+                  const auto& othFull = other.m_data[otherlevel - 1];    // full for other (for level < N)
+                  auto& destCompact = m_data[L - 1];                     // compact target
 
-                  size_t idx = 0;
-                  for (size_t i = 0; i < myVec.size(); ++i)
-                  {
-                      Number myVal = myVec[i];
-                      for (size_t j = 0; j < oth.size(); ++j)
-                      {
-                          destVec[idx++] += myVal * oth[j];
+                  // tailles : compactLeft = (d-1)*d^(mylevel-1)  (except mylevel==1 -> d-1)
+                  // othFull size is (d^otherlevel) (Adjoint stores full for levels < N).
+                  // destCompact size is (d-1)*d^(L-1).
+
+                  size_t leftSize = myVec.size();
+                  size_t rightFullSize = othFull.size(); // = d^{otherlevel}
+                  // dest iteration index must go through product of left blocks x right full entries
+                  // We'll follow the same layout as Chen product on full representation but compressed:
+                  // destCompact index order = concatenation over firstSymbol=1..d-1 blocks of size block = d^{L-1}
+                  // The following performs the standard nested-loops product but writes sequentially into destCompact.
+
+                  // We'll produce dest increments by blocks: for each "left" entry, we multiply with all right entries.
+                  // But writing order must match destCompact ordering; simplest is to compute into a temp full buffer and then compress,
+                  // OR compute dest index arithmetically. Here on veut éviter allocations larges, on indexe directement.
+
+                  // Compute block = d^(L-1)
+                  size_t block = 1;
+                  for (int t = 0; t < L - 1; ++t) block *= (size_t)d;
+                  // destCompact size:
+                  size_t destSize = destCompact.size();
+                  // idx_dest will run from 0..destSize-1 in the compact ordering (blocks for first=1..d-1)
+                  size_t idx_dest = 0;
+
+                  // We'll simulate the lexicographic order of full words but skipping the first-block (first==0).
+                  // For each full index with first in 1..d-1, there is an associated decomposition
+                  // However, to compute the product contribution in the same order as Chen, use:
+                  // for left_i in [0..leftSize):
+                  //   for right_j in [0..rightFullSize):
+                  //      dest_compact[idx_dest++] += myVec[left_i] * othFull[right_j];
+                  // This writing order corresponds to destCompact ordering if both left and right were stored in "full"
+                  // representation arranged similarly; since myVec is compact, its ordering corresponds to concatenation of blocks
+                  // of full indexes whose first != 0. BUT left is compact: its internal order is already by first=1..d-1 blocks.
+                  //
+                  // Conclusion: the simple nested loops below produce the correct order if both vectors are stored compactly
+                  // with same lexicographic convention. For safety we implement nested loop writing into destCompact sequentially.
+
+                  size_t write_pos = 0;
+                  for (size_t li = 0; li < leftSize; ++li) {
+                      Number lv = myVec[li];
+                      for (size_t rj = 0; rj < rightFullSize; ++rj) {
+                          // bounds check (debug)
+                          // assert(write_pos < destSize);
+                          destCompact[write_pos++] += lv * othFull[rj];
                       }
                   }
               }
 
-              // add level from other
-              vector<Number>& destVec = m_data[level - 1];
-              const vector<Number>& source = other.m_data[level - 1];
-              for (size_t i = 0; i < destVec.size(); ++i)
+              // maintenant on additionne la partie extrême "other.m_data[L-1]" mais **seulement** les mots dont
+              // le premier symbole != 0 (puisqu'on stocke compact dans dest)
               {
-                  destVec[i] += source[i];
+                  auto& destCompact = m_data[L - 1];
+                  const auto& srcFull = other.m_data[L - 1]; // full representation (size d^L) for levels < N in Adjoint
+
+                  // taille d'un bloc = d^(L-1)
+                  size_t block = 1;
+                  for (int t = 0; t < L - 1; ++t) block *= (size_t)d;
+
+                  size_t pos = 0;
+                  // copy blocks first=1..d-1
+                  for (int first = 1; first < d; ++first) {
+                      size_t base = (size_t)first * block;
+                      for (size_t off = 0; off < block; ++off) {
+                          // bounds checks optional in debug
+                          // assert(pos < destCompact.size());
+                          destCompact[pos++] += srcFull[base + off];
+                      }
+                  }
               }
           }
       }
