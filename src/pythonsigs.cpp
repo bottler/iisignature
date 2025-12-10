@@ -233,6 +233,7 @@ logsiglength(PyObject *self, PyObject *args){
 using CalcSignature::Signature;
 using CalcSignature::SuffixSignature;
 using CalcSignature::AdjointSuffixSignature;
+using CalcSignature::Number;
 
 static bool calcSignature(Signature& s2, const double* data, int lengthOfPath, int d, int level){
   Signature s1;
@@ -265,11 +266,14 @@ static bool calcSignatureSuffix(SuffixSignature& s2, const double* data, int len
     s2.sigOfNothing(d, level);
     
 
-    vector<double> displacement(d);
+    vector<Number> displacement(d);
     for (int i = 1; i < lengthOfPath; ++i) {
         for (int j = 0;j < d; ++j)
             displacement[j] = data[i * d + j] - data[(i - 1) * d + j];
-        s1.sigOfSegment(d, level, &displacement[0]);
+
+        // créer un std::vector<Number> pour passer à la fonction
+        std::vector<Number> segVec(displacement.begin(), displacement.end());
+        s1.sigOfSegment(d, level, segVec);
         if (interrupt_wanted()) {
             return false;
         }
