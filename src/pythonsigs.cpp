@@ -261,29 +261,23 @@ static bool calcSignature(Signature& s2, const double* data, int lengthOfPath, i
 }
 
 static bool calcSignatureSuffix(SuffixSignature& s2, const double* data, int lengthOfPath, int d, int level) {
-    
     AdjointSuffixSignature s1;
     s2.sigOfNothing(d, level);
-    
 
-    vector<Number> displacement(d);
+    std::vector<double> displacement(d);
+
     for (int i = 1; i < lengthOfPath; ++i) {
-        for (int j = 0;j < d; ++j)
+        // Calcul du vecteur déplacement
+        for (int j = 0; j < d; ++j)
             displacement[j] = data[i * d + j] - data[(i - 1) * d + j];
 
-        // créer un std::vector<Number> pour passer à la fonction
-        std::vector<Number> segVec(displacement.begin(), displacement.end());
-        s1.sigOfSegment(d, level, segVec);
-        if (interrupt_wanted()) {
-            return false;
-        }
-        
+        // Calcul de la signature du segment
+        s1.sigOfSegment(d, level, displacement.data());
+
+        // Concaténation avec la signature totale
         s2.concatenateWith(d, level, s1);
-        if (interrupt_wanted()){
-            return false;
-        }
-        
     }
+
     return true;
 }
 

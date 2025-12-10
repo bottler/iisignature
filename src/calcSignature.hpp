@@ -843,56 +843,55 @@ namespace CalcSignature {
     public:
         std::vector<std::vector<double>> m_data;
 
-        void sigOfSegment(int d, int N, const std::vector<double>& segment) {
-            m_data.assign(N, std::vector<double>());
+        void sigOfSegment(int d, int N, const double* segment) {
+            if (m_data.size() != (size_t)N) m_data.resize(N);
 
-            // Level 1 : complet
-            m_data[0] = segment;
+            // Level 1
+            m_data[0].assign(segment, segment + d);
 
-            // Levels 2..N-1 : complet
+            // Levels 2..N-1
             for (int level = 2; level < N; ++level) {
-                const std::vector<double>& prev = m_data[level - 2];
-                int L = 1;
-                for (int i = 0; i < level; ++i) L *= d;
-                std::vector<double> curr(L, 0.0);
+                const auto& prev = m_data[level - 2];
+                int L = prev.size() * d;
+                if (m_data[level - 1].size() != (size_t)L) m_data[level - 1].resize(L);
+
                 double factor = 1.0 / level;
                 int idx = 0;
-                for (double v : prev) {
-                    for (int a = 0; a < d; ++a) {
-                        curr[idx++] = v * segment[a] * factor;
-                    }
-                }
-                m_data[level - 1] = std::move(curr);
+                for (double v : prev)
+                    for (int a = 0; a < d; ++a)
+                        m_data[level - 1][idx++] = v * segment[a] * factor;
             }
 
-            // Level N : suffix compact
+            // Level N (suffix compact)
             if (N >= 2) {
-                const std::vector<double>& prev = m_data[N - 2];
-                int block = prev.size();         // d^(N-1)
-                int kept_len = (d - 1) * block;  // mots sans leading 0
-                std::vector<double> curr(kept_len, 0.0);
+                const auto& prev = m_data[N - 2];
+                int block = prev.size();
+                int kept_len = (d - 1) * block;
+                if (m_data[N - 1].size() != (size_t)kept_len) m_data[N - 1].resize(kept_len);
+
                 double factor = 1.0 / N;
                 int idx = 0;
-                for (int a = 1; a < d; ++a) {
-                    for (double v : prev) {
-                        curr[idx++] = v * segment[a] * factor;
-                    }
-                }
-                m_data[N - 1] = std::move(curr);
+                for (int a = 1; a < d; ++a)
+                    for (double v : prev)
+                        m_data[N - 1][idx++] = v * segment[a] * factor;
             }
         }
 
         void sigOfNothing(int d, int N) {
-            m_data.assign(N, std::vector<double>());
+            if (m_data.size() != (size_t)N) m_data.resize(N);
             m_data[0].assign(d, 0.0);
+
             int size = d;
             for (int level = 2; level < N; ++level) {
                 size *= d;
-                m_data[level - 1].assign(size, 0.0);
+                if (m_data[level - 1].size() != (size_t)size) m_data[level - 1].resize(size);
+                std::fill(m_data[level - 1].begin(), m_data[level - 1].end(), 0.0);
             }
+
             if (N >= 2) {
                 int kept_len = (d - 1) * size;
-                m_data[N - 1].assign(kept_len, 0.0);
+                if (m_data[N - 1].size() != (size_t)kept_len) m_data[N - 1].resize(kept_len);
+                std::fill(m_data[N - 1].begin(), m_data[N - 1].end(), 0.0);
             }
         }
     };
@@ -902,42 +901,44 @@ namespace CalcSignature {
     public:
         std::vector<std::vector<double>> m_data;
 
-        void sigOfSegment(int d, int m, const std::vector<double>& segment) {
-            m_data.assign(m, std::vector<double>());
+        void sigOfSegment(int d, int m, const double* segment) {
+            if (m_data.size() != (size_t)m) m_data.resize(m);
 
-            // Level 1 : suffix
-            m_data[0].resize(d - 1);
-            for (int i = 1; i < d; ++i) {
+            // Level 1: suffix
+            if (m_data[0].size() != (size_t)(d - 1)) m_data[0].resize(d - 1);
+            for (int i = 1; i < d; ++i)
                 m_data[0][i - 1] = segment[i];
-            }
 
             // Levels >= 2
             for (int level = 2; level <= m; ++level) {
-                const std::vector<double>& last = m_data[level - 2];
                 int full_size = 1;
                 for (int i = 0; i < level; ++i) full_size *= d;
                 int skip = full_size / d;
                 int keep = full_size - skip;
 
-                std::vector<double> s(keep, 0.0);
+                if (m_data[level - 1].size() != (size_t)keep) m_data[level - 1].resize(keep);
+                std::fill(m_data[level - 1].begin(), m_data[level - 1].end(), 0.0);
+
+                const auto& last = m_data[level - 2];
                 double inv = 1.0 / level;
                 int idx = 0;
                 for (double l : last) {
                     for (int p = 0; p < d; ++p) {
-                        s[idx++] = l * segment[p] * inv;
+                        m_data[level - 1][idx++] = l * segment[p] * inv;
                     }
                 }
-                m_data[level - 1] = std::move(s);
             }
         }
 
         void sigOfNothing(int d, int m) {
-            m_data.assign(m, std::vector<double>());
+            if (m_data.size() != (size_t)m) m_data.resize(m);
             m_data[0].assign(d - 1, 0.0);
+
             int size = d - 1;
             for (int level = 2; level <= m; ++level) {
                 size *= d;
-                m_data[level - 1].assign(size, 0.0);
+                if (m_data[level - 1].size() != (size_t)size) m_data[level - 1].resize(size);
+                std::fill(m_data[level - 1].begin(), m_data[level - 1].end(), 0.0);
             }
         }
 
@@ -945,30 +946,13 @@ namespace CalcSignature {
             if (m_data.size() != (size_t)m) sigOfNothing(d, m);
 
             for (int L = m; L >= 1; --L) {
-                // Contributions intermédiaires
-                for (int mylevel = L - 1; mylevel >= 1; --mylevel) {
-                    int otherlevel = L - mylevel;
-                    const auto& myVec = m_data[mylevel - 1];
-                    const auto& othFull = other.m_data[otherlevel - 1];
-                    auto& destCompact = m_data[L - 1];
-
-                    int write_pos = 0;
-                    for (double lv : myVec) {
-                        for (double rv : othFull) {
-                            destCompact[write_pos++] += lv * rv;
-                        }
-                    }
-                }
-
-                // Contribution extrême
                 auto& destCompact = m_data[L - 1];
                 const auto& srcFull = other.m_data[L - 1];
 
-                // si dernier niveau compact
+                // Contribution extrême ou compacte
                 if (L == (int)other.m_data.size() && srcFull.size() == (d - 1) * (srcFull.size() / (d - 1))) {
-                    for (size_t i = 0; i < srcFull.size(); ++i) {
+                    for (size_t i = 0; i < srcFull.size(); ++i)
                         destCompact[i] += srcFull[i];
-                    }
                 }
                 else {
                     int block = 1;
@@ -976,8 +960,20 @@ namespace CalcSignature {
                     int pos = 0;
                     for (int first = 1; first < d; ++first) {
                         int base = first * block;
-                        for (int off = 0; off < block; ++off) {
+                        for (int off = 0; off < block; ++off)
                             destCompact[pos++] += srcFull[base + off];
+                    }
+                }
+
+                // Contributions intermédiaires
+                for (int mylevel = L - 1; mylevel >= 1; --mylevel) {
+                    int otherlevel = L - mylevel;
+                    const auto& myVec = m_data[mylevel - 1];
+                    const auto& othFull = other.m_data[otherlevel - 1];
+                    int write_pos = 0;
+                    for (double lv : myVec) {
+                        for (double rv : othFull) {
+                            destCompact[write_pos++] += lv * rv;
                         }
                     }
                 }
