@@ -20,3 +20,8 @@ x64
 .vs
 *.pyd
 .vs/
+*.pdb
+
+#CPP prorperties
+
+CppProperties.json
