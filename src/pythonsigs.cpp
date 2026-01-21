@@ -267,14 +267,11 @@ static bool calcSignatureSuffix(SuffixSignature& s2, const double* data, int len
     std::vector<double> displacement(d);
 
     for (int i = 1; i < lengthOfPath; ++i) {
-        // Calcul du vecteur déplacement
+        
         for (int j = 0; j < d; ++j)
             displacement[j] = data[i * d + j] - data[(i - 1) * d + j];
 
-        // Calcul de la signature du segment
         s1.sigOfSegment(d, level, displacement.data());
-
-        // Concaténation avec la signature totale
         s2.concatenateWith(d, level, s1);
     }
 
@@ -396,8 +393,6 @@ sig(PyObject *self, PyObject *args) {
 
 static PyObject*
 sig_suffix(PyObject* self, PyObject* args) {
-
-    //lecture et validation des arguments Python
     PyObject* a1;
     int level = 0;
     int format = 0;
@@ -405,31 +400,29 @@ sig_suffix(PyObject* self, PyObject* args) {
         return nullptr;
     if (level < 1) ERR("level must be positive");
 
-    //conversion de lentre Python en tableau NumPy C - contigu
-    //could have a shortcut here if a1 is a contiguous array of float32
+   
     PyObject* aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
     if (!aa) ERR("data must be (convertable to) a numpy array");
     RefHolder a_(aa);
     PyArrayObject* a = (PyArrayObject*)aa;
-    //lecture des dimensions du tableau
+
     int ndims = PyArray_NDIM(a);
     if (ndims < 2) ERR("data must be 2d");
     const int lengthOfPath = (int)PyArray_DIM(a, ndims - 2);
     const int d = (int)PyArray_DIM(a, ndims - 1);
     if (lengthOfPath < 1) ERR("Path has no length");
     if (d < 1) ERR("Path must have positive dimension");
-    //gestion du cas multi - paths
+   
     int nPaths = 1;
     for (int i = 0; i + 2 < ndims; ++i) {
         npy_intp x = PyArray_DIM(a, i);
         nPaths *= (int)x;
     }
 
-    //calcul des tailles internes 
+  
     size_t eachInputSize = (size_t)(lengthOfPath * d);
     size_t eachOutputSize = (size_t)calcSigTotalLengthSuffix(d, level);   
 
-    //prpare le tableau de sortie NumPy
     PyObject* o = nullptr;
     using OutT = UseDouble;
     OutT::T* out_data = nullptr;

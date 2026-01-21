@@ -840,6 +840,7 @@ namespace CalcSignature {
     // Minimal construction for this class to work : sigOfSegment, sigOfNothing, concatenateWith
 
     class AdjointSuffixSignature {
+   
     public:
         std::vector<std::vector<double>> m_data;
 
@@ -849,7 +850,7 @@ namespace CalcSignature {
             // Level 1
             m_data[0].assign(segment, segment + d);
 
-            // Levels 2..N-1
+            // Levels 2,..,N-1
             for (int level = 2; level < N; ++level) {
                 const auto& prev = m_data[level - 2];
                 int L = prev.size() * d;
@@ -862,7 +863,7 @@ namespace CalcSignature {
                         m_data[level - 1][idx++] = v * segment[a] * factor;
             }
 
-            // Level N (suffix compact)
+            // Level N
             if (N >= 2) {
                 const auto& prev = m_data[N - 2];
                 int block = prev.size();
@@ -904,7 +905,7 @@ namespace CalcSignature {
         void sigOfSegment(int d, int m, const double* segment) {
             if (m_data.size() != (size_t)m) m_data.resize(m);
 
-            // Level 1: suffix
+            // Level 1
             if (m_data[0].size() != (size_t)(d - 1)) m_data[0].resize(d - 1);
             for (int i = 1; i < d; ++i)
                 m_data[0][i - 1] = segment[i];
@@ -949,7 +950,7 @@ namespace CalcSignature {
                 auto& destCompact = m_data[L - 1];
                 const auto& srcFull = other.m_data[L - 1];
 
-                // Contribution extrême ou compacte
+                
                 if (L == (int)other.m_data.size() && srcFull.size() == (d - 1) * (srcFull.size() / (d - 1))) {
                     for (size_t i = 0; i < srcFull.size(); ++i)
                         destCompact[i] += srcFull[i];
@@ -965,7 +966,7 @@ namespace CalcSignature {
                     }
                 }
 
-                // Contributions intermédiaires
+                
                 for (int mylevel = L - 1; mylevel >= 1; --mylevel) {
                     int otherlevel = L - mylevel;
                     const auto& myVec = m_data[mylevel - 1];
