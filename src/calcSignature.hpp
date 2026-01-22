@@ -650,9 +650,10 @@ namespace CalcSignature{
     sigBackwards(d, m, lengthOfPath, path, allSigDerivs, output);
   }
 
+  template<class OutputNumber_>
   void sigJoin(int d, int m, const Number* signature,
     const Number* displacement, double fixedLast,
-    OutputNumber* output)
+    OutputNumber_* output)
   {
     Signature allSig, segmentSig;
     allSig.fromRaw(d, m, signature);
@@ -690,9 +691,10 @@ namespace CalcSignature{
   class SigCombiner{
     Signature m_sig1, m_sig2, m_dSig1, m_dSig2;
   public:
+    template<class OutputNumber_>
     void sigCombine(int d, int m, const Number* signature1,
 		    const Number* signature2,
-		    OutputNumber* output)
+		    OutputNumber_* output)
     {
       m_sig1.fromRaw(d, m, signature1);
       m_sig2.fromRaw(d, m, signature2);
