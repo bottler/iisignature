@@ -35,7 +35,7 @@ To install the current "main" development version straight from github you can t
 
 From a checkout of this repository, you can build the extension and run the tests using::
 
-    python setup.py test
+    python setup.py build_ext --inplace && python -m unittest discover tests/
 
 From a checkout of this repository, you can build the extension into this directory itself using::
 
