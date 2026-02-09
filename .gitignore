@@ -2,6 +2,8 @@
 *~
 callgrind.out.*
 cachegrind.out.*
+iisignature.*.so
+.DS_Store
 
 # Setuptools distribution folder.
 /dist/

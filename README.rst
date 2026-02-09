@@ -37,11 +37,13 @@ From a checkout of this repository, you can build the extension and run the test
 
     python setup.py build_ext --inplace && python -m unittest discover tests/
 
-From a checkout of this repository, you can build the extension into this directory itself using::
+From a checkout of this repository, you can just build the extension into this directory itself using::
 
     python setup.py build_ext --inplace
 
 after which you can use the package in Python in this directory, use the examples in the ``examples`` directory, or add this directory to your PYTHONPATH and then use the package in Python anywhere.
+
+If you plan to contribute changes, run ``pip install pre-commit`` and then ``pre-commit install`` to set up automatic code formatting and linting.
 
 
 Paper
