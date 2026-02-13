@@ -108,9 +108,9 @@ For the purposes of `iisignature`, a signature up to level *m* is the concatenat
 
 > Given the signatures of paths in dimension *d* up to level *m* in a shape `(...,siglength(d,m))` array and a scaling factor for each dimension for each path, stored as an array of shape `(...,d)`, returns the signatures of each of the paths scaled in each dimension by the relevant scaling factor as an array of shape `(...,siglength(d,m))`.
 
-#### `sigscalebackprop(derivs, sigs, segments, m)`
+#### `sigscalebackprop(derivs, sigs, scales, m)`
 
-> Returns the derivatives of some scalar function *F* with respect to both `sigs` and `scales` as a tuple, given the derivatives of *F* with respect to `sigscale(sigs, scales, m, fixedLast)`. Returns both an array of the same shape as `sigs` and an array of the same shape as `scales`.
+> Returns the derivatives of some scalar function *F* with respect to both `sigs` and `scales` as a tuple, given the derivatives of *F* with respect to `sigscale(sigs, scales, m)`. Returns both an array of the same shape as `sigs` and an array of the same shape as `scales`.
 
 ### Log Signatures
 
@@ -170,7 +170,7 @@ The C, O and S methods only work when the dimension of the path is below 256. Th
 > 	global s
 > 	s=iisignature.prepare(2,10,"CS")
 > t = threading.Thread(target=f)
-> t.run()
+> t.start()
 > #slow activity: theano.function, another prepare(),
 > #               keras compile, ...
 > t.join()
@@ -216,11 +216,11 @@ The C, O and S methods only work when the dimension of the path is below 256. Th
 
 #### `logsigjoin(sigs, segments, s)`
 
-> Given the log signatures of paths in dimension *d* up to level *m* in a shape `(...,siglength(d,m))` array and an extra displacement for each path, stored as an array of shape `(...,d)`, and `s` the result of calling `prepare(d,m,methods)`, returns the log signatures of each of the paths concatenated with the extra displacement as an array of shape `(...,logsiglength(d,m))`.
+> Given the log signatures of paths in dimension *d* up to level *m* in a shape `(...,logsiglength(d,m))` array and an extra displacement for each path, stored as an array of shape `(...,d)`, and `s` the result of calling `prepare(d,m,methods)`, returns the log signatures of each of the paths concatenated with the extra displacement as an array of shape `(...,logsiglength(d,m))`.
 
 #### `logsigjoinbackprop(derivs, sigs, segments, s)`
 
-> Returns the derivatives of some scalar function *F* with respect to both `sigs` and `segments` as a tuple, given the derivatives of *F* with respect to `logsigjoin(sigs, segments, s)`. Returns both an array of the same shape as `sigs` and an array of the same shape as `segments`.
+> Returns the derivatives of some scalar function *F* with respect to both `sigs` and `segments` as a tuple, given the derivatives of *F* with respect to `logsigjoin(sigs, segments, s)`. Returns both an array of the same shape as `sigs` and an array of the same shape as `segments`. Only the **A** and **O** methods are supported.
 
 ### Linear Rotational Invariants
 
@@ -344,7 +344,7 @@ Improvements to the example code are not listed here, they can be seen on `githu
 | [`sigjoinbackprop`](#sigjoinbackpropderivs-sigs-segments-m-fixedlastfloatnan) | [Signatures](#signatures) |
 | [`siglength`](#siglengthd-m) | [Signatures](#signatures) |
 | [`sigscale`](#sigscalesigs-scales-m) | [Signatures](#signatures) |
-| [`sigscalebackprop`](#sigscalebackpropderivs-sigs-segments-m) | [Signatures](#signatures) |
+| [`sigscalebackprop`](#sigscalebackpropderivs-sigs-scales-m) | [Signatures](#signatures) |
 | [`version`](#version) | [Usage](#usage) |
 
 ## Acknowledgements

@@ -309,7 +309,7 @@ static PyObject *sig(PyObject *self, PyObject *args) {
   // could have a shortcut here if a1 is a contiguous array of float32
   PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa)
-    ERR("data must be (convertable to) a numpy array");
+    ERR("data must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
   int ndims = PyArray_NDIM(a);
@@ -404,7 +404,7 @@ static PyObject *sigMultCount(PyObject *self, PyObject *args) {
     ERR("level must be positive");
   PyObject *aa = PyArray_ContiguousFromAny(data, NPY_FLOAT64, 0, 0);
   if (!aa)
-    ERR("data must be (convertable to) a numpy array");
+    ERR("data must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
   if (PyArray_NDIM(a) != 2)
@@ -461,12 +461,12 @@ static PyObject *sigBackwards(PyObject *self, PyObject *args) {
     ERR("level must be positive");
   PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa)
-    ERR("path must be (convertable to) a numpy array");
+    ERR("path must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
   PyObject *bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
   if (!bb)
-    ERR("derivs must be (convertable to) a numpy array");
+    ERR("derivs must be (convertible to) a numpy array");
   RefHolder b_(bb);
   PyArrayObject *b = (PyArrayObject *)bb;
 
@@ -521,7 +521,7 @@ static PyObject *sigJacobian(PyObject *self, PyObject *args) {
     ERR("level must be positive");
   PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa)
-    ERR("data must be (convertable to) a numpy array");
+    ERR("data must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
   if (PyArray_NDIM(a) != 2)
@@ -560,12 +560,12 @@ static PyObject *sigJoin(PyObject *self, PyObject *args) {
     ERR("level must be positive");
   PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa)
-    ERR("sigs must be (convertable to) a numpy array");
+    ERR("sigs must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
   PyObject *bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
   if (!bb)
-    ERR("data must be (convertable to) a numpy array");
+    ERR("data must be (convertible to) a numpy array");
   RefHolder b_(bb);
   PyArrayObject *b = (PyArrayObject *)bb;
 
@@ -619,17 +619,17 @@ static PyObject *sigJoinBackwards(PyObject *self, PyObject *args) {
     ERR("level must be positive");
   PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa)
-    ERR("sigs must be (convertable to) a numpy array");
+    ERR("sigs must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
   PyObject *bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
   if (!bb)
-    ERR("new data must be (convertable to) a numpy array");
+    ERR("new data must be (convertible to) a numpy array");
   RefHolder b_(bb);
   PyArrayObject *b = (PyArrayObject *)bb;
   PyObject *cc = PyArray_ContiguousFromAny(a3, NPY_FLOAT64, 0, 0);
   if (!cc)
-    ERR("derivs must be (convertable to) a numpy array");
+    ERR("derivs must be (convertible to) a numpy array");
   RefHolder c_(cc);
   PyArrayObject *c = (PyArrayObject *)cc;
 
@@ -704,12 +704,12 @@ static PyObject *sigCombine(PyObject *self, PyObject *args) {
     ERR("dimension must be positive");
   PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa)
-    ERR("first signature must be (convertable to) a numpy array");
+    ERR("first signature must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
   PyObject *bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
   if (!bb)
-    ERR("second signature must be (convertable to) a numpy array");
+    ERR("second signature must be (convertible to) a numpy array");
   RefHolder b_(bb);
   PyArrayObject *b = (PyArrayObject *)bb;
 
@@ -763,17 +763,17 @@ static PyObject *sigCombineBackwards(PyObject *self, PyObject *args) {
     ERR("dimension must be positive");
   PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa)
-    ERR("first signature must be (convertable to) a numpy array");
+    ERR("first signature must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
   PyObject *bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
   if (!bb)
-    ERR("second signature must be (convertable to) a numpy array");
+    ERR("second signature must be (convertible to) a numpy array");
   RefHolder b_(bb);
   PyArrayObject *b = (PyArrayObject *)bb;
   PyObject *cc = PyArray_ContiguousFromAny(a3, NPY_FLOAT64, 0, 0);
   if (!cc)
-    ERR("derivs must be (convertable to) a numpy array");
+    ERR("derivs must be (convertible to) a numpy array");
   RefHolder c_(cc);
   PyArrayObject *c = (PyArrayObject *)cc;
 
@@ -838,12 +838,12 @@ static PyObject *sigScale(PyObject *self, PyObject *args) {
     ERR("level must be positive");
   PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa)
-    ERR("sigs must be (convertable to) a numpy array");
+    ERR("sigs must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
   PyObject *bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
   if (!bb)
-    ERR("scales must be (convertable to) a numpy array");
+    ERR("scales must be (convertible to) a numpy array");
   RefHolder b_(bb);
   PyArrayObject *b = (PyArrayObject *)bb;
 
@@ -894,17 +894,17 @@ static PyObject *sigScaleBackwards(PyObject *self, PyObject *args) {
     ERR("level must be positive");
   PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa)
-    ERR("sigs must be (convertable to) a numpy array");
+    ERR("sigs must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
   PyObject *bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
   if (!bb)
-    ERR("scales must be (convertable to) a numpy array");
+    ERR("scales must be (convertible to) a numpy array");
   RefHolder b_(bb);
   PyArrayObject *b = (PyArrayObject *)bb;
   PyObject *cc = PyArray_ContiguousFromAny(a3, NPY_FLOAT64, 0, 0);
   if (!cc)
-    ERR("derivs must be (convertable to) a numpy array");
+    ERR("derivs must be (convertible to) a numpy array");
   RefHolder c_(cc);
   PyArrayObject *c = (PyArrayObject *)cc;
 
@@ -1589,7 +1589,7 @@ static PyObject *logsig(PyObject *self, PyObject *args) {
     ERR(wantedmethods.m_errMsg);
   PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa)
-    ERR("data must be (convertable to) a numpy array");
+    ERR("data must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
 
@@ -1733,13 +1733,13 @@ static PyObject *logsigbackwards(PyObject *self, PyObject *args) {
 
   PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa)
-    ERR("data must be (convertable to) a numpy array");
+    ERR("data must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
 
   PyObject *derivs = PyArray_ContiguousFromAny(a0, NPY_FLOAT64, 0, 0);
   if (!derivs)
-    ERR("derivs must be (convertable to) a numpy array");
+    ERR("derivs must be (convertible to) a numpy array");
   RefHolder derivs_(derivs);
   PyArrayObject *derivsa = (PyArrayObject *)derivs;
 
@@ -1839,7 +1839,7 @@ static PyObject *logsigtosig(PyObject *self, PyObject *args) {
     ERR(wantedmethods.m_errMsg);
   PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa)
-    ERR("data must be (convertable to) a numpy array");
+    ERR("data must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
 
@@ -1899,13 +1899,13 @@ static PyObject *logsigtosigBackwards(PyObject *self, PyObject *args) {
     ERR(wantedmethods.m_errMsg);
   PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa)
-    ERR("data must be (convertable to) a numpy array");
+    ERR("data must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
 
   PyObject *derivs = PyArray_ContiguousFromAny(a0, NPY_FLOAT64, 0, 0);
   if (!derivs)
-    ERR("derivs must be (convertable to) a numpy array");
+    ERR("derivs must be (convertible to) a numpy array");
   RefHolder derivs_(derivs);
   PyArrayObject *derivsa = (PyArrayObject *)derivs;
 
@@ -1969,12 +1969,12 @@ static PyObject *logsigJoin(PyObject *self, PyObject *args) {
 
   PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa)
-    ERR("sigs must be (convertable to) a numpy array");
+    ERR("sigs must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
   PyObject *bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
   if (!bb)
-    ERR("data must be (convertable to) a numpy array");
+    ERR("data must be (convertible to) a numpy array");
   RefHolder b_(bb);
   PyArrayObject *b = (PyArrayObject *)bb;
 
@@ -2048,17 +2048,17 @@ static PyObject *logsigJoinBackwards(PyObject *self, PyObject *args) {
 
   PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa)
-    ERR("sigs must be (convertable to) a numpy array");
+    ERR("sigs must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
   PyObject *bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
   if (!bb)
-    ERR("data must be (convertable to) a numpy array");
+    ERR("data must be (convertible to) a numpy array");
   RefHolder b_(bb);
   PyArrayObject *b = (PyArrayObject *)bb;
   PyObject *derivs = PyArray_ContiguousFromAny(a0, NPY_FLOAT64, 0, 0);
   if (!derivs)
-    ERR("derivs must be (convertable to) a numpy array");
+    ERR("derivs must be (convertible to) a numpy array");
   RefHolder derivs_(derivs);
   PyArrayObject *derivsa = (PyArrayObject *)derivs;
 
@@ -2266,7 +2266,7 @@ static PyObject *rotinv2d(PyObject *self, PyObject *args) {
 
   PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
   if (!aa)
-    ERR("data must be (convertable to) a numpy array");
+    ERR("data must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
   int ndims = PyArray_NDIM(a);
@@ -2381,7 +2381,7 @@ static PyMethodDef Methods[] = {
     {"sig", sig, METH_VARARGS,
      "sig(X,m,format=0)\n Returns the signature of a path X "
      "up to level m as an array of shape (...,siglength(D,m)). X must be "
-     "convertible to a numpy [...x]NxD float32 or float64 array of points"
+     "convertible to a numpy [...x]NxD float32 or float64 array of points "
      "making up the path in R^D. The initial 1 in the zeroth level of the "
      "signature is excluded. "
      "If format is 1, the output is a tuple of arrays, one for each level, not "
@@ -2432,7 +2432,7 @@ static PyMethodDef Methods[] = {
      " of F with respect to sigcombine(X1,X2,d,m). The result is a tuple of "
      "two items."},
     {"sigscale", sigScale, METH_VARARGS,
-     "sigscale(X,D,m))\n "
+     "sigscale(X,D,m)\n "
      "If X is an array of signatures of d dimensional paths of shape "
      "(..., siglength(d,m)) and D is an array of d dimensional scales "
      "of shape (..., d), then return an array shaped like X "
@@ -2462,7 +2462,7 @@ static PyMethodDef Methods[] = {
      "rotinv2dprepare(m, type) \n "
      "This prepares the way to find linear rotational invariants of signatures "
      "up to level m "
-     " of 2d paths. m must be even. The returned object is used in rotinv2d. "
+     "of 2d paths. m must be even. The returned object is used in rotinv2d. "
      "type should be "
      "'a' to return all invariants, or 's' to use SVD to exclude those which "
      "are determined by "
@@ -2472,7 +2472,8 @@ static PyMethodDef Methods[] = {
      "This prepares the way to calculate log signatures of d dimensional paths"
      " up to level m. The returned object is used in the logsig, basis and "
      "info functions. \n"
-     " By default, all methods will be prepared, but you can restrict it "
+     " By default, only the default method will be prepared, but you can "
+     "change it "
      "by setting methods to " METHOD_DESC
      ". Adding 'H' to methods makes the basis used be "
      "the standard Hall basis, otherwise the Lyndon basis is used. Adding '2' "
@@ -2518,7 +2519,7 @@ static PyMethodDef Methods[] = {
      "the number 2. The value is returned as a numpy array of shape "
      "[...,iisignature.siglength(d,m)]."},
     {"logsigtosigbackprop", logsigtosigBackwards, METH_VARARGS,
-     "logsigtosig(y, X, s) \n "
+     "logsigtosigbackprop(y, X, s) \n "
      "gives the derivatives of F with respect to X where y is the derivatives"
      " of F with respect to logsigtosig(X,s). The result has the same shape as "
      "X."},
@@ -2539,7 +2540,7 @@ static PyMethodDef Methods[] = {
      "items. "
      "This is only implemented for the A and O methods."},
     {"rotinv2d", rotinv2d, METH_VARARGS,
-     "rotinv(X,s) \n "
+     "rotinv2d(X,s) \n "
      "Calculates the linear rotational invariants of the signature of the path "
      "X. X must be a "
      "[...x]Nx2 array of points making up the path(s) in R^2. "
@@ -2548,12 +2549,9 @@ static PyMethodDef Methods[] = {
      "rotinv2dprepare."},
     {"rotinv2dcoeffs", rotinv2dcoeffs, METH_VARARGS,
      "rotinv2dcoeffs(s) \n "
-     "Returns the linear rotational invariants of the signature of the path X. "
-     "X must be a numpy Nx2 float32 "
-     "or float64 array of points making up the path in R^2. s must be the "
-     "result of a call to rotinv2dprepare."
-     "The value is returned as a list of 2D numpy arrays - (nInvariants x "
-     "length) for each even level."},
+     "Returns the basis of rotational invariants as a tuple of 2D numpy arrays "
+     "- (nInvariants x length) for each even level. "
+     "s must be the result of a call to rotinv2dprepare."},
 #endif
     {"version", version, METH_NOARGS, "return the iisignature version string"},
     {NULL, NULL, 0, NULL} /* Sentinel */
