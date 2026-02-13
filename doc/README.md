@@ -1,4 +1,6 @@
-To build the documentation:
+The primary documentation is [doc.md](../doc.md) in the repository root.
+
+The old PDF version can be built from the LaTeX source in this directory:
 
 ```
 pdflatex iisignature

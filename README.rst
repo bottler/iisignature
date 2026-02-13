@@ -3,11 +3,10 @@ The iisignature package
 
 This package provides tools for calculating the signature and log signature of a data stream.
 These are summary statistics of piecewise linear paths, consisting of iterated integrals, inspired by rough path theory.
-See <https://github.com/bottler/phd-docs/blob/main/iisignature.pdf> for documentation, the page
-<https://github.com/bottler/phd-docs> for more information about the calculations,
-and <https://github.com/bottler/iisignature> for source code.
 
-It is work in progress.
+**Documentation:** `doc.md <doc.md>`_ (`online <https://github.com/bottler/iisignature/blob/main/doc.md>`_) 👈
+
+See <https://github.com/bottler/phd-docs> for more information about the calculations.
 
 Python
 ------
