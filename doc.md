@@ -24,13 +24,11 @@ The `iisignature` Python package is designed to provide an easy-to-use reasonabl
 
 ## Installation into Python
 
-First ensure you have `numpy` installed and available, version 1.7 (from 2013) or later. If you are not on Windows, for which prebuilt binaries are available from PyPI for Pythons 3.5, 3.6, 3.7 and 3.8, you will need to be able to build `C++` python extensions. On a Mac, this means you will need to have installed Xcode and the Xcode command line tools first.
+First ensure you have `numpy` installed and available, version 1.17 or later. You will need to be able to build `C++` python extensions. On a Mac, this means you will need to have installed Xcode and the Xcode command line tools first.
 
-Then `pip install iisignature` will install it from `PyPI`. This works in Python 3.5, 3.6, 3.7 and 3.8 on Windows (where you might need to be in an Administrator command prompt), and Pythons 3.4 (and later) and 2.7 on Linux and Mac.
+Then `pip install iisignature` will install it from `PyPI`. Python 3.8 or later is required.
 
 (You can also run `pip install --user iisignature` to install for your user only. On Windows, this doesn't need administrator rights, but you can't install for both 64 bit and 32 bit builds of the same version of Python in this way as doing one breaks the other.)
-
-Python 2.x is not supported on Windows.
 
 ## Quick Example
 
@@ -160,7 +158,7 @@ The C, O and S methods only work when the dimension of the path is below 256. Th
 
 > This does preliminary calculations and produces an object which is used for calculating log signatures of *d*-dimensional paths up to level *m*. The object produced is opaque. It is only used as an input to the `basis`, `info` and `logsig` functions.
 >
-> It is a capsule or, on old versions of Python, a CObject. It cannot be pickled. This means that if you are using `multiprocessing`, you cannot pass it between "threads". You can run the function before creating the "threads", and use it in any thread - this works because it is fork-safe on non Windows platforms. On Windows, the function will be run separately in each background "thread".
+> It is a capsule. It cannot be pickled. This means that if you are using `multiprocessing`, you cannot pass it between "threads". You can run the function before creating the "threads", and use it in any thread - this works because it is fork-safe on non Windows platforms. On Windows, the function will be run separately in each background "thread".
 >
 > The calculation can take a long time when *d* or *m* is large. The Global Interpreter Lock is not held during most of the calculation, so you can profitably do it in the background of a slow unrelated part of the initialization of your program. For example:
 >

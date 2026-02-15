@@ -222,11 +222,6 @@ def allSensitivities(init, fn):
 
 
 class TestCase(unittest.TestCase):
-    if sys.hexversion < 0x2070000:
-
-        def assertLess(self, a, b, msg=None):
-            self.assertTrue(a < b, msg)
-
     if output_timings:
 
         @classmethod
@@ -241,12 +236,7 @@ class TestCase(unittest.TestCase):
             )
 
 
-if "stack" in dir(numpy):
-    stack = numpy.stack
-else:  # Old numpy may not have stack, which we only need with axis=0
-
-    def stack(arr):
-        return numpy.vstack([i[numpy.newaxis] for i in arr])
+stack = numpy.stack
 
 
 # numpy's lstsq has a different default in different versions

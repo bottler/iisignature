@@ -71,11 +71,10 @@ setup(
         "Topic :: Scientific/Engineering :: Mathematics",
         # Pick your license as you wish (should match "license" above)
         "License :: OSI Approved :: MIT License",
-        # Specify the Python versions you support here. In particular, ensure
-        # that you indicate whether you support Python 2, Python 3 or both.
-        "Programming Language :: Python :: 2",
+        # Specify the Python versions you support here.
         "Programming Language :: Python :: 3",
     ],
+    python_requires=">=3.8",
     url="https://github.com/bottler/iisignature",
     author="Jeremy Reizenstein",
     author_email="j.f.reizenstein@warwick.ac.uk",
@@ -87,8 +86,8 @@ setup(
     package_data={"iisignature_data": ["bchLyndon20.dat"]},
     zip_safe=False,
     install_requires=[
-        "numpy>1.7"
+        "numpy>=1.17"
     ],  # For now, this is redundant as we've died above here on an import statement
-    setup_requires=["numpy>1.7"],
+    setup_requires=["numpy>=1.17"],
 )
 # should add source url from github like at https://www.python.org/dev/peps/pep-0426/

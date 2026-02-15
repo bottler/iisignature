@@ -29,10 +29,6 @@
 
 using std::vector;
 
-#if PY_MAJOR_VERSION < 3 && PY_MINOR_VERSION < 7
-#define NO_CAPSULES
-#endif
-
 // for python 3.5+, we can load the new way
 // https://www.python.org/dev/peps/pep-0489/
 
@@ -212,11 +208,7 @@ static PyObject *siglength(PyObject *self, PyObject *args) {
     ERR("dimension must be positive");
   long ans = calcSigTotalLength(d, m);
   // todo - cope with overrun here
-#if PY_MAJOR_VERSION >= 3
   return PyLong_FromLong(ans);
-#else
-  return PyInt_FromLong(ans);
-#endif
 }
 
 static PyObject *logsiglength(PyObject *self, PyObject *args) {
@@ -234,11 +226,7 @@ static PyObject *logsiglength(PyObject *self, PyObject *args) {
   if (ans > std::numeric_limits<long>::max())
     ERR("overflow");
   // todo - cope with overrun here
-#if PY_MAJOR_VERSION >= 3
   return PyLong_FromLong((long)ans);
-#else
-  return PyInt_FromLong((long)ans);
-#endif
 }
 
 #ifndef IISIGNATURE_NO_NUMPY
@@ -962,22 +950,12 @@ static PyObject *sigScaleBackwards(PyObject *self, PyObject *args) {
 
 const char *const logSigFunction_id = "iisignature.LogSigFunction";
 LogSigFunction *getLogSigFunction(PyObject *p) {
-#ifdef NO_CAPSULES
-  if (!PyCObject_Check(p))
-    ERR("I have received an input which is not from iisignature.prepare()");
-  return (LogSigFunction *)PyCObject_AsVoidPtr(p);
-#else
   if (!PyCapsule_IsValid(p, logSigFunction_id))
     ERR("I have received an input which is not from iisignature.prepare()");
   return (LogSigFunction *)PyCapsule_GetPointer(p, logSigFunction_id);
-#endif
 }
 
-#ifndef NO_CAPSULES
 static void killLogSigFunction(PyObject *p) { delete getLogSigFunction(p); }
-#else
-static void killLogSigFunction(void *p) { delete ((LogSigFunction *)p); }
-#endif
 
 // returns true on success
 bool getData() {
@@ -1010,17 +988,11 @@ bool getData() {
     return false;
   if (o == Py_None)
     ERRb("Cannot find iisignature_data module");
-#if PY_MAJOR_VERSION < 3
-  if (!PyString_CheckExact(o))
-    ERRb("unexpected type from pkgutil.get_data");
-  g_bchLyndon20_dat = PyString_AsString(o);
-#else
   if (!PyBytes_CheckExact(o)) {
     // std::cerr<<PyBytes_AsString(PyObject_Bytes(o))<<"\n";
     ERRb("unexpected type from pkgutil.get_data");
   }
   g_bchLyndon20_dat = PyBytes_AsString(o);
-#endif
   // deliberately leak a reference to o - we'll keep it forever.
   return true;
 }
@@ -1198,8 +1170,7 @@ public:
       MatrixOfVector<UseDouble> mat_(mat, r, c);
       if (mat.size() != ((size_t)r * c))
         ERRr("bad use of QR");
-      char *Oissi = (char *)"Oissi"; // Yukky cast, but needed for older pythons
-      PyObject *qr = PyObject_CallFunction(ls.m_qrScipy, Oissi, mat_.m_mat, 0,
+      PyObject *qr = PyObject_CallFunction(ls.m_qrScipy, "Oissi", mat_.m_mat, 0,
                                            NULL, "economic", 1);
       if (!qr)
         return;
@@ -1509,12 +1480,8 @@ static PyObject *prepare(PyObject *self, PyObject *args) {
     return nullptr;
 #endif // IISIGNATURE_NO_NUMPY
 
-#ifdef NO_CAPSULES
-  PyObject *out = PyCObject_FromVoidPtr(lsf.release(), killLogSigFunction);
-#else
   PyObject *out =
       PyCapsule_New(lsf.release(), logSigFunction_id, killLogSigFunction);
-#endif
   return out;
 }
 
@@ -2146,26 +2113,13 @@ static PyObject *logsigJoinBackwards(PyObject *self, PyObject *args) {
 
 const char *const rotInv_id = "iisignature.rotInv";
 RotationalInvariants::Prepared *getPreparedRotInv(PyObject *p) {
-#ifdef NO_CAPSULES
-  if (!PyCObject_Check(p))
-    ERR("I have received an input which is not from "
-        "iisignature.rotinv2dprepare()");
-  return (RotationalInvariants::Prepared *)PyCObject_AsVoidPtr(p);
-#else
   if (!PyCapsule_IsValid(p, rotInv_id))
     ERR("I have received an input which is not from "
         "iisignature.rotinv2dprepare()");
   return (RotationalInvariants::Prepared *)PyCapsule_GetPointer(p, rotInv_id);
-#endif
 }
 
-#ifndef NO_CAPSULES
 static void killRotInv(PyObject *p) { delete getPreparedRotInv(p); }
-#else
-static void killRotInv(void *p) {
-  delete ((RotationalInvariants::Prepared *)p);
-}
-#endif
 
 static PyObject *rotinv2dlength(PyObject *self, PyObject *args) {
   /*
@@ -2188,11 +2142,7 @@ static PyObject *rotinv2dlength(PyObject *self, PyObject *args) {
   for (const auto &i : prepared->m_invariants)
     ans += (long)i.size();
 
-#if PY_MAJOR_VERSION >= 3
   return PyLong_FromLong(ans);
-#else
-  return PyInt_FromLong(ans);
-#endif
 }
 
 static PyObject *rotinv2dprepare(PyObject *self, PyObject *args) {
@@ -2242,11 +2192,7 @@ static PyObject *rotinv2dprepare(PyObject *self, PyObject *args) {
 #endif
   if (t == RotationalInvariants::InvariantType::KNOWN)
     p->m_invariants = p->m_knownInvariants;
-#ifdef NO_CAPSULES
-  PyObject *out = PyCObject_FromVoidPtr(p.release(), killRotInv);
-#else
   PyObject *out = PyCapsule_New(p.release(), rotInv_id, killRotInv);
-#endif
   return out;
 }
 
@@ -2562,7 +2508,6 @@ static PyMethodDef Methods[] = {
   "\n\nPlease find documentation at http://www2.warwick.ac.uk/jreizenstein"    \
   " and code at https://github.com/bottler/iisignature."
 
-#if PY_MAJOR_VERSION >= 3
 static struct PyModuleDef moduledef = {
     PyModuleDef_HEAD_INIT,
     "iisignature", /* m_name */
@@ -2583,18 +2528,6 @@ PyMODINIT_FUNC PyInit_iisignature(void) {
   PyModule_AddStringConstant(moduleObj, "__version__", TOSTRING(VERSION));
   return moduleObj;
 }
-#else
-
-/*extern "C" __attribute__ ((visibility ("default"))) void */
-PyMODINIT_FUNC initiisignature(void) {
-#ifndef IISIGNATURE_NO_NUMPY
-  import_array();
-#endif
-  PyObject *moduleObj = Py_InitModule3("iisignature", Methods, MODULEDOC);
-  PyModule_AddStringConstant(moduleObj, "__version__", TOSTRING(VERSION));
-}
-
-#endif
 
 /*
 thinking about builds:

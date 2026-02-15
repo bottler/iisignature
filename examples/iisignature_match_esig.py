@@ -3,7 +3,6 @@
 
 import iisignature
 import numpy as np
-from six.moves import range
 
 _prep = {}
 _prepLyndon = {}

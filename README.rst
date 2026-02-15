@@ -15,9 +15,8 @@ Install a released version, which may be missing recent bugfixes, with::
 
     pip install iisignature
 
-Don't install this package if you don't have numpy > 1.7 installed.
-For Python 3.5, 3.6, 3.7 and 3.8 on Windows, there are precompiled wheels available, you may need to do ``pip install wheel`` to use them.
-On other platforms, you will need to be able to compile C++ extensions.
+Don't install this package if you don't have numpy >= 1.17 installed.
+You will need to be able to compile C++ extensions.
 On a Mac, you will need to have installed Xcode and the Xcode command line tools before doing the installation.
 The fastest, on-the-fly compiled versions of the log signature calculations are for Windows, Mac and Linux, on both 32 and 64 bit.
 
