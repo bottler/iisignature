@@ -189,6 +189,35 @@ PyObject *simpleNew_ownLast2Dims(int ndims, PyArrayObject *arr,
   shape[ndims - 1] = orig2;
   return o;
 }
+
+// Check whether the last `nInner` dimensions of `a` are C-contiguous.
+static bool isInnerContiguous(PyArrayObject *a, int nInner) {
+  int nd = PyArray_NDIM(a);
+  npy_intp *strides = PyArray_STRIDES(a);
+  npy_intp *dims = PyArray_DIMS(a);
+  npy_intp expected = (npy_intp)PyArray_ITEMSIZE(a);
+  for (int i = nd - 1; i >= nd - nInner; --i) {
+    if (strides[i] != expected)
+      return false;
+    expected *= dims[i];
+  }
+  return true;
+}
+
+// Given batch index `path` (0..nPaths-1), compute pointer into `a`
+// skipping the last `nInner` dimensions. Uses odometer-style decomposition.
+static char *batchPtr(PyArrayObject *a, int nInner, int path) {
+  int nd = PyArray_NDIM(a);
+  npy_intp *strides = PyArray_STRIDES(a);
+  npy_intp *dims = PyArray_DIMS(a);
+  char *ptr = (char *)PyArray_DATA(a);
+  for (int i = nd - nInner - 1; i >= 0; --i) {
+    npy_intp idx = path % dims[i];
+    path /= dims[i];
+    ptr += idx * strides[i];
+  }
+  return ptr;
+}
 #endif
 
 #define STRINGIFY(x) #x
@@ -232,10 +261,12 @@ static PyObject *logsiglength(PyObject *self, PyObject *args) {
 #ifndef IISIGNATURE_NO_NUMPY
 // returns true on success
 // makes s2 be the signature of the path in data
-// data is (lengthOfPath x d)
+// data is (lengthOfPath x d) with given strides
 using CalcSignature::Signature;
-static bool calcSignature(Signature &s2, const double *data, int lengthOfPath,
-                          int d, int level) {
+template <typename InputT>
+static bool calcSignature(Signature &s2, const char *data,
+                          npy_intp point_stride, npy_intp dim_stride,
+                          int lengthOfPath, int d, int level) {
   Signature s1;
 
   if (lengthOfPath == 1) {
@@ -245,7 +276,9 @@ static bool calcSignature(Signature &s2, const double *data, int lengthOfPath,
   vector<double> displacement(d);
   for (int i = 1; i < lengthOfPath; ++i) {
     for (int j = 0; j < d; ++j)
-      displacement[j] = data[i * d + j] - data[(i - 1) * d + j];
+      displacement[j] =
+          *(InputT *)(data + i * point_stride + j * dim_stride) -
+          *(InputT *)(data + (i - 1) * point_stride + j * dim_stride);
     s1.sigOfSegment(d, level, &displacement[0]);
     if (interrupt_wanted())
       return false;
@@ -260,17 +293,22 @@ static bool calcSignature(Signature &s2, const double *data, int lengthOfPath,
   return true;
 }
 
-// data is (lengthOfPath x d)
+// data is (lengthOfPath x d) with given strides
 // out is ((lengthOfPath-1) x siglength)
 // sets out[i] to signature of data[0:i,:]
-static bool calcCumulativeSignature(const double *data, int lengthOfPath, int d,
-                                    int level, size_t siglength, double *out) {
+template <typename InputT>
+static bool calcCumulativeSignature(const char *data, npy_intp point_stride,
+                                    npy_intp dim_stride, int lengthOfPath,
+                                    int d, int level, size_t siglength,
+                                    double *out) {
   Signature s1, s2;
 
   vector<double> displacement(d);
   for (int i = 1; i < lengthOfPath; ++i) {
     for (int j = 0; j < d; ++j)
-      displacement[j] = data[i * d + j] - data[(i - 1) * d + j];
+      displacement[j] =
+          *(InputT *)(data + i * point_stride + j * dim_stride) -
+          *(InputT *)(data + (i - 1) * point_stride + j * dim_stride);
     s1.sigOfSegment(d, level, &displacement[0]);
     if (interrupt_wanted())
       return false;
@@ -294,12 +332,15 @@ static PyObject *sig(PyObject *self, PyObject *args) {
     return nullptr;
   if (level < 1)
     ERR("level must be positive");
-  // could have a shortcut here if a1 is a contiguous array of float32
-  PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  bool is_float32 =
+      PyArray_Check(a1) && PyArray_TYPE((PyArrayObject *)a1) == NPY_FLOAT32;
+  PyObject *aa = PyArray_FROM_OTF(a1, is_float32 ? NPY_FLOAT32 : NPY_FLOAT64,
+                                  NPY_ARRAY_ALIGNED);
   if (!aa)
     ERR("data must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
+  bool use_float32 = (PyArray_TYPE(a) == NPY_FLOAT32);
   int ndims = PyArray_NDIM(a);
   if (ndims < 2)
     ERR("data must be 2d");
@@ -314,12 +355,13 @@ static PyObject *sig(PyObject *self, PyObject *args) {
     npy_intp x = PyArray_DIM(a, i);
     nPaths *= (int)x;
   }
-  size_t eachInputSize = (size_t)(lengthOfPath * d);
   size_t eachOutputSize = (size_t)calcSigTotalLength(d, level);
+  npy_intp *strides = PyArray_STRIDES(a);
+  npy_intp point_stride = strides[ndims - 2];
+  npy_intp dim_stride = strides[ndims - 1];
   PyObject *o = nullptr;
   using OutT = UseDouble;
   OutT::T *out_data = nullptr;
-  double *in_data = (double *)PyArray_DATA(a);
   if (format == 2) {
     o = simpleNew_ownLast2Dims(ndims, a, (size_t)(lengthOfPath - 1u),
                                eachOutputSize, OutT::typenum);
@@ -327,14 +369,21 @@ static PyObject *sig(PyObject *self, PyObject *args) {
       return nullptr;
     auto od = static_cast<OutT::T *>(
         PyArray_DATA(reinterpret_cast<PyArrayObject *>(o)));
-    bool ok = do_interruptible([&] {
+    auto doCalcCumul = [&](auto dummy) -> bool {
+      using InputT = decltype(dummy);
       for (int path = 0; path < nPaths; ++path)
-        if (!calcCumulativeSignature(in_data + path * eachInputSize,
-                                     lengthOfPath, d, level, eachOutputSize,
-                                     od + path * eachOutputSize *
-                                              (lengthOfPath - 1)))
+        if (!calcCumulativeSignature<InputT>(
+                batchPtr(a, 2, path), point_stride, dim_stride, lengthOfPath, d,
+                level, eachOutputSize,
+                od + path * eachOutputSize * (lengthOfPath - 1)))
           return false;
       return true;
+    };
+    bool ok = do_interruptible([&] {
+      if (use_float32)
+        return doCalcCumul(float{});
+      else
+        return doCalcCumul(double{});
     });
     if (!ok)
       return nullptr;
@@ -351,15 +400,22 @@ static PyObject *sig(PyObject *self, PyObject *args) {
   ReleasableRefHolder o_(o);
 
   Signature s;
-  bool ok = do_interruptible([&] {
+  auto doCalcSig = [&](auto dummy) -> bool {
+    using InputT = decltype(dummy);
     for (int path = 0; path < nPaths; ++path) {
-      if (!calcSignature(s, in_data + path * eachInputSize, lengthOfPath, d,
-                         level))
+      if (!calcSignature<InputT>(s, batchPtr(a, 2, path), point_stride,
+                                 dim_stride, lengthOfPath, d, level))
         return false;
       if (format == 0)
         s.writeOut(out_data + path * eachOutputSize);
     }
     return true;
+  };
+  bool ok = do_interruptible([&] {
+    if (use_float32)
+      return doCalcSig(float{});
+    else
+      return doCalcSig(double{});
   });
   if (!ok)
     return nullptr;
@@ -447,12 +503,16 @@ static PyObject *sigBackwards(PyObject *self, PyObject *args) {
     return nullptr;
   if (level < 1)
     ERR("level must be positive");
-  PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  bool is_float32 =
+      PyArray_Check(a1) && PyArray_TYPE((PyArrayObject *)a1) == NPY_FLOAT32;
+  PyObject *aa = PyArray_FROM_OTF(a1, is_float32 ? NPY_FLOAT32 : NPY_FLOAT64,
+                                  NPY_ARRAY_ALIGNED);
   if (!aa)
     ERR("path must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
-  PyObject *bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
+  bool use_float32 = (PyArray_TYPE(a) == NPY_FLOAT32);
+  PyObject *bb = PyArray_FROM_OTF(a2, NPY_FLOAT64, NPY_ARRAY_ALIGNED);
   if (!bb)
     ERR("derivs must be (convertible to) a numpy array");
   RefHolder b_(bb);
@@ -482,21 +542,41 @@ static PyObject *sigBackwards(PyObject *self, PyObject *args) {
     nPaths *= (int)x;
   }
   size_t eachInputSize = (size_t)(lengthOfPath * d);
-  size_t eachOutputSize = sigLength;
 
-  ReadArrayAsDoubles input, derivs;
-  if (input.read(a, lengthOfPath * d) || derivs.read(b, sigLength))
-    ERR("Out of memory");
+  // Path: use strides directly (zero-copy)
+  npy_intp *a_strides = PyArray_STRIDES(a);
+  npy_intp point_stride = a_strides[ndims - 2];
+  npy_intp dim_stride = a_strides[ndims - 1];
+
+  // Derivs: keep fallback for non-contiguous last dim (rare for 1D-inner)
+  ReleasableRefHolder b_contig_;
+  if (!isInnerContiguous(b, 1)) {
+    PyObject *bb2 = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
+    if (!bb2)
+      ERR("derivs must be (convertible to) a numpy array");
+    b_contig_.releaseAndSet(bb2);
+    b = (PyArrayObject *)bb2;
+  }
+
   using OutT = UseFloat;
   PyObject *o = PyArray_ZEROS(ndims, PyArray_DIMS(a), OutT::typenum, 0);
   if (!o)
     return nullptr;
   auto out = static_cast<OutT::T *>(
       PyArray_DATA(reinterpret_cast<PyArrayObject *>(o)));
-  for (int path = 0; path < nPaths; ++path)
-    CalcSignature::sigBackwardsRaw(
-        d, level, lengthOfPath, input.ptr() + path * eachInputSize,
-        derivs.ptr() + path * eachOutputSize, out + path * eachInputSize);
+  if (use_float32) {
+    for (int path = 0; path < nPaths; ++path)
+      CalcSignature::sigBackwardsRaw<float>(
+          d, level, lengthOfPath, batchPtr(a, 2, path), point_stride,
+          dim_stride, (double *)batchPtr(b, 1, path),
+          out + path * eachInputSize);
+  } else {
+    for (int path = 0; path < nPaths; ++path)
+      CalcSignature::sigBackwardsRaw<double>(
+          d, level, lengthOfPath, batchPtr(a, 2, path), point_stride,
+          dim_stride, (double *)batchPtr(b, 1, path),
+          out + path * eachInputSize);
+  }
   return o;
 }
 
@@ -546,12 +626,12 @@ static PyObject *sigJoin(PyObject *self, PyObject *args) {
     return nullptr;
   if (level < 1)
     ERR("level must be positive");
-  PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  PyObject *aa = PyArray_FROM_OTF(a1, NPY_FLOAT64, NPY_ARRAY_ALIGNED);
   if (!aa)
     ERR("sigs must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
-  PyObject *bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
+  PyObject *bb = PyArray_FROM_OTF(a2, NPY_FLOAT64, NPY_ARRAY_ALIGNED);
   if (!bb)
     ERR("data must be (convertible to) a numpy array");
   RefHolder b_(bb);
@@ -578,6 +658,22 @@ static PyObject *sigJoin(PyObject *self, PyObject *args) {
     nPaths *= (int)x;
   }
 
+  ReleasableRefHolder a_contig_, b_contig_;
+  if (!isInnerContiguous(a, 1)) {
+    PyObject *aa2 = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+    if (!aa2)
+      ERR("sigs must be (convertible to) a numpy array");
+    a_contig_.releaseAndSet(aa2);
+    a = (PyArrayObject *)aa2;
+  }
+  if (!isInnerContiguous(b, 1)) {
+    PyObject *bb2 = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
+    if (!bb2)
+      ERR("data must be (convertible to) a numpy array");
+    b_contig_.releaseAndSet(bb2);
+    b = (PyArrayObject *)bb2;
+  }
+
   ReadArrayAsDoubles sig, displacement;
   if (sig.read(a, nPaths * sigLength) || displacement.read(b, nPaths * d_given))
     ERR("Out of memory");
@@ -589,8 +685,8 @@ static PyObject *sigJoin(PyObject *self, PyObject *args) {
   auto out = static_cast<OutT::T *>(
       PyArray_DATA(reinterpret_cast<PyArrayObject *>(o)));
   for (int iPath = 0; iPath < nPaths; ++iPath)
-    CalcSignature::sigJoin(d_out, level, sig.ptr() + iPath * sigLength,
-                           displacement.ptr() + iPath * d_given, fixedLast,
+    CalcSignature::sigJoin(d_out, level, (double *)batchPtr(a, 1, iPath),
+                           (double *)batchPtr(b, 1, iPath), fixedLast,
                            out + iPath * sigLength);
   return o;
 }
@@ -690,12 +786,12 @@ static PyObject *sigCombine(PyObject *self, PyObject *args) {
     ERR("level must be positive");
   if (d < 1)
     ERR("dimension must be positive");
-  PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  PyObject *aa = PyArray_FROM_OTF(a1, NPY_FLOAT64, NPY_ARRAY_ALIGNED);
   if (!aa)
     ERR("first signature must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
-  PyObject *bb = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
+  PyObject *bb = PyArray_FROM_OTF(a2, NPY_FLOAT64, NPY_ARRAY_ALIGNED);
   if (!bb)
     ERR("second signature must be (convertible to) a numpy array");
   RefHolder b_(bb);
@@ -720,6 +816,22 @@ static PyObject *sigCombine(PyObject *self, PyObject *args) {
     nPaths *= (int)x;
   }
 
+  ReleasableRefHolder a_contig_, b_contig_;
+  if (!isInnerContiguous(a, 1)) {
+    PyObject *aa2 = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+    if (!aa2)
+      ERR("first signature must be (convertible to) a numpy array");
+    a_contig_.releaseAndSet(aa2);
+    a = (PyArrayObject *)aa2;
+  }
+  if (!isInnerContiguous(b, 1)) {
+    PyObject *bb2 = PyArray_ContiguousFromAny(a2, NPY_FLOAT64, 0, 0);
+    if (!bb2)
+      ERR("second signature must be (convertible to) a numpy array");
+    b_contig_.releaseAndSet(bb2);
+    b = (PyArrayObject *)bb2;
+  }
+
   ReadArrayAsDoubles sig1, sig2;
   if (sig1.read(a, nPaths * sigLength) || sig2.read(b, nPaths * sigLength))
     ERR("Out of memory");
@@ -732,8 +844,8 @@ static PyObject *sigCombine(PyObject *self, PyObject *args) {
       PyArray_DATA(reinterpret_cast<PyArrayObject *>(o)));
   CalcSignature::SigCombiner sc;
   for (int iPath = 0; iPath < nPaths; ++iPath)
-    sc.sigCombine(d, level, sig1.ptr() + iPath * sigLength,
-                  sig2.ptr() + iPath * sigLength, out + iPath * sigLength);
+    sc.sigCombine(d, level, (double *)batchPtr(a, 1, iPath),
+                  (double *)batchPtr(b, 1, iPath), out + iPath * sigLength);
   return o;
 }
 
@@ -1554,18 +1666,21 @@ static PyObject *logsig(PyObject *self, PyObject *args) {
   if (setWantedMethods(wantedmethods, lsf->m_dim, lsf->m_level, true, false,
                        methodString))
     ERR(wantedmethods.m_errMsg);
-  PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  bool is_float32 =
+      PyArray_Check(a1) && PyArray_TYPE((PyArrayObject *)a1) == NPY_FLOAT32;
+  PyObject *aa = PyArray_FROM_OTF(a1, is_float32 ? NPY_FLOAT32 : NPY_FLOAT64,
+                                  NPY_ARRAY_ALIGNED);
   if (!aa)
     ERR("data must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
+  bool use_float32 = (PyArray_TYPE(a) == NPY_FLOAT32);
 
   int ndims = PyArray_NDIM(a);
   if (ndims < 2)
     ERR("data must be 2d");
   const int lengthOfPath = (int)PyArray_DIM(a, ndims - 2);
   const int d = (int)PyArray_DIM(a, ndims - 1);
-  const size_t eachInputLength = (size_t)(lengthOfPath * d);
   if (lengthOfPath < 1)
     ERR("Path has no length");
   if (d != lsf->m_dim)
@@ -1573,13 +1688,16 @@ static PyObject *logsig(PyObject *self, PyObject *args) {
          " but we prepared for dimension " + std::to_string(lsf->m_dim))
             .c_str());
   size_t logsiglength = lsf->logSigLength();
-  double *data = static_cast<double *>(PyArray_DATA(a));
 
   int nPaths = 1;
   for (int i = 0; i + 2 < ndims; ++i) {
     npy_intp x = PyArray_DIM(a, i);
     nPaths *= (int)x;
   }
+
+  npy_intp *strides = PyArray_STRIDES(a);
+  npy_intp point_stride = strides[ndims - 2];
+  npy_intp dim_stride = strides[ndims - 1];
 
   FunctionRunner *f = lsf->m_f.get();
   using OutT = UseDouble;
@@ -1595,24 +1713,34 @@ static PyObject *logsig(PyObject *self, PyObject *args) {
     auto dest = static_cast<OutT::T *>(
         PyArray_DATA(reinterpret_cast<PyArrayObject *>(o)));
     vector<double> out;
-    for (int path = 0; path < nPaths; ++path) {
-      out.assign(logsiglength, 0);
-      if (lengthOfPath > 1) {
-        for (int j = 0; j < d; ++j)
-          out[j] = data[1 * d + j] - data[0 * d + j];
+    auto doBCH = [&](auto dummy) {
+      using InputT = decltype(dummy);
+      for (int path = 0; path < nPaths; ++path) {
+        char *data = batchPtr(a, 2, path);
+        out.assign(logsiglength, 0);
+        if (lengthOfPath > 1) {
+          for (int j = 0; j < d; ++j)
+            out[j] = *(InputT *)(data + 1 * point_stride + j * dim_stride) -
+                     *(InputT *)(data + j * dim_stride);
+        }
+        for (int i = 2; i < lengthOfPath; ++i) {
+          for (int j = 0; j < d; ++j)
+            displacement[j] =
+                *(InputT *)(data + i * point_stride + j * dim_stride) -
+                *(InputT *)(data + (i - 1) * point_stride + j * dim_stride);
+          if (useCompiled)
+            f->go(out.data(), displacement.data());
+          else
+            slowExplicitFunction(out.data(), displacement.data(), lsf->m_fd);
+        }
+        for (double d : out)
+          *dest++ = (OutT::T)d;
       }
-      for (int i = 2; i < lengthOfPath; ++i) {
-        for (int j = 0; j < d; ++j)
-          displacement[j] = data[i * d + j] - data[(i - 1) * d + j];
-        if (useCompiled)
-          f->go(out.data(), displacement.data());
-        else
-          slowExplicitFunction(out.data(), displacement.data(), lsf->m_fd);
-      }
-      for (double d : out)
-        *dest++ = (OutT::T)d;
-      data += eachInputLength;
-    }
+    };
+    if (use_float32)
+      doBCH(float{});
+    else
+      doBCH(double{});
     return o;
   }
   if (wantedmethods.m_expanded ||
@@ -1628,11 +1756,13 @@ static PyObject *logsig(PyObject *self, PyObject *args) {
     ReleasableRefHolder o_(o);
 
     Signature sig;
-    bool ok = do_interruptible([&] {
+    auto doSX = [&](auto dummy) -> bool {
+      using InputT = decltype(dummy);
       for (int path = 0; path < nPaths; ++path) {
-        if (!calcSignature(sig, data, lengthOfPath, d, lsf->m_level))
+        char *data = batchPtr(a, 2, path);
+        if (!calcSignature<InputT>(sig, data, point_stride, dim_stride,
+                                   lengthOfPath, d, lsf->m_level))
           return false;
-        data += eachInputLength;
         logTensorHorner(sig);
         if (wantedmethods.m_expanded)
           sig.writeOut(outp + path * eachOutputSize);
@@ -1641,6 +1771,12 @@ static PyObject *logsig(PyObject *self, PyObject *args) {
         }
       }
       return true;
+    };
+    bool ok = do_interruptible([&] {
+      if (use_float32)
+        return doSX(float{});
+      else
+        return doSX(double{});
     });
     if (!ok)
       return nullptr;
@@ -1656,14 +1792,21 @@ static PyObject *logsig(PyObject *self, PyObject *args) {
         PyArray_DATA(reinterpret_cast<PyArrayObject *>(o)));
     ReleasableRefHolder o_(o);
 
-    bool ok = do_interruptible([&] {
+    auto doArea = [&](auto dummy) -> bool {
+      using InputT = decltype(dummy);
       for (int path = 0; path < nPaths; ++path) {
-        logSigUsingArea(data, lengthOfPath, lsf->m_level, d,
-                        outp + path * logsiglength);
-        data += eachInputLength;
+        char *data = batchPtr(a, 2, path);
+        logSigUsingArea<InputT>(data, point_stride, dim_stride, lengthOfPath,
+                                lsf->m_level, d, outp + path * logsiglength);
         interrupt();
       }
       return true;
+    };
+    bool ok = do_interruptible([&] {
+      if (use_float32)
+        return doArea(float{});
+      else
+        return doArea(double{});
     });
     if (!ok)
       return nullptr;
@@ -1698,13 +1841,17 @@ static PyObject *logsigbackwards(PyObject *self, PyObject *args) {
   // if (needProjectionButDontHaveIt)
   //   ERR("We had not prepared the S method");
 
-  PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  bool is_float32 =
+      PyArray_Check(a1) && PyArray_TYPE((PyArrayObject *)a1) == NPY_FLOAT32;
+  PyObject *aa = PyArray_FROM_OTF(a1, is_float32 ? NPY_FLOAT32 : NPY_FLOAT64,
+                                  NPY_ARRAY_ALIGNED);
   if (!aa)
     ERR("data must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
+  bool use_float32 = (PyArray_TYPE(a) == NPY_FLOAT32);
 
-  PyObject *derivs = PyArray_ContiguousFromAny(a0, NPY_FLOAT64, 0, 0);
+  PyObject *derivs = PyArray_FROM_OTF(a0, NPY_FLOAT64, NPY_ARRAY_ALIGNED);
   if (!derivs)
     ERR("derivs must be (convertible to) a numpy array");
   RefHolder derivs_(derivs);
@@ -1724,8 +1871,6 @@ static PyObject *logsigbackwards(PyObject *self, PyObject *args) {
             .c_str());
   if (PyArray_NDIM(derivsa) != ndims - 1)
     ERR("derivs has the wrong number of dimensions");
-  const double *data = static_cast<double *>(PyArray_DATA(a));
-  const double *derivPtr = static_cast<double *>(PyArray_DATA(derivsa));
 
   int nPaths = 1;
   for (int i = 0; i + 2 < ndims; ++i) {
@@ -1733,6 +1878,21 @@ static PyObject *logsigbackwards(PyObject *self, PyObject *args) {
     if (PyArray_DIM(derivsa, i) != x)
       ERR("mismatched dimensions between sigs and derivs");
     nPaths *= (int)x;
+  }
+
+  // Path: use strides directly (zero-copy)
+  npy_intp *a_strides = PyArray_STRIDES(a);
+  npy_intp point_stride = a_strides[ndims - 2];
+  npy_intp dim_stride = a_strides[ndims - 1];
+
+  // Derivs: keep fallback for non-contiguous last dim (rare for 1D-inner)
+  ReleasableRefHolder derivs_contig_;
+  if (!isInnerContiguous(derivsa, 1)) {
+    PyObject *dd2 = PyArray_ContiguousFromAny(a0, NPY_FLOAT64, 0, 0);
+    if (!dd2)
+      ERR("derivs must be (convertible to) a numpy array");
+    derivs_contig_.releaseAndSet(dd2);
+    derivsa = (PyArrayObject *)dd2;
   }
 
   using OutT = UseFloat;
@@ -1764,27 +1924,36 @@ static PyObject *logsigbackwards(PyObject *self, PyObject *args) {
       return nullptr;
     }
   }
-  bool ok = do_interruptible([&] {
+  auto doBackwards = [&](auto dummy) -> bool {
+    using InputT = decltype(dummy);
     for (int path = 0; path < nPaths; ++path) {
+      const char *data = batchPtr(a, 2, path);
+      const double *derivPtr = (const double *)batchPtr(derivsa, 1, path);
       if (wantedmethods.m_area) {
-        logSigUsingAreaBackwards(data, lengthOfPath, lsf->m_level, d, derivPtr,
-                                 outp + path * eachInputLength);
+        logSigUsingAreaBackwards<InputT>(
+            data, point_stride, dim_stride, lengthOfPath, lsf->m_level, d,
+            derivPtr, outp + path * eachInputLength);
       } else {
-        calcSignature(sig, data, lengthOfPath, d, lsf->m_level);
+        CalcSignature::calcSignature<InputT>(
+            d, lsf->m_level, lengthOfPath, data, point_stride, dim_stride, sig);
         if (wantedmethods.m_expanded)
           sigDer.fromRaw(lsf->m_dim, lsf->m_level, derivPtr);
         else
           projectExpandedLogSigToBasisBackwards(derivPtr, lsf, sigDer);
         logBackwards(sigDer, sig);
         // This should use the calculated signature
-        CalcSignature::sigBackwards(lsf->m_dim, lsf->m_level, lengthOfPath,
-                                    data, sigDer,
-                                    outp + path * eachInputLength);
+        CalcSignature::sigBackwards<InputT>(
+            lsf->m_dim, lsf->m_level, lengthOfPath, data, point_stride,
+            dim_stride, sigDer, outp + path * eachInputLength);
       }
-      derivPtr += eachOutputSize;
-      data += eachInputLength;
     }
     return true;
+  };
+  bool ok = do_interruptible([&] {
+    if (use_float32)
+      return doBackwards(float{});
+    else
+      return doBackwards(double{});
   });
   if (!ok)
     return nullptr;
@@ -2210,11 +2379,15 @@ static PyObject *rotinv2d(PyObject *self, PyObject *args) {
   for (const auto &i : prepared->m_invariants)
     nInvariants += (long)i.size();
 
-  PyObject *aa = PyArray_ContiguousFromAny(a1, NPY_FLOAT64, 0, 0);
+  bool is_float32 =
+      PyArray_Check(a1) && PyArray_TYPE((PyArrayObject *)a1) == NPY_FLOAT32;
+  PyObject *aa = PyArray_FROM_OTF(a1, is_float32 ? NPY_FLOAT32 : NPY_FLOAT64,
+                                  NPY_ARRAY_ALIGNED);
   if (!aa)
     ERR("data must be (convertible to) a numpy array");
   RefHolder a_(aa);
   PyArrayObject *a = (PyArrayObject *)aa;
+  bool use_float32 = (PyArray_TYPE(a) == NPY_FLOAT32);
   int ndims = PyArray_NDIM(a);
   if (ndims < 2)
     ERR("data must be 2d");
@@ -2233,7 +2406,9 @@ static PyObject *rotinv2d(PyObject *self, PyObject *args) {
     npy_intp x = PyArray_DIM(a, i);
     nPaths *= (int)x;
   }
-  size_t eachInputSize = (size_t)(lengthOfPath * d);
+  npy_intp *strides = PyArray_STRIDES(a);
+  npy_intp point_stride = strides[ndims - 2];
+  npy_intp dim_stride = strides[ndims - 1];
   using OutT = UseDouble;
   PyObject *o = simpleNew_ownLastDim(ndims - 1, a, nInvariants, OutT::typenum);
   if (!o)
@@ -2241,13 +2416,15 @@ static PyObject *rotinv2d(PyObject *self, PyObject *args) {
   ReleasableRefHolder o_(o);
   OutT::T *out_data = static_cast<OutT::T *>(
       PyArray_DATA(reinterpret_cast<PyArrayObject *>(o)));
-  auto in_data = (double *)PyArray_DATA(a);
 
   Signature sig;
   std::vector<double> out(nInvariants);
-  bool ok = do_interruptible([&] {
+  auto doRotInv = [&](auto dummy) -> bool {
+    using InputT = decltype(dummy);
     for (int path = 0; path < nPaths; ++path) {
-      if (!calcSignature(sig, in_data, lengthOfPath, d, level))
+      char *in_data = batchPtr(a, 2, path);
+      if (!calcSignature<InputT>(sig, in_data, point_stride, dim_stride,
+                                 lengthOfPath, d, level))
         return false;
       for (int lev = 2; lev <= level; lev += 2) {
         for (int parity : {0, 1}) {
@@ -2262,9 +2439,14 @@ static PyObject *rotinv2d(PyObject *self, PyObject *args) {
           }
         }
       }
-      in_data += eachInputSize;
     }
     return true;
+  };
+  bool ok = do_interruptible([&] {
+    if (use_float32)
+      return doRotInv(float{});
+    else
+      return doRotInv(double{});
   });
   if (!ok)
     return nullptr;

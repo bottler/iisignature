@@ -1213,6 +1213,144 @@ class RotInv2d(TestCase):
             )
 
 
+class NonContiguous(unittest.TestCase):
+    """Test that sig (and friends) produce correct results for non-contiguous inputs."""
+
+    def test_sig_noncontiguous_batch(self):
+        numpy.random.seed(891)
+        paths = numpy.random.randn(10, 20, 3)
+        m = 4
+        ref = iisignature.sig(paths[::2].copy(), m)
+        got = iisignature.sig(paths[::2], m)
+        self.assertTrue(numpy.allclose(got, ref))
+
+    def test_sig_fortran_order(self):
+        numpy.random.seed(892)
+        paths = numpy.random.randn(10, 20, 3)
+        m = 4
+        ref = iisignature.sig(paths, m)
+        got = iisignature.sig(numpy.asfortranarray(paths), m)
+        self.assertTrue(numpy.allclose(got, ref))
+
+    def test_sig_noncontiguous_batch_multidim(self):
+        numpy.random.seed(893)
+        paths = numpy.random.randn(6, 4, 8, 3)
+        m = 3
+        ref = iisignature.sig(paths[::2, ::2].copy(), m)
+        got = iisignature.sig(paths[::2, ::2], m)
+        self.assertTrue(numpy.allclose(got, ref))
+
+    def test_sig_cumulative_noncontiguous(self):
+        numpy.random.seed(894)
+        paths = numpy.random.randn(10, 20, 3)
+        m = 3
+        ref = iisignature.sig(paths[::2].copy(), m, 2)
+        got = iisignature.sig(paths[::2], m, 2)
+        self.assertTrue(numpy.allclose(got, ref))
+
+
+class Float32Input(unittest.TestCase):
+    """Test that float32 path inputs produce correct results (matching float64)."""
+
+    def test_sig_float32(self):
+        numpy.random.seed(901)
+        path = numpy.random.uniform(size=(10, 3)).astype(numpy.float32)
+        result_f32 = iisignature.sig(path, 3)
+        result_f64 = iisignature.sig(path.astype(numpy.float64), 3)
+        numpy.testing.assert_allclose(result_f32, result_f64, rtol=1e-5)
+
+    def test_sig_float32_fortran_order(self):
+        numpy.random.seed(902)
+        path = numpy.asfortranarray(
+            numpy.random.uniform(size=(10, 3)).astype(numpy.float32)
+        )
+        result = iisignature.sig(path, 3)
+        expected = iisignature.sig(
+            numpy.ascontiguousarray(path).astype(numpy.float64), 3
+        )
+        numpy.testing.assert_allclose(result, expected, rtol=1e-5)
+
+    def test_sig_float32_batch(self):
+        numpy.random.seed(903)
+        paths = numpy.random.uniform(size=(5, 10, 3)).astype(numpy.float32)
+        result_f32 = iisignature.sig(paths, 3)
+        result_f64 = iisignature.sig(paths.astype(numpy.float64), 3)
+        numpy.testing.assert_allclose(result_f32, result_f64, rtol=1e-5)
+
+    def test_sig_float32_cumulative(self):
+        numpy.random.seed(904)
+        path = numpy.random.uniform(size=(10, 3)).astype(numpy.float32)
+        result_f32 = iisignature.sig(path, 3, 2)
+        result_f64 = iisignature.sig(path.astype(numpy.float64), 3, 2)
+        numpy.testing.assert_allclose(result_f32, result_f64, rtol=1e-5)
+
+    def test_sigbackprop_float32(self):
+        numpy.random.seed(905)
+        d = 3
+        m = 3
+        path = numpy.random.uniform(size=(10, d)).astype(numpy.float32)
+        sig = iisignature.sig(path, m)
+        derivs = numpy.ones_like(sig)
+        result_f32 = iisignature.sigbackprop(derivs, path, m)
+        result_f64 = iisignature.sigbackprop(derivs, path.astype(numpy.float64), m)
+        numpy.testing.assert_allclose(result_f32, result_f64, rtol=1e-5)
+
+    def test_logsig_float32_all_methods(self):
+        numpy.random.seed(906)
+        d = 3
+        path = numpy.random.uniform(size=(10, d)).astype(numpy.float32)
+        path_f64 = path.astype(numpy.float64)
+        for m, methods in [(2, "COSA"), (3, "COS")]:
+            for method in methodfilter(list(methods)):
+                s = prepare(d, m, method.lower())
+                result_f32 = iisignature.logsig(path, s, method)
+                result_f64 = iisignature.logsig(path_f64, s, method)
+                numpy.testing.assert_allclose(
+                    result_f32,
+                    result_f64,
+                    rtol=1e-5,
+                    err_msg="logsig method %s level %d" % (method, m),
+                )
+
+    def test_logsig_float32_expanded(self):
+        numpy.random.seed(907)
+        d = 3
+        m = 3
+        path = numpy.random.uniform(size=(10, d)).astype(numpy.float32)
+        s = prepare(d, m, "x")
+        result_f32 = iisignature.logsig(path, s, "X")
+        result_f64 = iisignature.logsig(path.astype(numpy.float64), s, "X")
+        numpy.testing.assert_allclose(result_f32, result_f64, rtol=1e-5, atol=1e-15)
+
+    def test_logsigbackprop_float32(self):
+        numpy.random.seed(908)
+        d = 3
+        m = 2
+        path = numpy.random.uniform(size=(10, d)).astype(numpy.float32)
+        for method in methodfilter(["S", "X", "A"]):
+            s = prepare(d, m, method.lower())
+            logsig = iisignature.logsig(path, s, method)
+            derivs = numpy.ones_like(logsig)
+            result_f32 = iisignature.logsigbackprop(derivs, path, s, method)
+            result_f64 = iisignature.logsigbackprop(
+                derivs, path.astype(numpy.float64), s, method
+            )
+            numpy.testing.assert_allclose(
+                result_f32,
+                result_f64,
+                rtol=1e-5,
+                err_msg="logsigbackprop method %s" % method,
+            )
+
+    def test_rotinv2d_float32(self):
+        numpy.random.seed(909)
+        path = numpy.random.uniform(size=(12, 2)).astype(numpy.float32)
+        s = iisignature.rotinv2dprepare(4, "a")
+        result_f32 = iisignature.rotinv2d(path, s)
+        result_f64 = iisignature.rotinv2d(path.astype(numpy.float64), s)
+        numpy.testing.assert_allclose(result_f32, result_f64, rtol=1e-5)
+
+
 if __name__ == "__main__":
     sys.path.append("..")
     import iisignature

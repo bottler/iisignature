@@ -601,13 +601,17 @@ void backToSegment(int d, int m, const Signature &x, Signature &s) {
   }
 }
 
-void calcSignature(int d, int m, int lengthOfPath, const Number *data,
+template <typename InputT>
+void calcSignature(int d, int m, int lengthOfPath, const char *data,
+                   ptrdiff_t point_stride, ptrdiff_t dim_stride,
                    Signature &s2) {
   Signature s1;
   vector<Number> displacement(d);
   for (int i = 1; i < lengthOfPath; ++i) {
     for (int j = 0; j < d; ++j)
-      displacement[j] = data[i * d + j] - data[(i - 1) * d + j];
+      displacement[j] =
+          *(const InputT *)(data + i * point_stride + j * dim_stride) -
+          *(const InputT *)(data + (i - 1) * point_stride + j * dim_stride);
     s1.sigOfSegment(d, m, &displacement[0]);
     if (i == 1)
       s2.swap(s1);
@@ -616,28 +620,41 @@ void calcSignature(int d, int m, int lengthOfPath, const Number *data,
   }
 }
 
+void calcSignature(int d, int m, int lengthOfPath, const char *data,
+                   ptrdiff_t point_stride, ptrdiff_t dim_stride,
+                   Signature &s2) {
+  calcSignature<Number>(d, m, lengthOfPath, data, point_stride, dim_stride, s2);
+}
+
+void calcSignature(int d, int m, int lengthOfPath, const Number *data,
+                   Signature &s2) {
+  calcSignature<Number>(d, m, lengthOfPath, (const char *)data,
+                        d * (ptrdiff_t)sizeof(Number),
+                        (ptrdiff_t)sizeof(Number), s2);
+}
+
 // path is a (lengthOfPath)xd path, derivs is dF/d(sig(path)) of length
 // siglength(d,m), output is (lengthOfPath)xd this function just increments
 // output[i,j] by dF/d(path[i,j])
-void sigBackwards(int d, int m, int lengthOfPath, const Number *path,
+template <typename InputT>
+void sigBackwards(int d, int m, int lengthOfPath, const char *path,
+                  ptrdiff_t point_stride, ptrdiff_t dim_stride,
                   Signature &allSigDerivs, OutputNumber *output) {
   if (lengthOfPath < 2)
     return;
   Signature allSig, localDerivs, segmentSig;
-  calcSignature(d, m, lengthOfPath, path, allSig);
+  calcSignature<InputT>(d, m, lengthOfPath, path, point_stride, dim_stride,
+                        allSig);
   vector<Number> displacement(d);
   for (int i = lengthOfPath - 1; i > 0; --i) {
     for (int j = 0; j < d; ++j)
-      displacement[j] = path[i * d + j] - path[(i - 1) * d + j];
+      displacement[j] =
+          *(const InputT *)(path + i * point_stride + j * dim_stride) -
+          *(const InputT *)(path + (i - 1) * point_stride + j * dim_stride);
     segmentSig.sigOfSegment(d, m, &displacement[0]);
     allSig.unconcatenateWith(d, m, segmentSig);
-    // allSig.print();
     backConcatenate(d, m, allSig, segmentSig, allSigDerivs, localDerivs);
-    // allSigDerivs.print();
-    // localDerivs.print();
-    // segmentSig.print();
     backToSegment(d, m, segmentSig, localDerivs);
-    // localDerivs.print();
     auto pos = output + i * d;
     auto neg = output + (i - 1) * d;
     auto &s = localDerivs.m_data[0];
@@ -648,16 +665,50 @@ void sigBackwards(int d, int m, int lengthOfPath, const Number *path,
   }
 }
 
+void sigBackwards(int d, int m, int lengthOfPath, const char *path,
+                  ptrdiff_t point_stride, ptrdiff_t dim_stride,
+                  Signature &allSigDerivs, OutputNumber *output) {
+  sigBackwards<Number>(d, m, lengthOfPath, path, point_stride, dim_stride,
+                       allSigDerivs, output);
+}
+
 // path is a (lengthOfPath)xd path, derivs is dF/d(sig(path)) of length
 // siglength(d,m), output is (lengthOfPath)xd this function just increments
 // output[i,j] by dF/d(path[i,j])
-void sigBackwardsRaw(int d, int m, int lengthOfPath, const Number *path,
+void sigBackwards(int d, int m, int lengthOfPath, const Number *path,
+                  Signature &allSigDerivs, OutputNumber *output) {
+  sigBackwards(d, m, lengthOfPath, (const char *)path,
+               d * (ptrdiff_t)sizeof(Number), (ptrdiff_t)sizeof(Number),
+               allSigDerivs, output);
+}
+
+// path is a (lengthOfPath)xd path, derivs is dF/d(sig(path)) of length
+// siglength(d,m), output is (lengthOfPath)xd this function just increments
+// output[i,j] by dF/d(path[i,j])
+template <typename InputT>
+void sigBackwardsRaw(int d, int m, int lengthOfPath, const char *path,
+                     ptrdiff_t point_stride, ptrdiff_t dim_stride,
                      const Number *derivs, OutputNumber *output) {
   if (lengthOfPath < 2)
     return;
   Signature allSigDerivs;
   allSigDerivs.fromRaw(d, m, derivs);
-  sigBackwards(d, m, lengthOfPath, path, allSigDerivs, output);
+  sigBackwards<InputT>(d, m, lengthOfPath, path, point_stride, dim_stride,
+                       allSigDerivs, output);
+}
+
+void sigBackwardsRaw(int d, int m, int lengthOfPath, const char *path,
+                     ptrdiff_t point_stride, ptrdiff_t dim_stride,
+                     const Number *derivs, OutputNumber *output) {
+  sigBackwardsRaw<Number>(d, m, lengthOfPath, path, point_stride, dim_stride,
+                          derivs, output);
+}
+
+void sigBackwardsRaw(int d, int m, int lengthOfPath, const Number *path,
+                     const Number *derivs, OutputNumber *output) {
+  sigBackwardsRaw(d, m, lengthOfPath, (const char *)path,
+                  d * (ptrdiff_t)sizeof(Number), (ptrdiff_t)sizeof(Number),
+                  derivs, output);
 }
 
 void sigJoin(int d, int m, const Number *signature, const Number *displacement,

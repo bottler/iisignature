@@ -16,7 +16,7 @@ headers = [
 args = []
 link_args = []
 if os.name == "posix":
-    args = ["-std=c++11"]
+    args = ["-std=c++14"]
 
 if sys.platform == "darwin" and "MACOSX_DEPLOYMENT_TARGET" not in os.environ:
     if "IISIGNATURE_MACOSX_DONOTBECLEVER" not in os.environ:

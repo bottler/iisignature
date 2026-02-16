@@ -845,26 +845,51 @@ void logsigToSigBackwards(const double *in, const double *derivs,
 // path is N*dim
 // we are working up to level 2 so the LieBasis doesn't matter
 // should restrict out.
-void logSigUsingArea(const double *path, int N, int m, int dim, double *out) {
+template <typename InputT>
+void logSigUsingArea(const char *path, ptrdiff_t point_stride,
+                     ptrdiff_t dim_stride, int N, int m, int dim, double *out) {
   for (int d = 0; d < dim; ++d) {
-    *(out++) = path[(N - 1) * dim + d] - path[d];
+    *(out++) =
+        *(const InputT *)(path + (N - 1) * point_stride + d * dim_stride) -
+        *(const InputT *)(path + d * dim_stride);
   }
   if (m >= 2) {
     for (int d1 = 0; d1 < dim; ++d1)
       for (int d2 = d1 + 1; d2 < dim; ++d2) {
         double area = 0;
-        const double s1 = path[d1];
-        const double s2 = path[d2];
+        const double s1 = *(const InputT *)(path + d1 * dim_stride);
+        const double s2 = *(const InputT *)(path + d2 * dim_stride);
         for (int n = 0; n + 1 < N; ++n) {
-          area += (path[(n)*dim + d1] - s1) * (path[(n + 1) * dim + d2] - s2) -
-                  (path[(n)*dim + d2] - s2) * (path[(n + 1) * dim + d1] - s1);
+          area +=
+              (*(const InputT *)(path + n * point_stride + d1 * dim_stride) -
+               s1) *
+                  (*(const InputT *)(path + (n + 1) * point_stride +
+                                     d2 * dim_stride) -
+                   s2) -
+              (*(const InputT *)(path + n * point_stride + d2 * dim_stride) -
+               s2) *
+                  (*(const InputT *)(path + (n + 1) * point_stride +
+                                     d1 * dim_stride) -
+                   s1);
         }
         *(out++) = area * 0.5;
       }
   }
 }
 
-void logSigUsingAreaBackwards(const double *path, int N, int m, int dim,
+void logSigUsingArea(const char *path, ptrdiff_t point_stride,
+                     ptrdiff_t dim_stride, int N, int m, int dim, double *out) {
+  logSigUsingArea<double>(path, point_stride, dim_stride, N, m, dim, out);
+}
+
+void logSigUsingArea(const double *path, int N, int m, int dim, double *out) {
+  logSigUsingArea((const char *)path, dim * (ptrdiff_t)sizeof(double),
+                  (ptrdiff_t)sizeof(double), N, m, dim, out);
+}
+
+template <typename InputT>
+void logSigUsingAreaBackwards(const char *path, ptrdiff_t point_stride,
+                              ptrdiff_t dim_stride, int N, int m, int dim,
                               const double *dOut, float *out) {
   for (int d = 0; d < dim; ++d) {
     out[(N - 1) * dim + d] += (float)*dOut;
@@ -875,20 +900,55 @@ void logSigUsingAreaBackwards(const double *path, int N, int m, int dim,
     for (int d1 = 0; d1 < dim; ++d1)
       for (int d2 = d1 + 1; d2 < dim; ++d2) {
         const double r = 0.5 * (*dOut++);
-        const double s1 = path[d1];
-        const double s2 = path[d2];
+        const double s1 = *(const InputT *)(path + d1 * dim_stride);
+        const double s2 = *(const InputT *)(path + d2 * dim_stride);
         for (int n = 0; n + 1 < N; ++n) {
-          out[d1] -=
-              (float)((path[(n + 1) * dim + d2] - path[(n)*dim + d2]) * r);
-          out[d2] -=
-              (float)((path[(n)*dim + d1] - path[(n + 1) * dim + d1]) * r);
-          out[(n)*dim + d1] += (float)((path[(n + 1) * dim + d2] - s2) * r);
-          out[(n)*dim + d2] -= (float)((path[(n + 1) * dim + d1] - s1) * r);
-          out[(n + 1) * dim + d2] += (float)((path[(n)*dim + d1] - s1) * r);
-          out[(n + 1) * dim + d1] -= (float)((path[(n)*dim + d2] - s2) * r);
+          out[d1] -= (float)((*(const InputT *)(path + (n + 1) * point_stride +
+                                                d2 * dim_stride) -
+                              *(const InputT *)(path + n * point_stride +
+                                                d2 * dim_stride)) *
+                             r);
+          out[d2] -= (float)((*(const InputT *)(path + n * point_stride +
+                                                d1 * dim_stride) -
+                              *(const InputT *)(path + (n + 1) * point_stride +
+                                                d1 * dim_stride)) *
+                             r);
+          out[(n)*dim + d1] +=
+              (float)((*(const InputT *)(path + (n + 1) * point_stride +
+                                         d2 * dim_stride) -
+                       s2) *
+                      r);
+          out[(n)*dim + d2] -=
+              (float)((*(const InputT *)(path + (n + 1) * point_stride +
+                                         d1 * dim_stride) -
+                       s1) *
+                      r);
+          out[(n + 1) * dim + d2] +=
+              (float)((*(const InputT *)(path + n * point_stride +
+                                         d1 * dim_stride) -
+                       s1) *
+                      r);
+          out[(n + 1) * dim + d1] -=
+              (float)((*(const InputT *)(path + n * point_stride +
+                                         d2 * dim_stride) -
+                       s2) *
+                      r);
         }
       }
   }
+}
+
+void logSigUsingAreaBackwards(const char *path, ptrdiff_t point_stride,
+                              ptrdiff_t dim_stride, int N, int m, int dim,
+                              const double *dOut, float *out) {
+  logSigUsingAreaBackwards<double>(path, point_stride, dim_stride, N, m, dim,
+                                   dOut, out);
+}
+
+void logSigUsingAreaBackwards(const double *path, int N, int m, int dim,
+                              const double *dOut, float *out) {
+  logSigUsingAreaBackwards((const char *)path, dim * (ptrdiff_t)sizeof(double),
+                           (ptrdiff_t)sizeof(double), N, m, dim, dOut, out);
 }
 
 void logSigJoinUsingArea(const double *path, const double *displacement, int m,
