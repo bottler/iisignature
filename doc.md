@@ -50,6 +50,16 @@ Many of the functions require a path as input. A path in *d* dimensions which is
 
 **Batching:** Many of the functions which accept arrays can do the same operation multiple times in a single call by stacking the inputs, i.e. adding extra initial dimensions. This is supported on any of the functions where this document shows an ellipsis (`...`) in a shape. If there are multiple array inputs to a function, their extra dimensions must match each other (broadcasting is not done). The result will have all the initial dimensions in it. Having any of these extra dimensions is always optional. A few of the functions are assumed to be most useful in the case where batching is in use.
 
+**Threading:** `sig` and `logsig` can compute results in parallel, both across the batch dimension and across the time dimension of a single path. The number of worker threads is resolved (once, on the first call) from the following sources in order of priority:
+
+1. `IISIGNATURE_NUM_THREADS` — `iisignature`-specific override.
+2. `OMP_NUM_THREADS` — the standard scientific-Python convention. This means the [`threadpoolctl`](https://github.com/joblib/threadpoolctl) package's `threadpool_limits()` context manager will throttle `iisignature` alongside NumPy / SciPy without any extra integration.
+3. The number of CPU cores the process is allowed to use. On Linux this is queried via `sched_getaffinity`, so `iisignature` respects `taskset`, `cgroups` and SLURM allocations rather than always grabbing the full physical machine.
+
+The default is therefore to use all available cores. To force single-threaded execution (for bit-exact comparison with previous versions, or to leave cores for other parallelism in your own code), set `IISIGNATURE_NUM_THREADS=1`.
+
+When a batch is supplied (i.e. `path` has shape `(B, n, d)` with `B > 1`), the per-path computations are distributed across the batch axis. This is bit-exact with the sequential version regardless of the thread count. When a single path is supplied, the path is instead split into contiguous chunks, the signatures of each chunk are computed in parallel, and the results are merged pairwise using Chen's identity. Because Chen multiplication is associative on the tensor algebra, the merge-tree result is mathematically identical to the sequential left-fold, but small floating-point reordering means within-path parallel results differ from the sequential result by roughly `1e-12` relative on a typical coefficient. The merge-tree path is only taken for the `S` and `X` methods of `logsig` and for `sig`; the compiled-BCH (`C` method) branch stays sequential because its scratch state is not reentrant.
+
 #### `version()`
 
 > Return the version number of `iisignature`.

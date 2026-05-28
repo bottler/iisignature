@@ -10,13 +10,21 @@
 #endif
 
 #include <Python.h>
+#include <algorithm>
+#include <atomic>
+#include <cstdlib>
 #include <iostream>
 #include <limits>
 #include <memory>
+#include <mutex>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <utility>
 #include <vector>
+#if defined(__linux__)
+#include <sched.h>
+#endif
 #ifndef IISIGNATURE_NO_NUMPY
 #define NPY_NO_DEPRECATED_API NPY_1_7_API_VERSION
 #include <numpy/arrayobject.h>
@@ -28,6 +36,7 @@
 #include "rotationalInvariants.hpp"
 
 using std::vector;
+using CalcSignature::calcSignatureParallel;
 
 // for python 3.5+, we can load the new way
 // https://www.python.org/dev/peps/pep-0489/
@@ -369,17 +378,22 @@ static PyObject *sig(PyObject *self, PyObject *args) {
       return nullptr;
     auto od = static_cast<OutT::T *>(
         PyArray_DATA(reinterpret_cast<PyArrayObject *>(o)));
+    int nThreads = std::min(iisignature_num_threads(), nPaths);
+    if (nThreads < 1) nThreads = 1;
     auto doCalcCumul = [&](auto dummy) -> bool {
       using InputT = decltype(dummy);
-      for (int path = 0; path < nPaths; ++path)
+      std::string err;
+      parallel_for(nPaths, nThreads, err, [&](int /*tid*/, int path) {
         if (!calcCumulativeSignature<InputT>(
                 batchPtr(a, 2, path), point_stride, dim_stride, lengthOfPath, d,
                 level, eachOutputSize,
-                od + path * eachOutputSize * (lengthOfPath - 1)))
-          return false;
+                od + (size_t)path * eachOutputSize * (lengthOfPath - 1)))
+          throw std::runtime_error("calc failed");
+      });
+      if (!err.empty()) return false;
       return true;
     };
-    bool ok = do_interruptible([&] {
+    bool ok = do_interruptible_releasing_lock([&] {
       if (use_float32)
         return doCalcCumul(float{});
       else
@@ -400,23 +414,45 @@ static PyObject *sig(PyObject *self, PyObject *args) {
   ReleasableRefHolder o_(o);
 
   Signature s;
+  // format==1 grabs the LAST path's Signature into a tuple; keep sequential.
+  // format==0 writes per-path into out_data and is safely parallel.
+  int nThreads = (format == 0) ? std::min(iisignature_num_threads(), nPaths) : 1;
+  if (nThreads < 1) nThreads = 1;
+  // When the batch axis can't soak up all threads, use the leftover threads
+  // for within-path chunking (B1). Only activates when nPaths == 1 and format
+  // is 0 (single output path).
+  int pathThreads = (format == 0 && nPaths == 1)
+                        ? std::max(1, iisignature_num_threads())
+                        : 1;
+  std::vector<Signature> workspaces(nThreads > 1 ? (size_t)nThreads : 0);
   auto doCalcSig = [&](auto dummy) -> bool {
     using InputT = decltype(dummy);
-    for (int path = 0; path < nPaths; ++path) {
-      if (!calcSignature<InputT>(s, batchPtr(a, 2, path), point_stride,
-                                 dim_stride, lengthOfPath, d, level))
-        return false;
+    std::string err;
+    parallel_for(nPaths, nThreads, err, [&](int tid, int path) {
+      Signature &mine = (nThreads > 1) ? workspaces[tid] : s;
+      bool ok = (pathThreads > 1)
+                    ? calcSignatureParallel<InputT>(
+                          mine, batchPtr(a, 2, path), point_stride, dim_stride,
+                          lengthOfPath, d, level, pathThreads)
+                    : calcSignature<InputT>(mine, batchPtr(a, 2, path),
+                                            point_stride, dim_stride,
+                                            lengthOfPath, d, level);
+      if (!ok)
+        throw std::runtime_error("calc failed");
       if (format == 0)
-        s.writeOut(out_data + path * eachOutputSize);
-    }
-    return true;
+        mine.writeOut(out_data + (size_t)path * eachOutputSize);
+    });
+    return err.empty();
   };
-  bool ok = do_interruptible([&] {
-    if (use_float32)
-      return doCalcSig(float{});
-    else
-      return doCalcSig(double{});
-  });
+  bool ok = (nThreads > 1 || pathThreads > 1)
+                ? do_interruptible_releasing_lock([&] {
+                    if (use_float32) return doCalcSig(float{});
+                    else return doCalcSig(double{});
+                  })
+                : do_interruptible([&] {
+                    if (use_float32) return doCalcSig(float{});
+                    else return doCalcSig(double{});
+                  });
   if (!ok)
     return nullptr;
 
@@ -1703,7 +1739,6 @@ static PyObject *logsig(PyObject *self, PyObject *args) {
   using OutT = UseDouble;
   if ((wantedmethods.m_compiled_bch && f != nullptr) ||
       (wantedmethods.m_simple_bch && lsf->m_fd.m_length_of_b > 0)) {
-    vector<double> displacement(d);
     const bool useCompiled = (f != nullptr && wantedmethods.m_compiled_bch);
 
     PyObject *o =
@@ -1712,12 +1747,20 @@ static PyObject *logsig(PyObject *self, PyObject *args) {
       return nullptr;
     auto dest = static_cast<OutT::T *>(
         PyArray_DATA(reinterpret_cast<PyArrayObject *>(o)));
-    vector<double> out;
-    auto doBCH = [&](auto dummy) {
+    // compiled BCH (`FunctionRunner::go`) shares scratch state inside `f`, so
+    // it isn't safe to call from multiple threads on the same runner. Only
+    // the simple-BCH path is parallelised.
+    int nThreads = (!useCompiled)
+                       ? std::min(iisignature_num_threads(), nPaths)
+                       : 1;
+    if (nThreads < 1) nThreads = 1;
+    auto doBCH = [&](auto dummy) -> bool {
       using InputT = decltype(dummy);
-      for (int path = 0; path < nPaths; ++path) {
+      std::string err;
+      parallel_for(nPaths, nThreads, err, [&](int /*tid*/, int path) {
         char *data = batchPtr(a, 2, path);
-        out.assign(logsiglength, 0);
+        std::vector<double> out(logsiglength, 0);
+        std::vector<double> displacement(d);
         if (lengthOfPath > 1) {
           for (int j = 0; j < d; ++j)
             out[j] = *(InputT *)(data + 1 * point_stride + j * dim_stride) -
@@ -1733,14 +1776,23 @@ static PyObject *logsig(PyObject *self, PyObject *args) {
           else
             slowExplicitFunction(out.data(), displacement.data(), lsf->m_fd);
         }
-        for (double d : out)
-          *dest++ = (OutT::T)d;
-      }
+        OutT::T *dst = dest + (size_t)path * logsiglength;
+        for (size_t k = 0; k < out.size(); ++k)
+          dst[k] = (OutT::T)out[k];
+      });
+      return err.empty();
     };
-    if (use_float32)
-      doBCH(float{});
-    else
-      doBCH(double{});
+    bool ok = (nThreads > 1)
+                  ? do_interruptible_releasing_lock([&] {
+                      if (use_float32) return doBCH(float{});
+                      else return doBCH(double{});
+                    })
+                  : do_interruptible([&] {
+                      if (use_float32) return doBCH(float{});
+                      else return doBCH(double{});
+                    });
+    if (!ok)
+      return nullptr;
     return o;
   }
   if (wantedmethods.m_expanded ||
@@ -1755,29 +1807,43 @@ static PyObject *logsig(PyObject *self, PyObject *args) {
         PyArray_DATA(reinterpret_cast<PyArrayObject *>(o)));
     ReleasableRefHolder o_(o);
 
-    Signature sig;
+    int nThreads = std::min(iisignature_num_threads(), nPaths);
+    if (nThreads < 1) nThreads = 1;
+    int pathThreads = (nPaths == 1) ? std::max(1, iisignature_num_threads()) : 1;
     auto doSX = [&](auto dummy) -> bool {
       using InputT = decltype(dummy);
-      for (int path = 0; path < nPaths; ++path) {
+      std::string err;
+      parallel_for(nPaths, nThreads, err, [&](int /*tid*/, int path) {
+        Signature sig;  // per-call workspace
         char *data = batchPtr(a, 2, path);
-        if (!calcSignature<InputT>(sig, data, point_stride, dim_stride,
-                                   lengthOfPath, d, lsf->m_level))
-          return false;
+        bool ok = (pathThreads > 1)
+                      ? calcSignatureParallel<InputT>(sig, data, point_stride,
+                                                      dim_stride, lengthOfPath,
+                                                      d, lsf->m_level,
+                                                      pathThreads)
+                      : calcSignature<InputT>(sig, data, point_stride,
+                                              dim_stride, lengthOfPath, d,
+                                              lsf->m_level);
+        if (!ok)
+          throw std::runtime_error("calc failed");
         logTensorHorner(sig);
         if (wantedmethods.m_expanded)
-          sig.writeOut(outp + path * eachOutputSize);
-        else {
-          projectExpandedLogSigToBasis(outp + path * eachOutputSize, lsf, sig);
-        }
-      }
-      return true;
+          sig.writeOut(outp + (size_t)path * eachOutputSize);
+        else
+          projectExpandedLogSigToBasis(outp + (size_t)path * eachOutputSize,
+                                       lsf, sig);
+      });
+      return err.empty();
     };
-    bool ok = do_interruptible([&] {
-      if (use_float32)
-        return doSX(float{});
-      else
-        return doSX(double{});
-    });
+    bool ok = (nThreads > 1 || pathThreads > 1)
+                  ? do_interruptible_releasing_lock([&] {
+                      if (use_float32) return doSX(float{});
+                      else return doSX(double{});
+                    })
+                  : do_interruptible([&] {
+                      if (use_float32) return doSX(float{});
+                      else return doSX(double{});
+                    });
     if (!ok)
       return nullptr;
     o_.release();
@@ -1792,22 +1858,28 @@ static PyObject *logsig(PyObject *self, PyObject *args) {
         PyArray_DATA(reinterpret_cast<PyArrayObject *>(o)));
     ReleasableRefHolder o_(o);
 
+    int nThreads = std::min(iisignature_num_threads(), nPaths);
+    if (nThreads < 1) nThreads = 1;
     auto doArea = [&](auto dummy) -> bool {
       using InputT = decltype(dummy);
-      for (int path = 0; path < nPaths; ++path) {
+      std::string err;
+      parallel_for(nPaths, nThreads, err, [&](int /*tid*/, int path) {
         char *data = batchPtr(a, 2, path);
         logSigUsingArea<InputT>(data, point_stride, dim_stride, lengthOfPath,
-                                lsf->m_level, d, outp + path * logsiglength);
-        interrupt();
-      }
-      return true;
+                                lsf->m_level, d,
+                                outp + (size_t)path * logsiglength);
+      });
+      return err.empty();
     };
-    bool ok = do_interruptible([&] {
-      if (use_float32)
-        return doArea(float{});
-      else
-        return doArea(double{});
-    });
+    bool ok = (nThreads > 1)
+                  ? do_interruptible_releasing_lock([&] {
+                      if (use_float32) return doArea(float{});
+                      else return doArea(double{});
+                    })
+                  : do_interruptible([&] {
+                      if (use_float32) return doArea(float{});
+                      else return doArea(double{});
+                    });
     if (!ok)
       return nullptr;
     o_.release();

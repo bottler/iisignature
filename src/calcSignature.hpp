@@ -4,6 +4,8 @@
 #include <cmath>
 #include <vector>
 
+#include "threading.hpp"
+
 int calcSigLevelLength(int d, int m) {
   //    return static_cast<int> (std::round(std::pow(d,m)));
   return static_cast<int>(0.4 + std::pow(d, m));
@@ -644,6 +646,91 @@ void calcSignature(int d, int m, int lengthOfPath, const Number *data,
   calcSignature<Number>(d, m, lengthOfPath, (const char *)data,
                         d * (ptrdiff_t)sizeof(Number),
                         (ptrdiff_t)sizeof(Number), s2);
+}
+
+// Compute the signature of the sub-path data[startPoint .. endPoint]
+// (inclusive both ends). Requires endPoint > startPoint. Output lands in s2.
+// Same numerics as calcSignature when [startPoint, endPoint] = [0, lengthOfPath-1].
+template <typename InputT>
+bool calcSignatureRange(Signature &s2, const char *data,
+                        ptrdiff_t point_stride, ptrdiff_t dim_stride,
+                        int startPoint, int endPoint, int d, int level) {
+  Signature s1;
+  vector<double> displacement(d);
+  for (int i = startPoint + 1; i <= endPoint; ++i) {
+    for (int j = 0; j < d; ++j)
+      displacement[j] =
+          *(const InputT *)(data + i * point_stride + j * dim_stride) -
+          *(const InputT *)(data + (i - 1) * point_stride + j * dim_stride);
+    s1.sigOfSegment(d, level, &displacement[0]);
+    if (i == startPoint + 1)
+      s2.swap(s1);
+    else
+      s2.concatenateWith(d, level, s1);
+  }
+  return true;
+}
+
+// Within-path parallel signature: split the segment range [0, lengthOfPath-1]
+// into nThreads chunks, compute each chunk's signature in parallel, then
+// pairwise-merge via Chen's identity (associative). Caller must have released
+// the GIL when calling from Python. Result lands in s2. Falls back to
+// sequential calcSignatureRange when nThreads <= 1 or path is too short for
+// the threads to be worth it.
+template <typename InputT>
+bool calcSignatureParallel(Signature &s2, const char *data,
+                           ptrdiff_t point_stride, ptrdiff_t dim_stride,
+                           int lengthOfPath, int d, int level, int nThreads) {
+  // Each chunk needs at least 1 segment, so segments must be >= nThreads.
+  int nSegments = lengthOfPath - 1;
+  if (nThreads <= 1 || nSegments < nThreads) {
+    // Sequential fallback.
+    if (lengthOfPath == 1) {
+      s2.sigOfNothing(d, level);
+      return true;
+    }
+    return calcSignatureRange<InputT>(s2, data, point_stride, dim_stride, 0,
+                                      lengthOfPath - 1, d, level);
+  }
+  std::vector<Signature> chunks((size_t)nThreads);
+  std::string err;
+  parallel_for(nThreads, nThreads, err, [&](int /*tid*/, int t) {
+    int chunk = nSegments / nThreads;
+    int rem = nSegments % nThreads;
+    int segBegin = t * chunk + std::min(t, rem);
+    int segEnd = segBegin + chunk + (t < rem ? 1 : 0);
+    int startPoint = segBegin;
+    int endPoint = segEnd; // because point_i to point_{i+1} = segment i
+    if (!calcSignatureRange<InputT>(chunks[t], data, point_stride, dim_stride,
+                                    startPoint, endPoint, d, level))
+      throw std::runtime_error("calc failed");
+  });
+  if (!err.empty())
+    return false;
+  // Pairwise merge in-place, halving the active range each round.
+  // chunks[0] absorbs chunks[1], chunks[2] absorbs chunks[3], etc.
+  // The merges themselves are FLOP-heavy (concatenateWith is O(siglen^2) at
+  // worst), so parallelise the rounds across threads too.
+  int active = nThreads;
+  while (active > 1) {
+    int nPairs = active / 2;
+    std::string merr;
+    parallel_for(nPairs, std::min(nPairs, nThreads), merr,
+                 [&](int /*tid*/, int p) {
+                   chunks[2 * p].concatenateWith(d, level, chunks[2 * p + 1]);
+                 });
+    if (!merr.empty())
+      return false;
+    // Compact: keep [0, 2, 4, ...] and any odd straggler at the end.
+    int newActive = nPairs + (active & 1);
+    for (int i = 1; i < nPairs; ++i)
+      chunks[i].swap(chunks[2 * i]);
+    if (active & 1)
+      chunks[nPairs].swap(chunks[active - 1]);
+    active = newActive;
+  }
+  s2.swap(chunks[0]);
+  return true;
 }
 
 // path is a (lengthOfPath)xd path, derivs is dF/d(sig(path)) of length
