@@ -38,11 +38,20 @@ public:
     for (int level = 2; level <= m; ++level) {
       const auto &last = m_data[level - 2];
       auto &s = m_data[level - 1];
-      s.assign(calcSigLevelLength(d, level), 0);
-      int i = 0;
-      for (auto l : last)
-        for (auto p = segment; p < segment + d; ++p)
-          s[i++] = (Number)(*p * l * (1.0 / level));
+      // Every element of s is written below, so a zero-fill is wasted.
+      // resize() leaves existing elements alone (no-op when already sized),
+      // and value-initialises only newly added ones on the first call.
+      s.resize((size_t)calcSigLevelLength(d, level));
+      const Number inv_level = 1.0 / level;
+      const size_t L = last.size();
+      Number *__restrict__ sp = s.data();
+      const Number *__restrict__ lp = last.data();
+      for (size_t i = 0; i < L; ++i) {
+        const Number scaled_l = lp[i] * inv_level;
+        Number *__restrict__ row = sp + i * (size_t)d;
+        for (int k = 0; k < d; ++k)
+          row[k] = (Number)segment[k] * scaled_l;
+      }
     }
   }
   template <typename Num>
@@ -91,22 +100,26 @@ public:
   // tensor algebra.
   void concatenateWith(int /*d*/, int m, const Signature &other) {
     for (int level = m; level > 0; --level) {
+      Number *__restrict__ destLevel = m_data[level - 1].data();
       for (int mylevel = level - 1; mylevel > 0; --mylevel) {
         int otherlevel = level - mylevel;
-        auto &oth = other.m_data[otherlevel - 1];
-        for (auto dest = m_data[level - 1].begin(),
-                  my = m_data[mylevel - 1].begin(),
-                  myE = m_data[mylevel - 1].end();
-             my != myE; ++my) {
-          for (const Number &dd : oth) {
-            *(dest++) += dd * *my;
-          }
+        const auto &oth = other.m_data[otherlevel - 1];
+        const Number *__restrict__ othp = oth.data();
+        const size_t othLen = oth.size();
+        const Number *__restrict__ myp = m_data[mylevel - 1].data();
+        const size_t myLen = m_data[mylevel - 1].size();
+        Number *__restrict__ dest = destLevel;
+        for (size_t j = 0; j < myLen; ++j) {
+          const Number myv = myp[j];
+          for (size_t k = 0; k < othLen; ++k)
+            dest[k] += othp[k] * myv;
+          dest += othLen;
         }
       }
-      auto source = other.m_data[level - 1].begin();
-      for (auto dest = m_data[level - 1].begin(), e = m_data[level - 1].end();
-           dest != e;)
-        *(dest++) += *(source++);
+      const Number *__restrict__ source = other.m_data[level - 1].data();
+      const size_t levLen = m_data[level - 1].size();
+      for (size_t i = 0; i < levLen; ++i)
+        destLevel[i] += source[i];
     }
   }
   static double concatenateWithMultCount(int d, int m) {

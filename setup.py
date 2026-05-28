@@ -1,6 +1,7 @@
-from setuptools import setup, Extension
 import os
 import sys
+
+from setuptools import Extension, setup
 
 version = "0.24"
 headers = [
@@ -17,6 +18,10 @@ args = []
 link_args = []
 if os.name == "posix":
     args = ["-std=c++14"]
+    # Distutils defaults to -O2 with no auto-vectorisation tuning. The hot loops
+    # in calcSignature are trivially vectorisable axpy kernels, so bump to -O3
+    # and let the compiler tune for the build host.
+    args += ["-O3", "-funroll-loops", "-fno-trapping-math", "-march=native"]
 
 if sys.platform == "darwin" and "MACOSX_DEPLOYMENT_TARGET" not in os.environ:
     if "IISIGNATURE_MACOSX_DONOTBECLEVER" not in os.environ:
