@@ -31,6 +31,7 @@
 #endif
 
 #include "calcSignature.hpp"
+#include "calcSuffixSignature.hpp"
 #include "logSigLength.hpp"
 #include "logsig.hpp"
 #include "rotationalInvariants.hpp"
@@ -249,6 +250,18 @@ static PyObject *siglength(PyObject *self, PyObject *args) {
   return PyLong_FromLong(ans);
 }
 
+static PyObject *sigsuffixlength(PyObject *self, PyObject *args) {
+  int d = 0, m = 0;
+  if (!PyArg_ParseTuple(args, "ii", &d, &m))
+    return nullptr;
+  if (m < 1)
+    ERR("level must be positive");
+  if (d < 1)
+    ERR("dimension must be positive");
+  long ans = calcSigTotalLengthSuffix(d, m);
+  return PyLong_FromLong(ans);
+}
+
 static PyObject *logsiglength(PyObject *self, PyObject *args) {
   int d = 0, m = 0;
   if (!PyArg_ParseTuple(args, "ii", &d, &m))
@@ -301,6 +314,9 @@ static bool calcSignature(Signature &s2, const char *data,
   }
   return true;
 }
+
+using CalcSignature::SuffixSignature;
+using CalcSignature::calcSignatureSuffix;
 
 // data is (lengthOfPath x d) with given strides
 // out is ((lengthOfPath-1) x siglength)
@@ -470,6 +486,88 @@ static PyObject *sig(PyObject *self, PyObject *args) {
       PyTuple_SET_ITEM(o, m, p);
     }
   }
+  o_.release();
+  return o;
+}
+
+static PyObject *sigsuffix(PyObject *self, PyObject *args) {
+  PyObject *a1;
+  int level = 0;
+  if (!PyArg_ParseTuple(args, "Oi", &a1, &level))
+    return nullptr;
+  if (level < 1)
+    ERR("level must be positive");
+
+  bool is_float32 =
+      PyArray_Check(a1) && PyArray_TYPE((PyArrayObject *)a1) == NPY_FLOAT32;
+  PyObject *aa = PyArray_FROM_OTF(a1, is_float32 ? NPY_FLOAT32 : NPY_FLOAT64,
+                                  NPY_ARRAY_ALIGNED);
+  if (!aa)
+    ERR("data must be (convertible to) a numpy array");
+  RefHolder a_(aa);
+  PyArrayObject *a = (PyArrayObject *)aa;
+  bool use_float32 = (PyArray_TYPE(a) == NPY_FLOAT32);
+
+  int ndims = PyArray_NDIM(a);
+  if (ndims < 2)
+    ERR("data must be 2d");
+  const int lengthOfPath = (int)PyArray_DIM(a, ndims - 2);
+  const int d = (int)PyArray_DIM(a, ndims - 1);
+  if (lengthOfPath < 1)
+    ERR("Path has no length");
+  if (d < 2)
+    ERR("sigsuffix requires the path to have at least 2 channels");
+
+  int nPaths = 1;
+  for (int i = 0; i + 2 < ndims; ++i)
+    nPaths *= (int)PyArray_DIM(a, i);
+
+  size_t eachOutputSize = (size_t)calcSigTotalLengthSuffix(d, level);
+  npy_intp *strides = PyArray_STRIDES(a);
+  npy_intp point_stride = strides[ndims - 2];
+  npy_intp dim_stride = strides[ndims - 1];
+
+  // Output dtype follows input dtype, matching sig().
+  int out_typenum = use_float32 ? NPY_FLOAT32 : NPY_FLOAT64;
+  PyObject *o = simpleNew_ownLastDim(ndims - 1, a, eachOutputSize, out_typenum);
+  if (!o)
+    return nullptr;
+  ReleasableRefHolder o_(o);
+  void *out_data = PyArray_DATA(reinterpret_cast<PyArrayObject *>(o));
+
+  // Batch-axis parallelism: each path is independent, so split nPaths across
+  // worker threads using the IISIGNATURE_NUM_THREADS / OMP_NUM_THREADS /
+  // affinity chain. Single-path workloads fall through to the T==1 fast path.
+  int nThreads = std::min(iisignature_num_threads(), nPaths);
+  if (nThreads < 1)
+    nThreads = 1;
+  std::vector<SuffixSignature> workspaces(nThreads > 1 ? (size_t)nThreads : 1);
+
+  auto doCalc = [&](auto dummy) -> bool {
+    using InputT = decltype(dummy);
+    std::string err;
+    parallel_for(nPaths, nThreads, err, [&](int tid, int path) {
+      SuffixSignature &mine = workspaces[(size_t)((nThreads > 1) ? tid : 0)];
+      calcSignatureSuffix<InputT>(mine, batchPtr(a, 2, path), point_stride,
+                                  dim_stride, lengthOfPath, d, level);
+      if (use_float32)
+        mine.writeOut(static_cast<float *>(out_data) +
+                      (size_t)path * eachOutputSize);
+      else
+        mine.writeOut(static_cast<double *>(out_data) +
+                      (size_t)path * eachOutputSize);
+    });
+    return err.empty();
+  };
+  bool ok = (nThreads > 1)
+                ? do_interruptible_releasing_lock([&] {
+                    return use_float32 ? doCalc(float{}) : doCalc(double{});
+                  })
+                : do_interruptible([&] {
+                    return use_float32 ? doCalc(float{}) : doCalc(double{});
+                  });
+  if (!ok)
+    return nullptr;
   o_.release();
   return o;
 }
@@ -2589,6 +2687,25 @@ static PyMethodDef Methods[] = {
      "If format is 2, the output is an array of shape [...,N-1,siglength(D,m)] "
      "of all the cumulative signatures"
      " from the first point to each other point."},
+    {"sigsuffix", sigsuffix, METH_VARARGS,
+     "sigsuffix(X,m)\n Returns, for a path X up to level m, the terminal "
+     "value of the signature components whose word does not start with the "
+     "letter 1 (i.e. the first integrator is not the first channel of X). X "
+     "must be convertible to a numpy [...x]NxD array of points in R^D with "
+     "D>=2, in float32 or float64; the output dtype matches the input. The "
+     "result has shape (...,D**m - 1): the empty word is excluded and the "
+     "D**(k-1) components at level k whose first letter is 1 are dropped, "
+     "leaving (D-1)*D**(k-1) entries at level k. "
+     "Example: for a 2-channel path up to level 2, siglength is 6 "
+     "(corresponding to the words 1, 2, 11, 12, 21, 22) and sigsuffixlength "
+     "is 3 (corresponding to 2, 21, 22), so "
+     "sigsuffix(X,2) == sig(X,2)[..., [False,True,False,False,True,True]]. "
+     "Motivation: when channel 1 is the running time and channels 2..D are "
+     "stochastic, the linear span of these components equals the linear span "
+     "of the full level-<=m signature (Bourdon et al., arXiv:2601.10545), so "
+     "for linear-regression downstream tasks this is a strictly cheaper "
+     "feature set with no loss of expressivity. The function itself is "
+     "agnostic to what channel 1 contains."},
     {"sigmultcount", sigMultCount, METH_VARARGS,
      "sigmultcount(X,m)\n "
      "Returns the number of multiplications which sig(X,m) would perform."},
@@ -2649,6 +2766,14 @@ static PyMethodDef Methods[] = {
      "siglength(d,m) \n "
      "Returns the length of the signature (excluding the initial 1) of a d "
      "dimensional path up to level m"},
+    {"sigsuffixlength", sigsuffixlength, METH_VARARGS,
+     "sigsuffixlength(d,m) \n "
+     "Returns the length of the output of sigsuffix(X,m) for a d-dimensional "
+     "path, namely d**m - 1: the number of words of length 1..m on the "
+     "alphabet 1..d that do not start with the letter 1. Equivalently the "
+     "sum over k = 1..m of (d-1)*d**(k-1). "
+     "Example: sigsuffixlength(2,2) == 3, the entries kept from siglength(2,2) "
+     "== 6 (corresponding to the words 2, 21, 22 from 1, 2, 11, 12, 21, 22)."},
     {"logsiglength", logsiglength, METH_VARARGS,
      "logsiglength(d,m) \n "
      "Returns the length of the log signature of a d dimensional path up to "

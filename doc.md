@@ -82,6 +82,20 @@ For the purposes of `iisignature`, a signature up to level *m* is the concatenat
 >
 > (If `format` is supplied as `2`, then we return not just the signature of the whole path, but the signature of all the partial paths from the start to each point of the path. If `path` has shape `(...,n,d)` then the result has shape `(...,n-1,siglength(d,m))`.)
 
+#### `sigsuffix(path, m)`
+
+> Returns, for the *d*-dimensional path `path` up to level *m*, the terminal value of those signature components whose word does not begin with the letter `1` -- that is, components whose first integrator is not the first dimension of `path`. The output is a `numpy` array of shape `(...,d**m-1)`: the empty word is excluded, and the *d*ᵏ⁻¹ components at level *k* whose first letter is `1` are dropped, leaving (*d*-1)·*d*ᵏ⁻¹ entries at level *k*. *d* must be at least 2. The output dtype follows the input dtype.
+>
+> Example: for a 2-channel path up to level 2, `siglength(2,2)` is 6 (corresponding to the words `1, 2, 11, 12, 21, 22`) and `sigsuffixlength(2,2)` is 3 (corresponding to `2, 21, 22`), so for any 2-channel path `X`:
+>
+> > `sigsuffix(X, 2) == sig(X, 2)[..., [False, True, False, False, True, True]]`.
+>
+> Motivation: when the first dimension of `path` is a running time variable and the remaining dimensions are stochastic, the linear span of these components equals the linear span of the full level-≤*m* signature (Bourdon et al., [arXiv:2601.10545](https://arxiv.org/abs/2601.10545)), so for downstream linear-regression tasks this is a strictly smaller feature set with no loss of expressivity. The function itself does not assume anything about the contents of the first dimension.
+
+#### `sigsuffixlength(d, m)`
+
+> The length of the output of `sigsuffix` for a *d*-dimensional path up to level *m*, namely *d*ᵐ - 1. Equivalently the sum over *k* = 1..*m* of (*d*-1)·*d*ᵏ⁻¹.
+
 #### `sigjacobian(path, m)`
 
 > This function provides the Jacobian matrix of the `sig` function with respect to `path`. If `path` has shape `(n,d)` then an array of shape `(n,d,siglength(d,m))` is returned.
@@ -353,6 +367,8 @@ Improvements to the example code are not listed here, they can be seen on `githu
 | [`siglength`](#siglengthd-m) | [Signatures](#signatures) |
 | [`sigscale`](#sigscalesigs-scales-m) | [Signatures](#signatures) |
 | [`sigscalebackprop`](#sigscalebackpropderivs-sigs-scales-m) | [Signatures](#signatures) |
+| [`sigsuffix`](#sigsuffixpath-m) | [Signatures](#signatures) |
+| [`sigsuffixlength`](#sigsuffixlengthd-m) | [Signatures](#signatures) |
 | [`version`](#version) | [Usage](#usage) |
 
 ## Acknowledgements

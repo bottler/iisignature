@@ -1,11 +1,12 @@
 if __name__ != "__main__":
     import iisignature
 
-import unittest
-import numpy
-import sys
 import math
+import sys
 import time
+import unittest
+
+import numpy
 
 numpy.set_printoptions(suppress=True, linewidth=150)
 output_timings = False
@@ -1349,6 +1350,98 @@ class Float32Input(unittest.TestCase):
         result_f32 = iisignature.rotinv2d(path, s)
         result_f64 = iisignature.rotinv2d(path.astype(numpy.float64), s)
         numpy.testing.assert_allclose(result_f32, result_f64, rtol=1e-5)
+
+
+class SigSuffix(TestCase):
+    """Tests for iisignature.sigsuffix (Bourdon et al., arXiv:2601.10545).
+
+    sigsuffix(X, m) returns the entries of sig(X, m) whose word does not
+    begin with letter 0 (in the C-level 0-indexed alphabet); equivalently,
+    letter 1 in the 1-indexed alphabet that iisignature.basis() prints. The
+    output has length d**m - 1 and is the concatenation, for k = 1..m, of
+    the trailing (d-1)*d^(k-1) entries of each level-k block of sig().
+    """
+
+    def _full_sig_to_suffix(self, signature, d, m):
+        """Reference projection: drop the first-letter-0 slab at every level."""
+        is_1d = signature.ndim == 1
+        if is_1d:
+            signature = signature.reshape(1, -1)
+        kept = []
+        idx = 0
+        for k in range(1, m + 1):
+            level_size = d**k
+            skip = d ** (k - 1)  # number of "letter-0-led" entries at level k
+            kept.append(signature[:, idx + skip : idx + level_size])
+            idx += level_size
+        out = numpy.concatenate(kept, axis=1)
+        return out[0] if is_1d else out
+
+    def test_consistency_with_sig(self):
+        path = numpy.array(
+            [[0, 0], [0.25, 3], [0.5, 2], [0.75, 10], [1, 8]], dtype=numpy.float64
+        )
+        m = 4
+        d = path.shape[-1]
+        sig_full = iisignature.sig(path, m)
+        sig_suf = iisignature.sigsuffix(path, m)
+        self.assertEqual(sig_suf.shape, (d**m - 1,))
+        numpy.testing.assert_allclose(self._full_sig_to_suffix(sig_full, d, m), sig_suf)
+
+    def test_single_point_is_zero(self):
+        path = numpy.zeros((1, 3), dtype=numpy.float64)
+        m = 3
+        out = iisignature.sigsuffix(path, m)
+        self.assertEqual(out.shape, (3**m - 1,))
+        numpy.testing.assert_array_equal(out, numpy.zeros_like(out))
+
+    def test_batched_matches_per_path(self):
+        rng = numpy.random.default_rng(0)
+        m = 3
+        paths = rng.standard_normal((4, 6, 3))
+        batched = iisignature.sigsuffix(paths, m)
+        self.assertEqual(batched.shape, (4, 3**m - 1))
+        for i in range(paths.shape[0]):
+            numpy.testing.assert_allclose(
+                batched[i], iisignature.sigsuffix(paths[i], m)
+            )
+
+    def test_float32_input_yields_float32(self):
+        rng = numpy.random.default_rng(1)
+        path64 = rng.standard_normal((10, 4))
+        m = 3
+        out64 = iisignature.sigsuffix(path64, m)
+        out32 = iisignature.sigsuffix(path64.astype(numpy.float32), m)
+        self.assertEqual(out64.dtype, numpy.float64)
+        self.assertEqual(out32.dtype, numpy.float32)
+        numpy.testing.assert_allclose(out32, out64, rtol=1e-5)
+
+    def test_requires_at_least_two_channels(self):
+        path = numpy.zeros((5, 1), dtype=numpy.float64)
+        with self.assertRaises(Exception):
+            iisignature.sigsuffix(path, 3)
+
+    def test_worked_example_from_docs(self):
+        # The example from the sigsuffix docstring: for a 2-channel path
+        # up to level 2, sig() has 6 entries (words 1, 2, 11, 12, 21, 22)
+        # and sigsuffix keeps positions [1, 4, 5] -> words 2, 21, 22.
+        path = numpy.array([[0.0, 0.0], [1.7, 2.3], [-0.4, 1.1]])
+        s = iisignature.sig(path, 2)
+        ss = iisignature.sigsuffix(path, 2)
+        mask = numpy.array([False, True, False, False, True, True])
+        numpy.testing.assert_allclose(ss, s[mask])
+
+    def test_sigsuffixlength(self):
+        # d**m - 1 by definition; spot-check vs the actual output shape.
+        for d in (2, 3, 5):
+            for m in (1, 2, 3, 4):
+                expected = d**m - 1
+                self.assertEqual(iisignature.sigsuffixlength(d, m), expected)
+                path = numpy.zeros((4, d))
+                self.assertEqual(iisignature.sigsuffix(path, m).shape, (expected,))
+        # Length helper accepts d == 1 without complaint (returns 0), even
+        # though sigsuffix itself rejects it.
+        self.assertEqual(iisignature.sigsuffixlength(1, 5), 0)
 
 
 if __name__ == "__main__":
