@@ -2406,7 +2406,7 @@ static PyObject *logsigJoinBackwards(PyObject *self, PyObject *args) {
     return nullptr;
   auto out1 = static_cast<OutT::T *>(
       PyArray_DATA(reinterpret_cast<PyArrayObject *>(o1)));
-  PyObject *o2 = PyArray_SimpleNew(ndims, PyArray_DIMS(b), OutT::typenum);
+  PyObject *o2 = PyArray_ZEROS(ndims, PyArray_DIMS(b), OutT::typenum, 0);
   if (!o2)
     return nullptr;
   auto out2 = static_cast<OutT::T *>(
@@ -2419,8 +2419,6 @@ static PyObject *logsigJoinBackwards(PyObject *self, PyObject *args) {
     // Using O method
     for (int i = 0; i < nPaths * logSigLength; ++i)
       out1[i] = deriv_p[i];
-    for (int i = 0; i < nPaths * d_given; ++i)
-      out2[i] = 0;
     for (int path = 0; path < nPaths; ++path) {
       slowExplicitFunctionBackward(logsig_p, displacement_, lsf->m_fd, deriv_p,
                                    out1, out2);
@@ -2434,6 +2432,8 @@ static PyObject *logsigJoinBackwards(PyObject *self, PyObject *args) {
   }
 
   if (lsf->canCalculateViaArea()) {
+    for (int i = 0; i < nPaths * logSigLength; ++i)
+      out1[i] = 0;
     for (int path = 0; path < nPaths; ++path) {
       logSigJoinUsingAreaBackwards(logsig_p, displacement_, lsf->m_level,
                                    d_given, deriv_p, out1, out2);
