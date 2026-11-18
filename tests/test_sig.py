@@ -1377,6 +1377,10 @@ class SigSuffix(TestCase):
         out = numpy.concatenate(kept, axis=1)
         return out[0] if is_1d else out
 
+    def test_level_one(self):
+        path = numpy.array([[0., 3.], [1., -2.], [2., 10.]])
+        numpy.testing.assert_array_equal(iisignature.sigsuffix(path, 1), [7.])
+
     def test_consistency_with_sig(self):
         path = numpy.array(
             [[0, 0], [0.25, 3], [0.5, 2], [0.75, 10], [1, 8]], dtype=numpy.float64

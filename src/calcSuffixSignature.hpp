@@ -37,8 +37,8 @@ public:
     if (m_data.size() != (size_t)N)
       m_data.resize(N);
 
-    // Level 1: full d entries.
-    m_data[0].assign(segment, segment + d);
+    // At truncation level 1, keep only the suffix coordinates.
+    m_data[0].assign(N == 1 ? segment + 1 : segment, segment + d);
 
     // Levels 2..N-1: full size d^k.
     for (int level = 2; level < N; ++level) {
